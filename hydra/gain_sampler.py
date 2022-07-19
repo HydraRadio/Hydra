@@ -263,12 +263,12 @@ def construct_rhs(
     b = realisation_switch * (
         1.0 * np.random.randn(Nants, Nfrate, Ntau)
         + 1.0j * np.random.randn(Nants, Nfrate, Ntau)
-    )
+    ) / np.sqrt(2.)
 
     # (Terms 1+3): S^1/2 A^\dagger [ N^{-1} r + N^{-1/2} \omega_r ]
     omega_r = realisation_switch * (
         1.0 * np.random.randn(*resid.shape) + 1.0j * np.random.randn(*resid.shape)
-    )
+    ) / np.sqrt(2.)
     gain_shape = (Nants, Nfrate, Ntau)
     yy = apply_proj_conj(
         resid / noise_var + omega_r / np.sqrt(noise_var),
