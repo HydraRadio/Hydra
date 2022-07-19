@@ -10,6 +10,7 @@ from pyuvdata import UVBeam
 from typing import Optional, Sequence
 from vis_cpu import conversions
 
+
 def run_checks(
     antpos: np.ndarray,
     freq: float,
@@ -19,7 +20,7 @@ def run_checks(
     beam_list: Sequence[UVBeam],
     precision: int = 1,
     polarized: bool = False,
-    beam_idx: Optional[np.ndarray] = None
+    beam_idx: Optional[np.ndarray] = None,
 ):
     """
     Check that the inputs to vis_sim() are valid.
@@ -164,7 +165,7 @@ def vis_sim_per_source(
     else:
         real_dtype = np.float64
         complex_dtype = np.complex128
-    
+
     # Specify number of polarizations (axes/feeds)
     if polarized:
         nax = nfeed = 2
@@ -183,11 +184,11 @@ def vis_sim_per_source(
 
     # Get the number of unique beams
     nbeam = len(beam_list)
-    
+
     # Run checks and get standardised beam_idx array
-    beam_idx = run_checks(antpos, freq, eq2tops, crd_eq, I_sky, beam_list, 
-                          precision, polarized, beam_idx)
-    
+    beam_idx = run_checks(
+        antpos, freq, eq2tops, crd_eq, I_sky, beam_list, precision, polarized, beam_idx
+    )
 
     # Intensity distribution (sqrt) and antenna positions. Does not support
     # negative sky. Factor of 0.5 accounts for splitting Stokes I between
@@ -263,7 +264,10 @@ def vis_sim_per_source(
             # We want to take an outer product over feeds/antennas, contract over
             # E-field components, and integrate over the sky.
             vis[:, :, t, i : i + 1, i:, :] = np.einsum(
-                "jiln,jkmn->iklmn", v[:, :, i : i + 1, :].conj(), v[:, :, i:, :], optimize=True
+                "jiln,jkmn->iklmn",
+                v[:, :, i : i + 1, :].conj(),
+                v[:, :, i:, :],
+                optimize=True,
             )
 
     # Return visibilities with or without multiple polarization channels
@@ -326,7 +330,7 @@ def simulate_vis_per_source(
             otherwise.
     """
     nsrcs = ra.size
-    
+
     assert len(ants) == len(
         beams
     ), "The `beams` list must have as many entries as the ``ants`` dict."
@@ -360,19 +364,22 @@ def simulate_vis_per_source(
 
     # Get coordinate transforms as a function of LST
     eq2tops = np.array([conversions.eci_to_enu_matrix(lst, latitude) for lst in lsts])
-    
+
     beams = [
-            conversions.prepare_beam(beam, polarized=polarized, use_feed=use_feed)
-            for beam in beams
-        ]
-    
+        conversions.prepare_beam(beam, polarized=polarized, use_feed=use_feed)
+        for beam in beams
+    ]
+
     # Initialise output array
     if polarized:
         vis = np.zeros(
-            (naxes, nfeeds, freqs.size, lsts.size, nants, nants, nsrcs), dtype=complex_dtype
+            (naxes, nfeeds, freqs.size, lsts.size, nants, nants, nsrcs),
+            dtype=complex_dtype,
         )
     else:
-        vis = np.zeros((freqs.size, lsts.size, nants, nants, nsrcs), dtype=complex_dtype)
+        vis = np.zeros(
+            (freqs.size, lsts.size, nants, nants, nsrcs), dtype=complex_dtype
+        )
 
     # Loop over frequencies and call vis_cpu for UVBeam
     for i in range(freqs.size):

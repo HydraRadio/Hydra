@@ -62,8 +62,8 @@ def reconstruct_vector(v, gain_shape):
 
 def proj_operator(ants, antpairs):
     """
-    Construct two sparse projection operators, one that goes from 
-    the real part of x_i and the other that goes from the imaginary part.
+    Construct two sparse projection operators, one that goes from the real part 
+    of x_i and the other that goes from the imaginary part.
     
     To apply the projection operator, just do:
         dot(A, x) = A_real.dot(x.real) + 1.j*A_imag.dot(x.imag) 
@@ -139,7 +139,8 @@ def apply_proj_conj(v, A_real, A_imag, model_vis, gain_shape):
     Nants, Nfrate, Ntau = gain_shape
     g = np.zeros((Nants, Nfrate, Ntau), dtype=np.complex128)
 
-    # Apply conjugate transpose of model visibility, (\bar{g}_i \bar{g}_j V_ij)^\dagger
+    # Apply conjugate transpose of model visibility,
+    # (\bar{g}_i \bar{g}_j V_ij)^\dagger
     v *= model_vis.conj()
 
     # If we split the visibilities etc. into real and imaginary parts, the
@@ -153,9 +154,9 @@ def apply_proj_conj(v, A_real, A_imag, model_vis, gain_shape):
 
 def apply_sqrt_pspec(sqrt_pspec, x):
     """
-    Apply the square root of the power spectrum to a set of complex Fourier coefficients. 
-    This is a way of implementing the operation "S^1/2 x" if S is diagonal, represented 
-    only by a 2D power spectrum.
+    Apply the square root of the power spectrum to a set of complex Fourier 
+    coefficients. This is a way of implementing the operation "S^1/2 x" if S is 
+    diagonal, represented only by a 2D power spectrum.
     
     Parameters:
         sqrt_pspec (array_like):
@@ -179,7 +180,7 @@ def apply_sqrt_pspec(sqrt_pspec, x):
 
 
 def apply_operator(x, noise_var, pspec_sqrt, A_real, A_imag, model_vis):
-    """
+    r"""
     Apply LHS operator to a vector of Fourier coefficients.
     
     Parameters:
@@ -202,7 +203,8 @@ def apply_operator(x, noise_var, pspec_sqrt, A_real, A_imag, model_vis):
             a vector of visibilities that they belong to. Shape (Nvis, Nants).
         
         model_vis (array_like):
-            Array of complex visibility model values, of shape (Nvis, Ntimes, Nfreqs).
+            Array of complex visibility model values, of shape (Nvis, Ntimes, 
+            Nfreqs).
             $m_{ij} = \bar{g}_i \bar{g}_j^\dagger V_{ij}$.
     """
     gain_shape = x.shape
@@ -225,19 +227,22 @@ def construct_rhs(
     resid, noise_var, pspec_sqrt, A_real, A_imag, model_vis, realisation=True
 ):
     """
-    Construct the RHS vector of the linear system. This will have shape (Nants, Ntau, Nfrate).
+    Construct the RHS vector of the linear system. This will have shape 
+    (Nants, Ntau, Nfrate).
     
     Parameters:
         resid (array_like, complex):
-            Residual of the observed visibilities (data minus fiducial input model).
+            Residual of the observed visibilities (data minus fiducial input 
+            model).
             
         noise_var (array_like):
-            Noise variance, of shape (Nbl, Nfreqs, Ntimes). This is used because we have 
-            assumed that the noise is diagonal (uncorrelated) between baselines, times, 
-            and frequencies.
+            Noise variance, of shape (Nbl, Nfreqs, Ntimes). This is used 
+            because we have assumed that the noise is diagonal (uncorrelated) 
+            between baselines, times, and frequencies.
         
         pspec_sqrt (array_like):
-            Array of 2D (sqrt) power spectra used to construct the prior covariance S.
+            Array of 2D (sqrt) power spectra used to construct the prior 
+            covariance S.
         
         A_real, A_imag (sparse array):
             Shape (Nvis, Nants)
@@ -246,8 +251,8 @@ def construct_rhs(
             Array of complex model visibilities. Shape (Nvis, Ntimes, Nfreqs).
             
         realisation (bool):
-            Whether to include Gaussian random realisation terms (True) or just the Wiener 
-            filter terms (False).
+            Whether to include Gaussian random realisation terms (True) or just 
+            the Wiener filter terms (False).
     """
     # ifft: data -> fourier
     # fft: fourier -> data
@@ -260,15 +265,21 @@ def construct_rhs(
     realisation_switch = 1.0 if realisation else 0.0
 
     # (Term 2): \omega_y
-    b = realisation_switch * (
-        1.0 * np.random.randn(Nants, Nfrate, Ntau)
-        + 1.0j * np.random.randn(Nants, Nfrate, Ntau)
-    ) / np.sqrt(2.)
+    b = (
+        realisation_switch
+        * (
+            1.0 * np.random.randn(Nants, Nfrate, Ntau)
+            + 1.0j * np.random.randn(Nants, Nfrate, Ntau)
+        )
+        / np.sqrt(2.0)
+    )
 
     # (Terms 1+3): S^1/2 A^\dagger [ N^{-1} r + N^{-1/2} \omega_r ]
-    omega_r = realisation_switch * (
-        1.0 * np.random.randn(*resid.shape) + 1.0j * np.random.randn(*resid.shape)
-    ) / np.sqrt(2.)
+    omega_r = (
+        realisation_switch
+        * (1.0 * np.random.randn(*resid.shape) + 1.0j * np.random.randn(*resid.shape))
+        / np.sqrt(2.0)
+    )
     gain_shape = (Nants, Nfrate, Ntau)
     yy = apply_proj_conj(
         resid / noise_var + omega_r / np.sqrt(noise_var),
@@ -283,4 +294,3 @@ def construct_rhs(
         sqrt_pspec = pspec_sqrt if len(pspec_sqrt.shape) == 2 else pspec_sqrt[k]
         b[k] += sqrt_pspec * fft.ifft2(yy[k, :, :])
     return b
-    
