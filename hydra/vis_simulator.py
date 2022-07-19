@@ -7,67 +7,8 @@ import numpy as np
 import warnings
 from astropy.constants import c
 from pyuvdata import UVBeam
-from scipy.interpolate import RectBivariateSpline
 from typing import Optional, Sequence
-
-
-def enu_to_az_za(enu_e, enu_n, orientation="astropy", periodic_azimuth=True):
-    """Convert angle cosines in ENU coordinates into azimuth and zenith angle.
-
-    For a pointing vector in East-North-Up (ENU) coordinates vec{p}, the input
-    arguments are ``enu_e = vec{p}.hat{e}`` and ``enu_n = vec{p}.hat{n}`, where
-    ``hat{e}`` is a unit vector in ENU coordinates etc.
-
-    For a drift-scan telescope pointing at the zenith, the ``hat{e}`` direction
-    is aligned with the ``U`` direction (in the UVW plane), which means that we
-    can identify the direction cosines ``l = enu_e`` and ``m = enu_n``.
-
-    Azimuth is oriented East of North, i.e. Az(N) = 0 deg, Az(E) = +90 deg in
-    the astropy convention, and North of East, i.e. Az(N) = +90 deg, and
-    Az(E) = 0 deg in the UVBeam convention.
-
-    Parameters
-    ----------
-    enu_e, enu_n : array_like
-        Normalized angle cosine coordinates on the interval (-1, +1).
-
-    orientation : str, optional
-        Orientation convention used for the azimuth angle. The default is
-        ``'astropy'``, which uses an East of North convention (Az(N) = 0 deg,
-        Az(E) = +90 deg). Alternatively, the ``'uvbeam'`` convention uses
-        North of East (Az(N) = +90 deg, Az(E) = 0 deg).
-
-    periodic_azimuth : bool, optional
-        if True, constrain az to be betwee 0 and 2 * pi
-        This avoids the issue that arctan2 outputs angles between -pi and pi
-        while most CST beam formats store azimuths between 0 and 2pi which leads
-        interpolation domain mismatches.
-
-    Returns
-    -------
-    az, za : array_like
-        Corresponding azimuth and zenith angles (in radians).
-    """
-    assert orientation in [
-        "astropy",
-        "uvbeam",
-    ], "orientation must be either 'astropy' or 'uvbeam'"
-
-    lsqr = enu_n**2.0 + enu_e**2.0
-    mask = lsqr < 1
-    zeta = np.zeros_like(lsqr)
-    zeta[mask] = np.sqrt(1 - lsqr[mask])
-
-    az = np.arctan2(enu_e, enu_n)
-    za = 0.5 * np.pi - np.arcsin(zeta)
-
-    # Flip and rotate azimuth coordinate if uvbeam convention is used
-    if orientation == "uvbeam":
-        az = 0.5 * np.pi - az
-    if periodic_azimuth:
-        az = np.mod(az, 2 * np.pi)
-    return az, za
-
+from vis_cpu import conversions
 
 def run_checks(
     antpos: np.ndarray,
@@ -75,7 +16,7 @@ def run_checks(
     eq2tops: np.ndarray,
     crd_eq: np.ndarray,
     I_sky: np.ndarray,
-    beam_list: Sequence[UVBeam]
+    beam_list: Sequence[UVBeam],
     precision: int = 1,
     polarized: bool = False,
     beam_idx: Optional[np.ndarray] = None
@@ -152,13 +93,13 @@ def run_checks(
     return beam_idx
 
 
-def vis_sim(
+def vis_sim_per_source(
     antpos: np.ndarray,
     freq: float,
     eq2tops: np.ndarray,
     crd_eq: np.ndarray,
     I_sky: np.ndarray,
-    beam_list: Sequence[UVBeam]
+    beam_list: Sequence[UVBeam],
     precision: int = 1,
     polarized: bool = False,
     beam_idx: Optional[np.ndarray] = None,
@@ -168,62 +109,85 @@ def vis_sim(
     a trimmed-down version of vis_cpu that only uses UVBeam beams (not gridded 
     beams).
 
-    Parameters
-    ----------
-    antpos : array_like
-        Antenna position array. Shape=(NANT, 3).
-    freq : float
-        Frequency to evaluate the visibilities at [GHz].
-    eq2tops : array_like
-        Set of 3x3 transformation matrices to rotate the RA and Dec
-        cosines in an ECI coordinate system (see `crd_eq`) to
-        topocentric ENU (East-North-Up) unit vectors at each
-        time/LST/hour angle in the dataset.
-        Shape=(NTIMES, 3, 3).
-    crd_eq : array_like
-        Cartesian unit vectors of sources in an ECI (Earth Centered
-        Inertial) system, which has the Earth's center of mass at
-        the origin, and is fixed with respect to the distant stars.
-        The components of the ECI vector for each source are:
-        (cos(RA) cos(Dec), sin(RA) cos(Dec), sin(Dec)).
-        Shape=(3, NSRCS).
-    I_sky : array_like
-        Intensity distribution of sources/pixels on the sky, assuming intensity
-        (Stokes I) only. The Stokes I intensity will be split equally between
-        the two linear polarization channels, resulting in a factor of 0.5 from
-        the value inputted here. This is done even if only one polarization
-        channel is simulated.
-        Shape=(NSRCS,).
-    beam_list : list of UVBeam, optional
-        If specified, evaluate primary beam values directly using UVBeam
-        objects instead of using pixelized beam maps. Only one of ``bm_cube`` and
-        ``beam_list`` should be provided.Note that if `polarized` is True,
-        these beams must be efield beams, and conversely if `polarized` is False they
-        must be power beams with a single polarization (either XX or YY).
-    precision : int, optional
-        Which precision level to use for floats and complex numbers.
-        Allowed values:
-        - 1: float32, complex64
-        - 2: float64, complex128
-    polarized : bool, optional
-        Whether to simulate a full polarized response in terms of nn, ne, en,
-        ee visibilities. See Eq. 6 of Kohn+ (arXiv:1802.04151) for notation.
-        Default: False.
-    beam_idx
-        Optional length-NANT array specifying a beam index for each antenna.
-        By default, either a single beam is assumed to apply to all antennas or
-        each antenna gets its own beam.
+    Parameters:
+        antpos (array_like):
+            Antenna position array. Shape=(NANT, 3).
+        freq (float):
+            Frequency to evaluate the visibilities at [GHz].
+        eq2tops (array_like):
+            Set of 3x3 transformation matrices to rotate the RA and Dec
+            cosines in an ECI coordinate system (see `crd_eq`) to
+            topocentric ENU (East-North-Up) unit vectors at each
+            time/LST/hour angle in the dataset.
+            Shape=(NTIMES, 3, 3).
+        crd_eq (array_like):
+            Cartesian unit vectors of sources in an ECI (Earth Centered
+            Inertial) system, which has the Earth's center of mass at
+            the origin, and is fixed with respect to the distant stars.
+            The components of the ECI vector for each source are:
+            (cos(RA) cos(Dec), sin(RA) cos(Dec), sin(Dec)).
+            Shape=(3, NSRCS).
+        I_sky (array_like):
+            Intensity distribution of sources/pixels on the sky, assuming 
+            intensity (Stokes I) only. The Stokes I intensity will be split 
+            equally between the two linear polarization channels, resulting in 
+            a factor of 0.5 from the value inputted here. This is done even if 
+            only one polarization channel is simulated. Shape=(NSRCS,).
+        beam_list (list of UVBeam, optional):
+            If specified, evaluate primary beam values directly using UVBeam
+            objects. Note that if `polarized` is True, these beams must be 
+            efield beams, and conversely if `polarized` is False they
+            must be power beams with a single polarization (either XX or YY).
+        precision (int):
+            Which precision level to use for floats and complex numbers.
+            Allowed values:
+            - 1: float32, complex64
+            - 2: float64, complex128
+        polarized (bool):
+            Whether to simulate a full polarized response in terms of nn, ne, 
+            en, ee visibilities. See Eq. 6 of Kohn+ (arXiv:1802.04151) for 
+            notation.
+        beam_idx (array_like):
+            Optional length-NANT array specifying a beam index for each antenna.
+            By default, either a single beam is assumed to apply to all 
+            antennas or each antenna gets its own beam.
 
-    Returns
-    -------
-    vis : array_like
-        Simulated visibilities. If `polarized = True`, the output will have
-        shape (NAXES, NFEED, NTIMES, NANTS, NANTS), otherwise it will have
-        shape (NTIMES, NANTS, NANTS).
+    Returns:
+        vis (array_like):
+            Simulated visibilities. If `polarized = True`, the output will have
+            shape (NAXES, NFEED, NTIMES, NANTS, NANTS, NSRCS), otherwise it 
+            will have shape (NTIMES, NANTS, NANTS, NSRCS).
     """
+    if precision == 1:
+        real_dtype = np.float32
+        complex_dtype = np.complex64
+    else:
+        real_dtype = np.float64
+        complex_dtype = np.complex128
+    
+    # Specify number of polarizations (axes/feeds)
+    if polarized:
+        nax = nfeed = 2
+    else:
+        nax = nfeed = 1
+
+    nant, ncrd = antpos.shape
+    assert ncrd == 3, "antpos must have shape (NANTS, 3)."
+    ntimes, ncrd1, ncrd2 = eq2tops.shape
+    assert ncrd1 == 3 and ncrd2 == 3, "eq2tops must have shape (NTIMES, 3, 3)."
+    ncrd, nsrcs = crd_eq.shape
+    assert ncrd == 3, "crd_eq must have shape (3, NSRCS)."
+    assert (
+        I_sky.ndim == 1 and I_sky.shape[0] == nsrcs
+    ), "I_sky must have shape (NSRCS,)."
+
+    # Get the number of unique beams
+    nbeam = len(beam_list)
+    
     # Run checks and get standardised beam_idx array
     beam_idx = run_checks(antpos, freq, eq2tops, crd_eq, I_sky, beam_list, 
                           precision, polarized, beam_idx)
+    
 
     # Intensity distribution (sqrt) and antenna positions. Does not support
     # negative sky. Factor of 0.5 accounts for splitting Stokes I between
@@ -234,7 +198,7 @@ def vis_sim(
     ang_freq = 2.0 * np.pi * freq
 
     # Zero arrays: beam pattern, visibilities, delays, complex voltages
-    vis = np.zeros((nfeed, nfeed, ntimes, nant, nant), dtype=complex_dtype)
+    vis = np.zeros((nfeed, nfeed, ntimes, nant, nant, nsrcs), dtype=complex_dtype)
     crd_eq = crd_eq.astype(real_dtype)
 
     # Loop over time samples
@@ -254,7 +218,7 @@ def vis_sim(
         v = np.zeros((nant, nsrcs_up), dtype=complex_dtype)
 
         # Primary beam pattern using direct interpolation of UVBeam object
-        az, za = enu_to_az_za(enu_e=tx, enu_n=ty, orientation="uvbeam")
+        az, za = conversions.enu_to_az_za(enu_e=tx, enu_n=ty, orientation="uvbeam")
         for i, bm in enumerate(beam_list):
             kw = (
                 {"reuse_spline": True, "check_azza_domain": False}
@@ -298,10 +262,134 @@ def vis_sim(
         for i in range(len(antpos)):
             # We want to take an outer product over feeds/antennas, contract over
             # E-field components, and integrate over the sky.
-            vis[:, :, t, i : i + 1, i:] = np.einsum(
-                "jiln,jkmn->iklm", v[:, :, i : i + 1].conj(), v[:, :, i:], optimize=True
+            vis[:, :, t, i : i + 1, i:, :] = np.einsum(
+                "jiln,jkmn->iklmn", v[:, :, i : i + 1, :].conj(), v[:, :, i:, :], optimize=True
             )
 
     # Return visibilities with or without multiple polarization channels
     return vis if polarized else vis[0, 0]
 
+
+def simulate_vis_per_source(
+    ants,
+    fluxes,
+    ra,
+    dec,
+    freqs,
+    lsts,
+    beams,
+    polarized=False,
+    precision=1,
+    latitude=-30.7215 * np.pi / 180.0,
+    use_feed="x",
+):
+    """
+    Run a basic simulation, returning the visibility for each source 
+    separately. Based on ``vis_cpu``.
+    
+    This wrapper handles the necessary coordinate conversions etc.
+    
+    Parameters:
+        ants (dict):
+            Dictionary of antenna positions. The keys are the antenna names
+            (integers) and the values are the Cartesian x,y,z positions of the
+            antennas (in meters) relative to the array center.
+        fluxes (array_like):
+            2D array with the flux of each source as a function of frequency, 
+            of shape (NSRCS, NFREQS).
+        ra, dec (array_like):
+            Arrays of source RA and Dec positions in radians. RA goes from 
+            [0, 2 pi] and Dec from [-pi, +pi].
+        freqs (array_like):
+            Frequency channels for the simulation, in Hz.
+        lsts (array_like):
+            Local sidereal times for the simulation, in radians. Range is 
+            [0, 2 pi].
+        beams (list of ``UVBeam`` objects):
+            Beam objects to use for each antenna.
+        polarized (bool):
+            If True, use polarized beams and calculate all available linearly-
+            polarized visibilities, e.g. V_nn, V_ne, V_en, V_ee.
+            Default: False (only uses the 'ee' polarization).
+        precision (int):
+            Which precision setting to use for :func:`~vis_cpu`. If set to 
+            ``1``, uses the (``np.float32``, ``np.complex64``) dtypes. If set 
+            to ``2``, uses the (``np.float64``, ``np.complex128``) dtypes.
+        latitude (float):
+            The latitude of the center of the array, in radians. The default is 
+            the HERA latitude = -30.7215 * pi / 180.
+    
+    Returns:
+        vis (array_like):
+            Complex, shape (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS, NSRCS)
+            if ``polarized == True``, or (NFREQS, NTIMES, NANTS, NANTS, NSRCS) 
+            otherwise.
+    """
+    nsrcs = ra.size
+    
+    assert len(ants) == len(
+        beams
+    ), "The `beams` list must have as many entries as the ``ants`` dict."
+
+    assert fluxes.shape == (
+        ra.size,
+        freqs.size,
+    ), "The `fluxes` array must have shape (NSRCS, NFREQS)."
+
+    # Determine precision
+    if precision == 1:
+        complex_dtype = np.complex64
+    else:
+        complex_dtype = np.complex128
+
+    # Get polarization information from beams
+    if polarized:
+        try:
+            naxes = beams[0].Naxes_vec
+            nfeeds = beams[0].Nfeeds
+        except AttributeError:
+            # If Naxes_vec and Nfeeds properties aren't set, assume all pol.
+            naxes = nfeeds = 2
+
+    # Antenna x,y,z positions
+    antpos = np.array([ants[k] for k in ants.keys()])
+    nants = antpos.shape[0]
+
+    # Source coordinate transform, from equatorial to Cartesian
+    crd_eq = conversions.point_source_crd_eq(ra, dec)
+
+    # Get coordinate transforms as a function of LST
+    eq2tops = np.array([conversions.eci_to_enu_matrix(lst, latitude) for lst in lsts])
+    
+    beams = [
+            conversions.prepare_beam(beam, polarized=polarized, use_feed=use_feed)
+            for beam in beams
+        ]
+    
+    # Initialise output array
+    if polarized:
+        vis = np.zeros(
+            (naxes, nfeeds, freqs.size, lsts.size, nants, nants, nsrcs), dtype=complex_dtype
+        )
+    else:
+        vis = np.zeros((freqs.size, lsts.size, nants, nants, nsrcs), dtype=complex_dtype)
+
+    # Loop over frequencies and call vis_cpu for UVBeam
+    for i in range(freqs.size):
+
+        v = vis_sim_per_source(
+            antpos,
+            freqs[i],
+            eq2tops,
+            crd_eq,
+            fluxes[:, i],
+            beam_list=beams,
+            precision=precision,
+            polarized=polarized,
+        )
+        if polarized:
+            vis[:, :, i] = v  # v.shape: (nax, nfeed, ntimes, nant, nant, nsrcs)
+        else:
+            vis[i] = v  # v.shape: (ntimes, nant, nant, nsrcs)
+
+    return vis
