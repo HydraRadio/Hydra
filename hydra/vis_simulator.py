@@ -1,5 +1,5 @@
 """
-Trimmed-down version of vis_cpu that can be modified to return fragments of the 
+Trimmed-down version of vis_cpu that can be modified to return fragments of the
 visibilities.
 """
 
@@ -106,8 +106,8 @@ def vis_sim_per_source(
     beam_idx: Optional[np.ndarray] = None,
 ):
     """
-    Calculate visibility from an input intensity map and beam model. This is 
-    a trimmed-down version of vis_cpu that only uses UVBeam beams (not gridded 
+    Calculate visibility from an input intensity map and beam model. This is
+    a trimmed-down version of vis_cpu that only uses UVBeam beams (not gridded
     beams).
 
     Parameters:
@@ -129,14 +129,14 @@ def vis_sim_per_source(
             (cos(RA) cos(Dec), sin(RA) cos(Dec), sin(Dec)).
             Shape=(3, NSRCS).
         I_sky (array_like):
-            Intensity distribution of sources/pixels on the sky, assuming 
-            intensity (Stokes I) only. The Stokes I intensity will be split 
-            equally between the two linear polarization channels, resulting in 
-            a factor of 0.5 from the value inputted here. This is done even if 
+            Intensity distribution of sources/pixels on the sky, assuming
+            intensity (Stokes I) only. The Stokes I intensity will be split
+            equally between the two linear polarization channels, resulting in
+            a factor of 0.5 from the value inputted here. This is done even if
             only one polarization channel is simulated. Shape=(NSRCS,).
         beam_list (list of UVBeam, optional):
             If specified, evaluate primary beam values directly using UVBeam
-            objects. Note that if `polarized` is True, these beams must be 
+            objects. Note that if `polarized` is True, these beams must be
             efield beams, and conversely if `polarized` is False they
             must be power beams with a single polarization (either XX or YY).
         precision (int):
@@ -145,18 +145,18 @@ def vis_sim_per_source(
             - 1: float32, complex64
             - 2: float64, complex128
         polarized (bool):
-            Whether to simulate a full polarized response in terms of nn, ne, 
-            en, ee visibilities. See Eq. 6 of Kohn+ (arXiv:1802.04151) for 
+            Whether to simulate a full polarized response in terms of nn, ne,
+            en, ee visibilities. See Eq. 6 of Kohn+ (arXiv:1802.04151) for
             notation.
         beam_idx (array_like):
             Optional length-NANT array specifying a beam index for each antenna.
-            By default, either a single beam is assumed to apply to all 
+            By default, either a single beam is assumed to apply to all
             antennas or each antenna gets its own beam.
 
     Returns:
         vis (array_like):
             Simulated visibilities. If `polarized = True`, the output will have
-            shape (NAXES, NFEED, NTIMES, NANTS, NANTS, NSRCS), otherwise it 
+            shape (NAXES, NFEED, NTIMES, NANTS, NANTS, NSRCS), otherwise it
             will have shape (NTIMES, NANTS, NANTS, NSRCS).
     """
     if precision == 1:
@@ -288,26 +288,26 @@ def simulate_vis_per_source(
     use_feed="x",
 ):
     """
-    Run a basic simulation, returning the visibility for each source 
+    Run a basic simulation, returning the visibility for each source
     separately. Based on ``vis_cpu``.
-    
+
     This wrapper handles the necessary coordinate conversions etc.
-    
+
     Parameters:
         ants (dict):
             Dictionary of antenna positions. The keys are the antenna names
             (integers) and the values are the Cartesian x,y,z positions of the
             antennas (in meters) relative to the array center.
         fluxes (array_like):
-            2D array with the flux of each source as a function of frequency, 
+            2D array with the flux of each source as a function of frequency,
             of shape (NSRCS, NFREQS).
         ra, dec (array_like):
-            Arrays of source RA and Dec positions in radians. RA goes from 
+            Arrays of source RA and Dec positions in radians. RA goes from
             [0, 2 pi] and Dec from [-pi, +pi].
         freqs (array_like):
             Frequency channels for the simulation, in Hz.
         lsts (array_like):
-            Local sidereal times for the simulation, in radians. Range is 
+            Local sidereal times for the simulation, in radians. Range is
             [0, 2 pi].
         beams (list of ``UVBeam`` objects):
             Beam objects to use for each antenna.
@@ -316,17 +316,17 @@ def simulate_vis_per_source(
             polarized visibilities, e.g. V_nn, V_ne, V_en, V_ee.
             Default: False (only uses the 'ee' polarization).
         precision (int):
-            Which precision setting to use for :func:`~vis_cpu`. If set to 
-            ``1``, uses the (``np.float32``, ``np.complex64``) dtypes. If set 
+            Which precision setting to use for :func:`~vis_cpu`. If set to
+            ``1``, uses the (``np.float32``, ``np.complex64``) dtypes. If set
             to ``2``, uses the (``np.float64``, ``np.complex128``) dtypes.
         latitude (float):
-            The latitude of the center of the array, in radians. The default is 
+            The latitude of the center of the array, in radians. The default is
             the HERA latitude = -30.7215 * pi / 180.
-    
+
     Returns:
         vis (array_like):
             Complex, shape (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS, NSRCS)
-            if ``polarized == True``, or (NFREQS, NTIMES, NANTS, NANTS, NSRCS) 
+            if ``polarized == True``, or (NFREQS, NTIMES, NANTS, NANTS, NSRCS)
             otherwise.
     """
     nsrcs = ra.size
@@ -400,3 +400,54 @@ def simulate_vis_per_source(
             vis[i] = v  # v.shape: (ntimes, nant, nant, nsrcs)
 
     return vis
+
+
+def simulate_vis(
+    *args, **kwargs
+):
+    """
+    Run a basic simulation, based on ``vis_cpu``.
+
+    This wrapper handles the necessary coordinate conversions etc.
+
+    Parameters:
+        ants (dict):
+            Dictionary of antenna positions. The keys are the antenna names
+            (integers) and the values are the Cartesian x,y,z positions of the
+            antennas (in meters) relative to the array center.
+        fluxes (array_like):
+            2D array with the flux of each source as a function of frequency,
+            of shape (NSRCS, NFREQS).
+        ra, dec (array_like):
+            Arrays of source RA and Dec positions in radians. RA goes from
+            [0, 2 pi] and Dec from [-pi, +pi].
+        freqs (array_like):
+            Frequency channels for the simulation, in Hz.
+        lsts (array_like):
+            Local sidereal times for the simulation, in radians. Range is
+            [0, 2 pi].
+        beams (list of ``UVBeam`` objects):
+            Beam objects to use for each antenna.
+        polarized (bool):
+            If True, use polarized beams and calculate all available linearly-
+            polarized visibilities, e.g. V_nn, V_ne, V_en, V_ee.
+            Default: False (only uses the 'ee' polarization).
+        precision (int):
+            Which precision setting to use for :func:`~vis_cpu`. If set to
+            ``1``, uses the (``np.float32``, ``np.complex64``) dtypes. If set
+            to ``2``, uses the (``np.float64``, ``np.complex128``) dtypes.
+        latitude (float):
+            The latitude of the center of the array, in radians. The default is
+            the HERA latitude = -30.7215 * pi / 180.
+
+    Returns:
+        vis (array_like):
+            Complex, shape (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS)
+            if ``polarized == True``, or (NFREQS, NTIMES, NANTS, NANTS)
+            otherwise.
+    """
+    # Run simulation using the per-source simulation function
+    vis = simulate_vis_per_source(*args, **kwargs)
+
+    # Sum over sources and return
+    return np.sum(vis, axis=-1)
