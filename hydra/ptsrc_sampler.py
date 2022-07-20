@@ -11,19 +11,19 @@ from scipy.sparse.linalg import cg, LinearOperator
 
 def precompute_op(vis_proj_operator, noise_var):
     """
-    Precompute the matrix operator (v^\dagger N^-1 v), which is the most 
+    Precompute the matrix operator (v^\dagger N^-1 v), which is the most
     expensive component of the LHS operator of the linear system.
-    
+
     Parameters:
         vis_proj_operator (array_like):
-            The projection operator from source amplitudes to visibilities, 
+            The projection operator from source amplitudes to visibilities,
             from `calc_proj_operator`.
         noise_var (array_like):
             Noise variance array, with the same shape as the visibility data.
-    
+
     Returns:
         vsquared (array_like):
-            The matrix operator (v^\dagger N^-1 v), which has shape 
+            The matrix operator (v^\dagger N^-1 v), which has shape
             (Nsrcs, Nsrcs).
     """
     nsrcs = vis_proj_operator.shape[-1]
@@ -35,21 +35,21 @@ def precompute_op(vis_proj_operator, noise_var):
 def apply_operator(x, noise_var, amp_prior_std, vsquared):
     """
     Apply LHS operator to a vector of source amplitudes.
-    
+
     Parameters:
         x (array_like):
             Vector of source amplitudes to apply the operator to.
         noise_var (array_like):
             Noise variance array, with the same shape as the visibility data.
         amp_prior_std (array_like):
-            Vector of standard deviation values to use for independent Gaussian 
+            Vector of standard deviation values to use for independent Gaussian
             priors on the source amplitudes.
         vsquared (array_like):
-            Precomputed matrix (v^\dagger N^-1 v), which is the most expensive 
-            part of the LHS operator. Precomputing this typically leads to a 
-            large speed-up. The `precompute_op` function generates the 
+            Precomputed matrix (v^\dagger N^-1 v), which is the most expensive
+            part of the LHS operator. Precomputing this typically leads to a
+            large speed-up. The `precompute_op` function generates the
             necessary operator.
-    
+
     Returns:
         lhs (array_like):
             Result of applying the LHS operator to the input vector, x.
@@ -62,21 +62,21 @@ def construct_rhs(
 ):
     """
     Construct the RHS vector of the linear system. This will have shape (Nsrcs).
-    
+
     Parameters:
         noise_var (array_like):
             Noise variance array, with the same shape as the visibility data.
         amp_prior_std (array_like):
-            Vector of standard deviation values to use for independent Gaussian 
+            Vector of standard deviation values to use for independent Gaussian
             priors on the source amplitudes.
         vis_proj_operator (array_like):
-            The projection operator from source amplitudes to visibilities, 
+            The projection operator from source amplitudes to visibilities,
             from `calc_proj_operator`.
         realisation (bool):
-            Whether to include the random realisation terms in the RHS 
-            (constrained realisation), or just the deterministic terms (Wiener 
+            Whether to include the random realisation terms in the RHS
+            (constrained realisation), or just the deterministic terms (Wiener
             filter).
-        
+
     Returns:
         rhs (array_like):
             The RHS of the linear system.
@@ -103,21 +103,23 @@ def construct_rhs(
 
 
 def calc_proj_operator(
-    ra, dec, ant_pos, antpairs, freqs, times, beams, latitude=-0.5361913261514378
+    ra, dec, fluxes, ant_pos, antpairs, freqs, times, beams, latitude=-0.5361913261514378
 ):
     """
-    Calculate a visibility vector for each point source, as a function of 
-    frequency, time, and baseline. This is the projection operator from point 
+    Calculate a visibility vector for each point source, as a function of
+    frequency, time, and baseline. This is the projection operator from point
     source amplitude to visibilities.
-    
+
     Parameters:
         ra, dec (array_like):
             RA and Dec of each source, in radians.
+        fluxes (array_like):
+            Flux for each point source as a function of frequency.
         ant_pos (dict):
-            Dictionary of antenna positions, [x, y, z], in m. The keys should 
+            Dictionary of antenna positions, [x, y, z], in m. The keys should
             be the numerical antenna IDs.
         antpairs (list of tuple):
-            List of tuples containing pairs of antenna IDs, one for each 
+            List of tuples containing pairs of antenna IDs, one for each
             baseline.
         freqs (array_like):
             Frequencies, in MHz.
@@ -127,11 +129,11 @@ def calc_proj_operator(
             List of UVBeam objects, one for each antenna.
         latitude (float):
             Latitude of the observing site, in radians.
-    
+
     Returns:
         vis_proj_operator (array_like):
-            The projection operator from source amplitudes to visibilities, 
-            from `calc_proj_operator`. This is an array of the visibility 
+            The projection operator from source amplitudes to visibilities,
+            from `calc_proj_operator`. This is an array of the visibility
             values for each source.
     """
     Nptsrc = ra.size
@@ -158,6 +160,7 @@ def calc_proj_operator(
     )
 
     # Allocate computed visibilities to only available baselines (saves memory)
+    ants = list(ant_pos.keys())
     for i, bl in enumerate(antpairs):
         idx1 = ants.index(bl[0])
         idx2 = ants.index(bl[1])

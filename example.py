@@ -105,7 +105,7 @@ data += np.sqrt(0.5) * (  1.0 * np.random.randn(*data.shape) \
 
 
 #-------------------------------------------------------------------------------
-# (2) Iterate Gibbs sampler
+# (2) Set up Gibbs sampler
 #-------------------------------------------------------------------------------
 
 # Get initial model guesses (use the actual baseline model for now)
@@ -124,10 +124,27 @@ current_ptsrc_a = np.zeros(ra.size)
 
 # Set priors and auxiliary information
 noise_var = np.ones(data.shape)
-pspec_sqrt = 0.2 * np.ones((gains.shape[1], gains.shape[2]))
+gain_pspec_sqrt = 0.2 * np.ones((gains.shape[1], gains.shape[2]))
+amp_prior_std = 0.1*np.ones(Nptsrc)
 A_real, A_imag = hydra.gain_sampler.proj_operator(ants, antpairs)
 gain_shape = gains.shape
 N_gain_params = 2 * gains.shape[0] * gains.shape[1] * gains.shape[2]
+
+# Pre-compute the point source amplitude projection operator
+t0 = time.time()
+vis_proj_operator = hydra.ptsrc_sampler.calc_proj_operator(
+    ra=ra, dec=dec, fluxes=fluxes, ant_pos=ant_pos, antpairs=antpairs, freqs=freqs, times=times, beams=beams, latitude=-0.5361913261514378
+)
+print("Precomp. ptsrc proj. operator took %3.2f sec" % (time.time() - t0))
+
+# Precompute the point source matrix operator
+ptsrc_precomp_mat = hydra.ptsrc_sampler.precompute_op(vis_proj_operator, noise_var)
+print("Precomp. ptsrc matrix operator took %3.2f sec" % (time.time() - t0))
+
+
+#-------------------------------------------------------------------------------
+# (3) Iterate Gibbs sampler
+#-------------------------------------------------------------------------------
 
 # Iterate the Gibbs sampler
 for n in range(Niters):
@@ -140,7 +157,7 @@ for n in range(Niters):
     b = hydra.gain_sampler.flatten_vector(
             hydra.gain_sampler.construct_rhs(resid,
                                              noise_var,
-                                             pspec_sqrt,
+                                             gain_pspec_sqrt,
                                              A_real,
                                              A_imag,
                                              current_model,
@@ -152,7 +169,7 @@ for n in range(Niters):
                     hydra.gain_sampler.apply_operator(
                         hydra.gain_sampler.reconstruct_vector(x, gain_shape),
                                          noise_var,
-                                         pspec_sqrt,
+                                         gain_pspec_sqrt,
                                          A_real,
                                          A_imag,
                                          current_model)
@@ -160,7 +177,8 @@ for n in range(Niters):
 
     # Build linear operator object
     gain_lhs_shape = (N_gain_params, N_gain_params)
-    gain_linear_op = LinearOperator(matvec=gain_lhs_operator, shape=gain_lhs_shape)
+    gain_linear_op = LinearOperator(matvec=gain_lhs_operator,
+                                    shape=gain_lhs_shape)
     print("Gain precomp. took %3.2f sec" % (time.time() - t0))
 
     # Solve using Conjugate Gradients
@@ -173,24 +191,27 @@ for n in range(Niters):
     #---------------------------------------------------------------------------
     # (B) Point source amplitude sampler
     #---------------------------------------------------------------------------
-    """
-    # Prior on amplitudes
-    amp_prior_std = 0.1*np.ones(Nptsrc)
 
     # Construct RHS of linear system
-    b = construct_rhs(resid.flatten(), noise_var.flatten(), amp_prior_std, vis_proj_operator, realisation=False)
+    bsrc = hydra.ptsrc_sampler.construct_rhs(resid.flatten(),
+                                             noise_var.flatten(),
+                                             amp_prior_std,
+                                             vis_proj_operator,
+                                             realisation=True)
 
-    lhs_shape = (Nptsrc, Nptsrc)
-    def lhs_operator(x):
-        return apply_operator2(x, noise_var.flatten(), amp_prior_std, vis_proj_operator, precomp_mat)
+    ptsrc_lhs_shape = (Nptsrc, Nptsrc)
+    def ptsrc_lhs_operator(x):
+        return hydra.ptsrc_sampler.apply_operator(x,
+                                                  noise_var.flatten(),
+                                                  amp_prior_std,
+                                                  ptsrc_precomp_mat)
 
     # Build linear operator object
-    linear_op = LinearOperator(matvec=lhs_operator, shape=lhs_shape)
+    ptsrc_linear_op = LinearOperator(matvec=ptsrc_lhs_operator,
+                                     shape=ptsrc_lhs_shape)
 
     # Solve using Conjugate Gradients
     t0 = time.time()
-    x_soln, convergence_info = cg(linear_op, b)
-    print("Run took %3.2f sec" % (time.time() - t0))
-    x_soln, convergence_info
-    """
-    
+    x_soln, convergence_info = cg(ptsrc_linear_op, bsrc)
+    print("Point source sampler took %3.2f sec" % (time.time() - t0))
+    print(x_soln[0], x_soln.shape)
