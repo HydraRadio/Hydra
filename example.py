@@ -14,8 +14,52 @@ np.random.seed(10)
 Nptsrc = 40
 Ntimes = 30
 Nfreqs = 20
-Nants = 10
+Nants = 35
 Niters = 10
+
+hera_latitude = -30.7215 * np.pi / 180.0
+
+
+def apply_gains(v, gains, ants, antpairs, inline=False):
+    """
+    Apply gain factors to an input array of complex visibility values.
+
+    Parameters:
+        v (array_like):
+            Input visibility array to which gains will be applied. This must
+            have shape (Nbaselines, Nfreqs, Ntimes). The ordering of the 0th
+            (baseline) dimension is assumed to be the same ordering as
+            `antpairs`.
+        gain (array_like):
+            Complex gains, with the same ordering as `ants`. Expected shape is
+            (Nants, Nfreqs, Ntimes).
+        ants (array_like):
+            Array of antenna IDs.
+        antpairs (list of tuples):
+            List of antenna pair tuples.
+        inline (bool):
+            If True, apply the gains to the input array directly. If False,
+            return a copy of the input array with the gains applied.
+
+    Returns:
+        ggv (array_like):
+            A copy of the input `v` array with gains applied.
+    """
+    if inline:
+        ggv = v
+    else:
+        ggv = v.copy()
+    assert v.shape[0] == len(antpairs), \
+        "Input array `v` has shape that is incompatible with `antpairs`"
+
+    # Apply gains
+    for k, bl in enumerate(antpairs):
+        ant1, ant2 = bl
+        i1 = np.where(ants == ant1)[0][0]
+        i2 = np.where(ants == ant2)[0][0]
+        ggv[k,:,:] *= gains[i1] * gains[i2].conj()
+    return ggv
+
 
 #-------------------------------------------------------------------------------
 # (1) Simulate some data
@@ -63,7 +107,7 @@ _model0 = hydra.vis_simulator.simulate_vis(
         beams=beams,
         polarized=False,
         precision=2,
-        latitude=-30.7215 * np.pi / 180.0,
+        latitude=hera_latitude,
         use_feed="x",
     )
 print("Simulation took %3.2f sec" % (time.time() - t0))
@@ -90,14 +134,7 @@ delta_g = np.array([0.05j*np.sin(ant * times[np.newaxis,:] \
                                  * freqs[:,np.newaxis]/100.)
                     for ant in ants])
 data = model0.copy()
-
-# Apply gains
-for k, bl in enumerate(antpairs):
-    ant1, ant2 = bl
-    i1 = np.where(ants == ant1)[0][0]
-    i2 = np.where(ants == ant2)[0][0]
-    data[k,:,:] *= (gains[i1] + delta_g[i1]) \
-                 * (gains[i2] + delta_g[i2]).conj()
+apply_gains(data, gains + delta_g, ants, antpairs, inline=True)
 
 # Add noise
 data += np.sqrt(0.5) * (  1.0 * np.random.randn(*data.shape) \
@@ -109,12 +146,8 @@ data += np.sqrt(0.5) * (  1.0 * np.random.randn(*data.shape) \
 #-------------------------------------------------------------------------------
 
 # Get initial model guesses (use the actual baseline model for now)
-current_model = model0.copy()
-for k, bl in enumerate(antpairs):
-    ant1, ant2 = bl
-    i1 = np.where(ants == ant1)[0][0]
-    i2 = np.where(ants == ant2)[0][0]
-    current_model[k,:,:] *= (gains[i1]) * (gains[i2]).conj()
+current_data_model = model0.copy()
+apply_gains(current_data_model, gains, ants, antpairs, inline=True)
 
 # Initial gain perturbation guesses
 current_delta_gain = np.zeros(gains.shape, dtype=model0.dtype)
@@ -130,37 +163,32 @@ A_real, A_imag = hydra.gain_sampler.proj_operator(ants, antpairs)
 gain_shape = gains.shape
 N_gain_params = 2 * gains.shape[0] * gains.shape[1] * gains.shape[2]
 
-# Pre-compute the point source amplitude projection operator
-t0 = time.time()
-vis_proj_operator = hydra.ptsrc_sampler.calc_proj_operator(
-    ra=ra, dec=dec, fluxes=fluxes, ant_pos=ant_pos, antpairs=antpairs, freqs=freqs, times=times, beams=beams, latitude=-0.5361913261514378
-)
-print("Precomp. ptsrc proj. operator took %3.2f sec" % (time.time() - t0))
-
-# Precompute the point source matrix operator
-ptsrc_precomp_mat = hydra.ptsrc_sampler.precompute_op(vis_proj_operator, noise_var)
-print("Precomp. ptsrc matrix operator took %3.2f sec" % (time.time() - t0))
-
 
 #-------------------------------------------------------------------------------
 # (3) Iterate Gibbs sampler
 #-------------------------------------------------------------------------------
 
 # Iterate the Gibbs sampler
+print("="*60)
+print("Starting Gibbs sampler (%d iterations)" % Niters)
+print("="*60)
 for n in range(Niters):
+    print("-"*60)
+    print(">>> Iteration %4d / %4d" % (n+1, Niters))
+    print("-"*60)
 
     #---------------------------------------------------------------------------
     # (A) Gain sampler
     #---------------------------------------------------------------------------
     t0 = time.time()
-    resid = data - current_model
+    resid = data - current_data_model
     b = hydra.gain_sampler.flatten_vector(
             hydra.gain_sampler.construct_rhs(resid,
                                              noise_var,
                                              gain_pspec_sqrt,
                                              A_real,
                                              A_imag,
-                                             current_model,
+                                             current_data_model,
                                              realisation=True)
         )
 
@@ -172,25 +200,55 @@ for n in range(Niters):
                                          gain_pspec_sqrt,
                                          A_real,
                                          A_imag,
-                                         current_model)
+                                         current_data_model)
                              )
 
     # Build linear operator object
     gain_lhs_shape = (N_gain_params, N_gain_params)
     gain_linear_op = LinearOperator(matvec=gain_lhs_operator,
                                     shape=gain_lhs_shape)
-    print("Gain precomp. took %3.2f sec" % (time.time() - t0))
+    print("(A) Gain precomp. took %3.2f sec" % (time.time() - t0))
 
     # Solve using Conjugate Gradients
     t0 = time.time()
     x_soln, convergence_info = cg(gain_linear_op, b)
     #x_soln, convergence_info
-    print("Gain sampler took %3.2f sec" % (time.time() - t0))
+    print("(A) Gain sampler took %3.2f sec" % (time.time() - t0))
     print(x_soln[0], x_soln.shape)
+
+    # Update gain model with latest solution
+    current_delta_gain = hydra.gain_sampler.reconstruct_vector(x_soln, gain_shape)
 
     #---------------------------------------------------------------------------
     # (B) Point source amplitude sampler
     #---------------------------------------------------------------------------
+
+    # Pre-compute the point source amplitude projection operator
+    t0 = time.time()
+    vis_proj_operator = hydra.ptsrc_sampler.calc_proj_operator(
+                                    ra=ra,
+                                    dec=dec,
+                                    fluxes=fluxes,
+                                    ant_pos=ant_pos,
+                                    antpairs=antpairs,
+                                    freqs=freqs,
+                                    times=times,
+                                    beams=beams,
+                                    gains=gains + current_delta_gain,
+                                    latitude=hera_latitude
+    )
+    print("(B) Precomp. ptsrc proj. operator took %3.2f sec" % (time.time() - t0))
+
+    # Precompute the point source matrix operator
+    ptsrc_precomp_mat = hydra.ptsrc_sampler.precompute_op(vis_proj_operator, noise_var)
+    print("(B) Precomp. ptsrc matrix operator took %3.2f sec" % (time.time() - t0))
+
+    # Construct current state of model and subtract from data
+    resid = data - apply_gains(current_data_model,
+                               gains + current_delta_gain,
+                               ants,
+                               antpairs,
+                               inline=False)
 
     # Construct RHS of linear system
     bsrc = hydra.ptsrc_sampler.construct_rhs(resid.flatten(),
@@ -215,3 +273,5 @@ for n in range(Niters):
     x_soln, convergence_info = cg(ptsrc_linear_op, bsrc)
     print("Point source sampler took %3.2f sec" % (time.time() - t0))
     print(x_soln[0], x_soln.shape)
+
+    # Update visibility model with latest solution

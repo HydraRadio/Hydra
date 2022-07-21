@@ -103,7 +103,8 @@ def construct_rhs(
 
 
 def calc_proj_operator(
-    ra, dec, fluxes, ant_pos, antpairs, freqs, times, beams, latitude=-0.5361913261514378
+    ra, dec, fluxes, ant_pos, antpairs, freqs, times, beams, gains,
+    latitude=-0.5361913261514378
 ):
     """
     Calculate a visibility vector for each point source, as a function of
@@ -127,6 +128,8 @@ def calc_proj_operator(
             LSTs, in radians.
         beams (list of UVBeam):
             List of UVBeam objects, one for each antenna.
+        gains (array_like):
+            Array of complex gain values, of shape (Nants, Nfreqs, Ntimes).
         latitude (float):
             Latitude of the observing site, in radians.
 
@@ -164,6 +167,8 @@ def calc_proj_operator(
     for i, bl in enumerate(antpairs):
         idx1 = ants.index(bl[0])
         idx2 = ants.index(bl[1])
-        vis_ptsrc[i, :, :, :] = vis[:, :, idx1, idx2, :]
+        vis_ptsrc[i, :, :, :] = gains[idx1,:,:,np.newaxis] \
+                              * gains[idx2,:,:,np.newaxis].conj() \
+                              * vis[:, :, idx1, idx2, :]
 
     return vis_ptsrc
