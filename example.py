@@ -14,52 +14,10 @@ np.random.seed(10)
 Nptsrc = 40
 Ntimes = 30
 Nfreqs = 20
-Nants = 35
+Nants = 15
 Niters = 10
 
 hera_latitude = -30.7215 * np.pi / 180.0
-
-
-def apply_gains(v, gains, ants, antpairs, inline=False):
-    """
-    Apply gain factors to an input array of complex visibility values.
-
-    Parameters:
-        v (array_like):
-            Input visibility array to which gains will be applied. This must
-            have shape (Nbaselines, Nfreqs, Ntimes). The ordering of the 0th
-            (baseline) dimension is assumed to be the same ordering as
-            `antpairs`.
-        gain (array_like):
-            Complex gains, with the same ordering as `ants`. Expected shape is
-            (Nants, Nfreqs, Ntimes).
-        ants (array_like):
-            Array of antenna IDs.
-        antpairs (list of tuples):
-            List of antenna pair tuples.
-        inline (bool):
-            If True, apply the gains to the input array directly. If False,
-            return a copy of the input array with the gains applied.
-
-    Returns:
-        ggv (array_like):
-            A copy of the input `v` array with gains applied.
-    """
-    if inline:
-        ggv = v
-    else:
-        ggv = v.copy()
-    assert v.shape[0] == len(antpairs), \
-        "Input array `v` has shape that is incompatible with `antpairs`"
-
-    # Apply gains
-    for k, bl in enumerate(antpairs):
-        ant1, ant2 = bl
-        i1 = np.where(ants == ant1)[0][0]
-        i2 = np.where(ants == ant2)[0][0]
-        ggv[k,:,:] *= gains[i1] * gains[i2].conj()
-    return ggv
-
 
 #-------------------------------------------------------------------------------
 # (1) Simulate some data
@@ -97,7 +55,7 @@ beams = [pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14.)
 
 # Run a simulation
 t0 = time.time()
-_model0 = hydra.vis_simulator.simulate_vis(
+_sim_vis = hydra.vis_simulator.simulate_vis(
         ants=ant_pos,
         fluxes=fluxes,
         ra=ra,
@@ -113,12 +71,8 @@ _model0 = hydra.vis_simulator.simulate_vis(
 print("Simulation took %3.2f sec" % (time.time() - t0))
 
 # Allocate computed visibilities to only the requested baselines (saves memory)
-model0 = np.zeros((len(antpairs), Nfreqs, Ntimes), dtype=_model0.dtype)
-for i, bl in enumerate(antpairs):
-    idx1 = np.where(ants == bl[0])[0][0]
-    idx2 = np.where(ants == bl[1])[0][0]
-    model0[i,:,:] = _model0[:,:,idx1,idx2]
-print(model0.shape)
+model0 = hydra.extract_vis_from_sim(ants, antpairs, _sim_vis)
+del _sim_vis # save some memory
 
 # Plot antenna positions
 # xyz = np.array(list(ant_pos.values()))
@@ -134,7 +88,7 @@ delta_g = np.array([0.05j*np.sin(ant * times[np.newaxis,:] \
                                  * freqs[:,np.newaxis]/100.)
                     for ant in ants])
 data = model0.copy()
-apply_gains(data, gains + delta_g, ants, antpairs, inline=True)
+hydra.apply_gains(data, gains + delta_g, ants, antpairs, inline=True)
 
 # Add noise
 data += np.sqrt(0.5) * (  1.0 * np.random.randn(*data.shape) \
@@ -147,7 +101,7 @@ data += np.sqrt(0.5) * (  1.0 * np.random.randn(*data.shape) \
 
 # Get initial model guesses (use the actual baseline model for now)
 current_data_model = model0.copy()
-apply_gains(current_data_model, gains, ants, antpairs, inline=True)
+hydra.apply_gains(current_data_model, gains, ants, antpairs, inline=True)
 
 # Initial gain perturbation guesses
 current_delta_gain = np.zeros(gains.shape, dtype=model0.dtype)
@@ -244,11 +198,11 @@ for n in range(Niters):
     print("(B) Precomp. ptsrc matrix operator took %3.2f sec" % (time.time() - t0))
 
     # Construct current state of model and subtract from data
-    resid = data - apply_gains(current_data_model,
-                               gains + current_delta_gain,
-                               ants,
-                               antpairs,
-                               inline=False)
+    resid = data - hydra.apply_gains(current_data_model,
+                                     gains + current_delta_gain,
+                                     ants,
+                                     antpairs,
+                                     inline=False)
 
     # Construct RHS of linear system
     bsrc = hydra.ptsrc_sampler.construct_rhs(resid.flatten(),
