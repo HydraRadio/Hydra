@@ -11,8 +11,9 @@ from scipy.sparse.linalg import cg, LinearOperator
 
 def precompute_op(vis_proj_operator, noise_var):
     """
-    Precompute the matrix operator (v^\dagger N^-1 v), which is the most
-    expensive component of the LHS operator of the linear system.
+    Precompute the real and imaginary blocks of the matrix operator
+    (v^T N^-1 v), which is the most expensive component of the LHS operator of
+    the linear system.
 
     Parameters:
         vis_proj_operator (array_like):
@@ -23,13 +24,14 @@ def precompute_op(vis_proj_operator, noise_var):
 
     Returns:
         vsquared (array_like):
-            The matrix operator (v^\dagger N^-1 v), which has shape
+            The sum of the real and imaginary blocks of the matrix operator
+            (v^T_re N^-1 v_re + v^T_im N^-1 v_im), which has shape
             (Nsrcs, Nsrcs).
     """
     nsrcs = vis_proj_operator.shape[-1]
-    v = vis_proj_operator * np.sqrt(noise_var)[:, :, :, np.newaxis]
+    v = vis_proj_operator / np.sqrt(noise_var)[:, :, :, np.newaxis]
     v = v.reshape((-1, nsrcs))
-    return v.conj().T @ v
+    return v.T.real @ v.real + v.T.imag @ v.imag
 
 
 def apply_operator(x, noise_var, amp_prior_std, vsquared):
@@ -45,10 +47,10 @@ def apply_operator(x, noise_var, amp_prior_std, vsquared):
             Vector of standard deviation values to use for independent Gaussian
             priors on the source amplitudes.
         vsquared (array_like):
-            Precomputed matrix (v^\dagger N^-1 v), which is the most expensive
-            part of the LHS operator. Precomputing this typically leads to a
-            large speed-up. The `precompute_op` function generates the
-            necessary operator.
+            Sum of the real and imaginary blocks of the precomputed matrix
+            (v^T N^-1 v), which is the most expensive part of the LHS operator.
+            Precomputing this typically leads to a large speed-up. The
+            `precompute_op` function generates the necessary operator.
 
     Returns:
         lhs (array_like):
@@ -61,7 +63,8 @@ def construct_rhs(
     resid, noise_var, amp_prior_std, vis_proj_operator, realisation=False
 ):
     """
-    Construct the RHS vector of the linear system. This will have shape (Nsrcs).
+    Construct the RHS vector of the linear system. This will have shape
+    (2*Nsrcs), as the real and imaginary parts are separated.
 
     Parameters:
         noise_var (array_like):
@@ -88,7 +91,7 @@ def construct_rhs(
     realisation_switch = 1.0 if realisation else 0.0
 
     # (Term 2): \omega_a
-    b = realisation_switch * np.random.randn(Nptsrc) + 0.0j  # complex vector
+    b = realisation_switch * np.random.randn(Nptsrc) # real vector
 
     # (Terms 1+3): S^1/2 A^\dagger [ N^{-1} r + N^{-1/2} \omega_r ]
     omega_n = (
@@ -97,19 +100,22 @@ def construct_rhs(
         / np.sqrt(2.0)
     )
 
+    # Separate complex part of RHS into real and imaginary parts, and apply
+    # the real and imaginary parts of the projection operator separately.
+    # This is necessary to get a real RHS vector
     y = ((resid / noise_var) + (omega_n / np.sqrt(noise_var))).flatten()
-    b += amp_prior_std * (proj.T.conj() @ y)
+    b += amp_prior_std * (proj.T.real @ y.real + proj.T.imag @ y.imag)
     return b
 
 
 def calc_proj_operator(
-    ra, dec, fluxes, ant_pos, antpairs, freqs, times, beams, gains,
+    ra, dec, fluxes, ant_pos, antpairs, freqs, times, beams,
     latitude=-0.5361913261514378
 ):
     """
     Calculate a visibility vector for each point source, as a function of
     frequency, time, and baseline. This is the projection operator from point
-    source amplitude to visibilities.
+    source amplitude to visibilities. Gains are not included.
 
     Parameters:
         ra, dec (array_like):
@@ -128,8 +134,6 @@ def calc_proj_operator(
             LSTs, in radians.
         beams (list of UVBeam):
             List of UVBeam objects, one for each antenna.
-        gains (array_like):
-            Array of complex gain values, of shape (Nants, Nfreqs, Ntimes).
         latitude (float):
             Latitude of the observing site, in radians.
 
@@ -167,8 +171,6 @@ def calc_proj_operator(
     for i, bl in enumerate(antpairs):
         idx1 = ants.index(bl[0])
         idx2 = ants.index(bl[1])
-        vis_ptsrc[i, :, :, :] = gains[idx1,:,:,np.newaxis] \
-                              * gains[idx2,:,:,np.newaxis].conj() \
-                              * vis[:, :, idx1, idx2, :]
+        vis_ptsrc[i, :, :, :] = vis[:, :, idx1, idx2, :]
 
     return vis_ptsrc
