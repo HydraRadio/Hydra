@@ -7,7 +7,7 @@ import hydra
 import numpy.fft as fft
 from scipy.sparse.linalg import cg, LinearOperator
 import pyuvsim
-import time
+import time, os
 
 np.random.seed(11)
 
@@ -21,6 +21,10 @@ Niters = 10
 sigma_noise = 0.5
 
 hera_latitude = -30.7215 * np.pi / 180.0
+
+# Check that output directory exists
+if not os.path.exists("./output"):
+    os.makedirs("./output")
 
 #-------------------------------------------------------------------------------
 # (1) Simulate some data
@@ -295,3 +299,6 @@ for n in range(Niters):
     plt.matshow(current_data_model[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
     plt.colorbar()
     plt.savefig("output/data_model_000_%05d.png" % n)
+
+    # Close all figures made in this iteration
+    plt.close('all')
