@@ -9,14 +9,14 @@ from scipy.sparse.linalg import cg, LinearOperator
 import pyuvsim
 import time
 
-np.random.seed(101)
+np.random.seed(11)
 
 # Simulation settings
-Nptsrc = 140
+Nptsrc = 70
 Ntimes = 30
 Nfreqs = 20
 Nants = 15
-Niters = 3
+Niters = 10
 
 sigma_noise = 0.5
 
@@ -78,14 +78,6 @@ print("Simulation took %3.2f sec" % (time.time() - t0))
 model0 = hydra.extract_vis_from_sim(ants, antpairs, _sim_vis)
 del _sim_vis # save some memory
 
-# Plot antenna positions
-# xyz = np.array(list(ant_pos.values()))
-#
-# plt.plot(xyz[:,0], xyz[:,1], 'r.')
-# plt.xlim((-10., 100.))
-# plt.ylim((-10., 100.))
-# plt.show()
-
 # Define gains and gain perturbations
 gains = (1. + 0.j) * np.ones((Nants, Nfreqs, Ntimes), dtype=model0.dtype)
 #delta_g = np.array([0.5*np.sin(times[np.newaxis,:] \
@@ -103,14 +95,18 @@ delta_g = np.array([_delta_g for ant in ants])
 # Apply gains to model
 data = model0.copy()
 hydra.apply_gains(data, gains * (1. + delta_g), ants, antpairs, inline=True)
-# FIXME: ^^^^^^ Sets gain perturbation to zero
 
-
-plt.matshow(delta_g[0].real) #, vmin=-4., vmax=4.)
+# Plot input (simulated) gain perturbation for ant 0
+vminmax = np.max(delta_g[0].real)
+plt.matshow(delta_g[0].real, vmin=-vminmax, vmax=vminmax)
 plt.colorbar()
 plt.savefig("output/gain_000_xxxxx.png")
-#plt.show()
-#sys.exit(1)
+
+# Plot input (simulated) visibility model
+vminmax_vis = np.max(model0[0,:,:].real)
+plt.matshow(model0[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
+plt.colorbar()
+plt.savefig("output/data_model_000_xxxxx.png")
 
 # Add noise
 data += sigma_noise * np.sqrt(0.5) \
@@ -232,18 +228,17 @@ for n in range(Niters):
 
     print("    Gain sample:", xgain[0,0,0], xgain.shape)
     np.save("output/delta_gain_%05d" % n, x_soln)
-    plt.matshow(xgain[0].real) #, vmin=-4., vmax=4.)
+    plt.matshow(xgain[0].real, vmin=-vminmax, vmax=vminmax)
     plt.colorbar()
     plt.savefig("output/gain_000_%05d.png" % n)
 
-    # Update gain model with latest solution
+    # Update gain model with latest solution (in real space)
     current_delta_gain = xgain
 
 
     #---------------------------------------------------------------------------
     # (B) Point source amplitude sampler
     #---------------------------------------------------------------------------
-    """
     # Get the projection operator with most recent gains applied
     t0 = time.time()
     proj = vis_proj_operator0.copy()
@@ -295,4 +290,8 @@ for n in range(Niters):
     # Update visibility model with latest solution (does not include any gains)
     # Applies projection operator to ptsrc amplitude vector
     current_data_model = ( vis_proj_operator0.reshape((-1, Nptsrc)) @ (1. + x_soln) ).reshape(current_data_model.shape)
-    """
+
+    # Plot visibility waterfalls for current model
+    plt.matshow(current_data_model[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
+    plt.colorbar()
+    plt.savefig("output/data_model_000_%05d.png" % n)
