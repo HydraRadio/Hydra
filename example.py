@@ -12,11 +12,13 @@ import time
 np.random.seed(101)
 
 # Simulation settings
-Nptsrc = 40
+Nptsrc = 140
 Ntimes = 30
 Nfreqs = 20
 Nants = 15
-Niters = 10
+Niters = 3
+
+sigma_noise = 0.5
 
 hera_latitude = -30.7215 * np.pi / 180.0
 
@@ -25,7 +27,7 @@ hera_latitude = -30.7215 * np.pi / 180.0
 #-------------------------------------------------------------------------------
 
 # Simulate some data
-times = np.linspace(0.2, 1.8, Ntimes)
+times = np.linspace(0.2, 0.5, Ntimes)
 freqs = np.linspace(100., 120., Nfreqs)
 
 ants = np.arange(Nants)
@@ -85,17 +87,35 @@ del _sim_vis # save some memory
 # plt.show()
 
 # Define gains and gain perturbations
-gains = (1.1 + 0.1j) * np.ones((Nants, Nfreqs, Ntimes), dtype=model0.dtype)
-delta_g = np.array([0.05j*np.sin(ant * times[np.newaxis,:] \
-                                 * freqs[:,np.newaxis]/100.)
-                    for ant in ants])
+gains = (1. + 0.j) * np.ones((Nants, Nfreqs, Ntimes), dtype=model0.dtype)
+#delta_g = np.array([0.5*np.sin(times[np.newaxis,:] \
+#                                 * freqs[:,np.newaxis]/100.)
+#                    for ant in ants])
+
+# Generate gain fluctuations from FFT basis
+frate = np.fft.fftfreq(times.size, d=times[1] - times[0])
+tau = np.fft.fftfreq(freqs.size, d=freqs[1] - freqs[0])
+_delta_g = 100. \
+         * np.fft.ifft2(np.exp(-0.5 * (((frate[np.newaxis,:]-9.)/2.)**2.
+                                     + ((tau[:,np.newaxis] - 0.05)/0.03)**2.)))
+delta_g = np.array([_delta_g for ant in ants])
+
+# Apply gains to model
 data = model0.copy()
-hydra.apply_gains(data, gains + 0.*delta_g, ants, antpairs, inline=True)
+hydra.apply_gains(data, gains * (1. + delta_g), ants, antpairs, inline=True)
 # FIXME: ^^^^^^ Sets gain perturbation to zero
 
+
+plt.matshow(delta_g[0].real) #, vmin=-4., vmax=4.)
+plt.colorbar()
+plt.savefig("output/gain_000_xxxxx.png")
+#plt.show()
+#sys.exit(1)
+
 # Add noise
-data += np.sqrt(0.5) * (  1.0 * np.random.randn(*data.shape) \
-                        + 1.j * np.random.randn(*data.shape))
+data += sigma_noise * np.sqrt(0.5) \
+      * (  1.0 * np.random.randn(*data.shape) \
+         + 1.j * np.random.randn(*data.shape))
 
 
 #-------------------------------------------------------------------------------
@@ -131,7 +151,8 @@ print("Precomp. ptsrc proj. operator took %3.2f sec" % (time.time() - t0))
 
 # Set priors and auxiliary information
 # FIXME: amp_prior_std is a prior around amp=0 I think, so can skew things low!
-noise_var = 1.0 * np.ones(data.shape)
+noise_var = (sigma_noise)**2. * np.ones(data.shape)
+inv_noise_var = 1. / noise_var
 gain_pspec_sqrt = 0.1 * np.ones((gains.shape[1], gains.shape[2]))
 amp_prior_std = 0.1 * np.ones(Nptsrc)
 A_real, A_imag = hydra.gain_sampler.proj_operator(ants, antpairs)
@@ -140,7 +161,6 @@ N_gain_params = 2 * gains.shape[0] * gains.shape[1] * gains.shape[2]
 
 
 # FIXME: Check that model0 == vis_proj_operator0 @ ones
-
 
 #-------------------------------------------------------------------------------
 # (3) Iterate Gibbs sampler
@@ -158,7 +178,7 @@ for n in range(Niters):
     #---------------------------------------------------------------------------
     # (A) Gain sampler
     #---------------------------------------------------------------------------
-    """
+
     # current_data_model DOES NOT include gbar_i gbar_j^* factor, so we need
     # to apply it here to calculate the residual
     ggv = hydra.apply_gains(current_data_model,
@@ -170,7 +190,7 @@ for n in range(Niters):
 
     b = hydra.gain_sampler.flatten_vector(
             hydra.gain_sampler.construct_rhs(resid,
-                                             noise_var,
+                                             inv_noise_var,
                                              gain_pspec_sqrt,
                                              A_real,
                                              A_imag,
@@ -182,7 +202,7 @@ for n in range(Niters):
         return hydra.gain_sampler.flatten_vector(
                     hydra.gain_sampler.apply_operator(
                         hydra.gain_sampler.reconstruct_vector(x, gain_shape),
-                                         noise_var,
+                                         inv_noise_var,
                                          gain_pspec_sqrt,
                                          A_real,
                                          A_imag,
@@ -205,22 +225,25 @@ for n in range(Niters):
     x_soln = hydra.gain_sampler.apply_sqrt_pspec(gain_pspec_sqrt, x_soln)
 
     # x_soln is a set of Fourier coefficients, so transform to real space
-    # (fft gives Fourier -> data space)
+    # (ifft gives Fourier -> data space)
     xgain = np.zeros_like(x_soln)
     for k in range(xgain.shape[0]):
-        xgain[k, :, :] = fft.fft2(x_soln[k, :, :])
+        xgain[k, :, :] = fft.ifft2(x_soln[k, :, :])
 
     print("    Gain sample:", xgain[0,0,0], xgain.shape)
     np.save("output/delta_gain_%05d" % n, x_soln)
+    plt.matshow(xgain[0].real) #, vmin=-4., vmax=4.)
+    plt.colorbar()
+    plt.savefig("output/gain_000_%05d.png" % n)
 
     # Update gain model with latest solution
     current_delta_gain = xgain
-    """
+
 
     #---------------------------------------------------------------------------
     # (B) Point source amplitude sampler
     #---------------------------------------------------------------------------
-
+    """
     # Get the projection operator with most recent gains applied
     t0 = time.time()
     proj = vis_proj_operator0.copy()
@@ -239,12 +262,9 @@ for n in range(Niters):
     print("(B) Precomp. ptsrc matrix operator took %3.2f sec" \
           % (time.time() - t0))
 
-    # Construct current state of model (residual not needed)
-    resid = data.copy() # - hydra.apply_gains(current_data_model,
-                        #             gains + current_delta_gain,
-                        #             ants,
-                        #             antpairs,
-                        #             inline=False)
+    # Construct current state of model (residual from amplitudes = 1)
+    resid = data.copy() \
+          - ( proj.reshape((-1, Nptsrc)) @ np.ones_like(amp_prior_std) ).reshape(current_data_model.shape)
 
     # Construct RHS of linear system
     bsrc = hydra.ptsrc_sampler.construct_rhs(resid.flatten(),
@@ -269,10 +289,10 @@ for n in range(Niters):
     x_soln, convergence_info = cg(ptsrc_linear_op, bsrc)
     print("(B) Point source sampler took %3.2f sec" % (time.time() - t0))
     x_soln *= amp_prior_std # we solved for x = S^-1/2 s, so recover s
-    print("    Example soln:", x_soln[:5]) # this is ratio with true input amp, so should be close to 1!
+    print("    Example soln:", x_soln[:5]) # this is fractional deviation from assumed amplitude, so should be close to 0
     np.save("output/ptsrc_amp_%05d" % n, x_soln)
-    # FIXME: Has the result been rescaled by the prior? x = S^1/2 s ************
 
     # Update visibility model with latest solution (does not include any gains)
     # Applies projection operator to ptsrc amplitude vector
-    current_data_model = ( vis_proj_operator0.reshape((-1, Nptsrc)) @ x_soln ).reshape(current_data_model.shape)
+    current_data_model = ( vis_proj_operator0.reshape((-1, Nptsrc)) @ (1. + x_soln) ).reshape(current_data_model.shape)
+    """

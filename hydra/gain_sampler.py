@@ -143,14 +143,14 @@ def apply_proj_conj(v, A_real, A_imag, model_vis, gain_shape):
 
     # Apply conjugate transpose of model visibility,
     # (\bar{g}_i \bar{g}_j V_ij)^\dagger
-    v *= model_vis.conj()
+    vv = v * model_vis.conj()
 
     # If we split the visibilities etc. into real and imaginary parts, the
     # A operator is block diagonal, and so its transpose is also block diagonal
     g[:, :, :] = (
-        1.0 * A_real.T.dot(v.real.reshape((v.shape[0], -1)))
-        + 1.0j * A_imag.T.dot(v.imag.reshape((v.shape[0], -1)))
-    ).reshape((-1, v.shape[1], v.shape[2]))
+        1.0 * A_real.T.dot(vv.real.reshape((vv.shape[0], -1)))
+        + 1.0j * A_imag.T.dot(vv.imag.reshape((vv.shape[0], -1)))
+    ).reshape((-1, vv.shape[1], vv.shape[2]))
     return g
 
 
@@ -181,7 +181,7 @@ def apply_sqrt_pspec(sqrt_pspec, x):
         return sqrt_pspec[np.newaxis, :, :] * x
 
 
-def apply_operator(x, noise_var, pspec_sqrt, A_real, A_imag, model_vis):
+def apply_operator(x, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis):
     r"""
     Apply LHS operator to a vector of Fourier coefficients.
 
@@ -190,8 +190,8 @@ def apply_operator(x, noise_var, pspec_sqrt, A_real, A_imag, model_vis):
             Array of complex values in Fourier space, of shape
             (Nants, Nfrate, Ntau).
 
-        noise_var (array_like):
-            Array of real values in visibility space, with the noise
+        inv_noise_var (array_like):
+            Array of real values in visibility space, with the inverse noise
             variance per baseline, time, and frequency. Shape
             (Nvis, Ntimes, Nfreqs).
 
@@ -210,23 +210,35 @@ def apply_operator(x, noise_var, pspec_sqrt, A_real, A_imag, model_vis):
             $m_{ij} = \bar{g}_i \bar{g}_j^\dagger V_{ij}$.
     """
     gain_shape = x.shape
-    vis_shape = noise_var.shape
-    assert noise_var.shape == model_vis.shape
+    vis_shape = inv_noise_var.shape
+    assert inv_noise_var.shape == model_vis.shape
 
-    # Calculate y = F^dagger (N^-1 A S^1/2) x
-    y = apply_sqrt_pspec(pspec_sqrt, apply_proj(x, A_real, A_imag, model_vis))
+    # Multiply Fourier x values by S^1/2 and FT
+    sqrtSx = apply_sqrt_pspec(pspec_sqrt, x)
+    for k in range(sqrtSx.shape[0]):
+        sqrtSx[k, :, :] = fft.ifft2(sqrtSx[k, :, :])
+
+    # Apply projection operator to real-space sqrt(S)-weighted x values,
+    # weight by inverse noise variance, then apply (conjugated) projection
+    # operator
+    y = apply_proj_conj(apply_proj(sqrtSx,
+                                   A_real,
+                                   A_imag,
+                                   model_vis) \
+                          * inv_noise_var,
+                        A_real,
+                        A_imag,
+                        model_vis,
+                        gain_shape)
+
+    # Do inverse FT and multiply by S^1/2 again
     for k in range(y.shape[0]):
-        y[k, :, :] = fft.ifft2(fft.fft2(y[k, :, :]) / noise_var[k])
-
-    # Calculate S^1/2 A'^dagger y
-    lhs = x + apply_sqrt_pspec(
-        pspec_sqrt, apply_proj_conj(y, A_real, A_imag, model_vis, gain_shape)
-    )
-    return lhs
+        y[k, :, :] = fft.fft2(y[k, :, :])
+    return x + apply_sqrt_pspec(pspec_sqrt, y)
 
 
 def construct_rhs(
-    resid, noise_var, pspec_sqrt, A_real, A_imag, model_vis, realisation=True
+    resid, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis, realisation=True
 ):
     """
     Construct the RHS vector of the linear system. This will have shape
@@ -237,10 +249,10 @@ def construct_rhs(
             Residual of the observed visibilities (data minus fiducial input
             model).
 
-        noise_var (array_like):
-            Noise variance, of shape (Nbl, Nfreqs, Ntimes). This is used
-            because we have assumed that the noise is diagonal (uncorrelated)
-            between baselines, times, and frequencies.
+        inv_noise_var (array_like):
+            Inverse noise variance, of shape (Nbl, Nfreqs, Ntimes). This is
+            used because we have assumed that the noise is diagonal
+            (uncorrelated) between baselines, times, and frequencies.
 
         pspec_sqrt (array_like):
             Array of 2D (sqrt) power spectra used to construct the prior
@@ -256,8 +268,8 @@ def construct_rhs(
             Whether to include Gaussian random realisation terms (True) or just
             the Wiener filter terms (False).
     """
-    # ifft: data -> fourier
-    # fft: fourier -> data
+    # fft: data -> fourier
+    # ifft: fourier -> data
     Nvis, Ntimes, Nfreqs = resid.shape
     Nants = A_real.shape[-1]
     Nfrate = Ntimes
@@ -276,23 +288,30 @@ def construct_rhs(
         / np.sqrt(2.0)
     )
 
-    # (Terms 1+3): S^1/2 A^\dagger [ N^{-1} r + N^{-1/2} \omega_r ]
+    # (Terms 1+3): S^1/2 F^dagger A^\dagger [ N^{-1} r + N^{-1/2} \omega_r ]
     omega_r = (
         realisation_switch
         * (1.0 * np.random.randn(*resid.shape) + 1.0j * np.random.randn(*resid.shape))
         / np.sqrt(2.0)
     )
     gain_shape = (Nants, Nfrate, Ntau)
+
+    # Apply inverse noise (or its sqrt) to data/random vector terms, and do
+    # transpose projection operation, all in real space
     yy = apply_proj_conj(
-        resid / noise_var + omega_r / np.sqrt(noise_var),
+        resid * inv_noise_var + omega_r * np.sqrt(inv_noise_var),
         A_real,
         A_imag,
         model_vis,
         gain_shape,
     )
 
-    # Loop over ants and add transformed Terms 1+3 to b vector
+    # Do FT to go into Fourier space again
     for k in range(Nants):
-        sqrt_pspec = pspec_sqrt if len(pspec_sqrt.shape) == 2 else pspec_sqrt[k]
-        b[k] += sqrt_pspec * fft.ifft2(yy[k, :, :])
-    return b
+        yy[k,:,:] = fft.fft2(yy[k,:,:])
+
+    # Apply sqrt(S) operator
+    yy = apply_sqrt_pspec(pspec_sqrt, yy)
+
+    # Add the transformed Terms 1+3 to b vector
+    return b + yy
