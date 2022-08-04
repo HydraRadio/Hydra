@@ -1,4 +1,170 @@
 import numpy as np
+from vis_simulator import simulate_vis_per_source
+from pyuvsim import AnalyticBeam
+
+
+def construct_Zmatr(nmax, l, m):
+    """
+    Make the matrix that transforms from the zernike basis to direction cosines.
+
+    Parameters:
+        nmax: Maximum radial degree to use for the Zernike polynomial basis.
+            May range from 0 to 10.
+        l: East-West direction cosine
+        m: North-South direction cosine
+    """
+    # Just get the polynomials at the specified ls and ms
+    Zdict = zernike(np.ones(66), l, m)
+
+    # Analytic formula  from inspecting zernike function
+    ncoeff = (nmax + 1) * (nmax + 2) // 2
+
+    Zmatr = np.array(list(Zdict.values())[:ncoeff])
+
+    return(Zmatr)
+
+
+def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
+                  precision=1, latitude=-30.7215 * np.pi / 180.0,
+                  use_feed="x"):
+    """
+    Compute the matrices that act as the quadratic forms by which visibilities
+    are made. Calls simulate_vis_per_source to get the Fourier operator, then
+    transforms to the Zernike basis.
+
+    Parameters:
+        ants (dict):
+            Dictionary of antenna positions. The keys are the antenna names
+            (integers) and the values are the Cartesian x,y,z positions of the
+            antennas (in meters) relative to the array center.
+        fluxes (array_like):
+            2D array with the flux of each source as a function of frequency,
+            of shape (NSRCS, NFREQS).
+        ra, dec (array_like):
+            Arrays of source RA and Dec positions in radians. RA goes from
+            [0, 2 pi] and Dec from [-pi, +pi].
+        freqs (array_like):
+            Frequency channels for the simulation, in Hz.
+        lsts (array_like):
+            Local sidereal times for the simulation, in radians. Range is
+            [0, 2 pi].
+        polarized (bool):
+            If True, raise a NotImplementedError. Eventually this will use
+            polarized beams.
+        precision (int):
+            Which precision setting to use for :func:`~vis_cpu`. If set to
+            ``1``, uses the (``np.float32``, ``np.complex64``) dtypes. If set
+            to ``2``, uses the (``np.float64``, ``np.complex128``) dtypes.
+        latitude (float):
+            The latitude of the center of the array, in radians. The default is
+            the HERA latitude = -30.7215 * pi / 180.
+
+    """
+    if polarized:
+        raise NotImplementedError("Polarized beams are not available yet.")
+    # Use uniform beams so that we just get the Fourier operator.
+    beams = [AnalyticBeam("uniform") for ant_ind in range(len(ants))]
+
+    sky_amp_phase = simulate_vis_per_source(ants, fluxes, ra, dec, freqs, lsts,
+                                            beams=beams, polarized=polarized,
+                                            precision=precision,
+                                            latitude=latitude,
+                                            use_feed=use_feed)
+    # This should do all the broadcasting
+    Mjk = np.einsum('jk,...k,k...l -> j...l', Z.T, sky_amp_phase, Z,
+                    optimize=True)
+
+    return(Mjk)
+
+
+def get_zern_trans(Mjk, beam_coeffs, ant_samp_ind, NANTS):
+    """
+    Get the 'T' operator that, when applied to a vector of beam
+    coefficients, produces visibilities.
+
+    Parameters:
+        Mjk (array_like, complex): Partial transformation operator that is
+            computed ahead of time  from the antenna positions and source model.
+            Has shape (n_coeff, NFREQS, NTIMES, NANTS, NANTS, n_coeff)
+        beam_coeffs (array_like, complex): Zernike coefficients for the beam at
+            each freqency, time, and antenna. Has shape
+            (n_coeff, NFREQS, NTIMES, NANTS)
+        ant_samp_ind (int): Which antenna is being sampled.
+    Returns:
+        zern_trans (array_like, complex): An operator that returns visibilities
+            when supplied with beam coefficients. Has shape
+            (NFREQS, NTIMES, NANTS, NFREQS, NTIMES, NANTS, NANTS, n_coeff) or
+            (NFREQS, NTIMES, NANTS, NFREQS, NTIMES, NANTS, n_coeff)
+    """
+
+    ant_inds = np.where(np.arange(NANTS) != ant_samp_ind)
+    zern_trans = np.einsum(
+                           'ijkl,imnop -> jklmnop',
+                           beam_coeffs.conj()[:, :, :, ant_inds],
+                           Mjk[:, :, :, ant_inds, ant_samp_ind]
+                           optimize=True
+                           )
+    return(zern_trans)
+
+def apply_operator(x, inv_noise_var, coeff_cov_inv, zern_trans):
+    """
+    Apply LHS operator to vector of Zernike coefficients.
+
+    Parameters:
+        x (array_like): Complex zernike coefficients.
+
+        inv_noise_var (array_like): Inverse variance of same shape as vis.
+            Assumes diagonal covariance matrix, which is true in practice.
+
+        coeff_cov_inv (array_like, complex): Inverse prior covariance matrix for
+            the Zernike coeffs.
+
+        zern_trans: (array_like, complex): Matrix that, when applied to a vector
+            of Zernike coefficients for one antenna, returns the visibilities
+            associated with that antenna.
+    """
+    Ninv_T = np.einsum('ijk,ijklmno -> ijklmno',
+                       inv_noise_var,
+                       zern_trans,
+                       optimize=True
+                       )
+    Tdag_Ninv_T = np.einsum(
+                            'ijklmno,ijkpqrs -> lmnopqrs',
+                            zern_trans.conj(),
+                            Ninv_T,
+                            optimize=True
+                            )
+    sig_inv = Tdag_Ninv_T + coeff_cov_inv
+    Ax = np.einsum(
+                   'ijklmnop,mnop->ijkl',
+                   sig_inv,
+                   x,
+                   optimize=True
+                   )
+
+    return(Ax)
+
+def construct_rhs(vis, inv_noise_var, coeff_mean, coeff_cov_inv_sqrt):
+    """
+    Construct the right-hand-side of the Gaussian Constrained Realization (GCR)
+    equation.
+
+    Parameters:
+        vis (array_like, complex): Subset of visiblities belonging to the
+            antenna for which the GCR is being set up.
+
+        inv_noise_var (array_like): Inverse variance of same shape as vis.
+            Assumes diagonal covariance matrix, which is true in practice.
+
+        coeff_mean (array_like, complex): Prior mean for the Zernike
+            coefficients.
+
+        coeff_cov_inv_sqrt (array_like, complex): Square root of the prior
+            inverse covariance matrix for the Zernike coefficients.
+
+    """
+    return
+
 
 def zernike(coeffs, x, y):
         """
@@ -387,7 +553,7 @@ def zernike(coeffs, x, y):
                 + 756 * (y5) * (x4)
                 + 504 * (y3) * (x6)
                 + 126 * y * (x8)
-            ),  # m = -1   n = 9
+            ),  # m = 1   n = 9
             52: c[51]
             * (
                 -20 * y3
@@ -613,41 +779,3 @@ def zernike(coeffs, x, y):
             ),  # m = 10   n = 10
         }
         return Z
-
-def apply_operator(inv_noise_var, coeff_cov_inv, zern_trans):
-    """
-    Apply LHS operator to vector of Zernike coefficients.
-
-    Parameters:
-        inv_noise_var (array_like): Inverse variance of same shape as vis.
-            Assumes diagonal covariance matrix, which is true in practice.
-
-        coeff_cov_inv (array_like, complex): Inverse prior covariance matrix for
-            the Zernike coeffs.
-
-        zern_trans: (array_like, complex): Matrix that, when applied to a vector
-            of Zernike coefficients for one antenna, returns the visibilities
-            associated with that antenna.
-    """
-    return
-
-def construct_rhs(vis, inv_noise_var, coeff_mean, coeff_cov_inv_sqrt):
-    """
-    Construct the right-hand-side of the Gaussian Constrained Realization (GCR)
-    equation.
-
-    Parameters:
-        vis (array_like, complex): Subset of visiblities belonging to the
-            antenna for which the GCR is being set up.
-
-        inv_noise_var (array_like): Inverse variance of same shape as vis.
-            Assumes diagonal covariance matrix, which is true in practice.
-
-        coeff_mean (array_like, complex): Prior mean for the Zernike
-            coefficients.
-
-        coeff_cov_inv_sqrt (array_like, complex): Square root of the prior
-            inverse covariance matrix for the Zernike coefficients.
-
-    """
-    return
