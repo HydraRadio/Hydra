@@ -10,7 +10,9 @@ def construct_Zmatr(nmax, l, m):
     Parameters:
         nmax: Maximum radial degree to use for the Zernike polynomial basis.
             May range from 0 to 10.
+
         l: East-West direction cosine
+
         m: North-South direction cosine
     """
     # Just get the polynomials at the specified ls and ms
@@ -86,10 +88,13 @@ def get_zern_trans(Mjk, beam_coeffs, ant_samp_ind, NANTS):
         Mjk (array_like, complex): Partial transformation operator that is
             computed ahead of time  from the antenna positions and source model.
             Has shape (n_coeff, NFREQS, NTIMES, NANTS, NANTS, n_coeff)
+
         beam_coeffs (array_like, complex): Zernike coefficients for the beam at
             each freqency, time, and antenna. Has shape
             (n_coeff, NFREQS, NTIMES, NANTS)
+
         ant_samp_ind (int): Which antenna is being sampled.
+
     Returns:
         zern_trans (array_like, complex): An operator that returns visibilities
             when supplied with beam coefficients. Has shape
@@ -144,7 +149,8 @@ def apply_operator(x, inv_noise_var, coeff_cov_inv, zern_trans):
 
     return(Ax)
 
-def construct_rhs(vis, inv_noise_var, coeff_mean, coeff_cov_inv_sqrt):
+def construct_rhs(vis, inv_noise_var, coeff_mean, coeff_cov_inv_sqrt,
+                  zern_trans):
     """
     Construct the right-hand-side of the Gaussian Constrained Realization (GCR)
     equation.
@@ -161,6 +167,10 @@ def construct_rhs(vis, inv_noise_var, coeff_mean, coeff_cov_inv_sqrt):
 
         coeff_cov_inv_sqrt (array_like, complex): Square root of the prior
             inverse covariance matrix for the Zernike coefficients.
+
+        zern_trans (array_like, complex): Matrix that, when applied to a vector
+            of Zernike coefficients for one antenna, returns the visibilities
+            associated with that antenna.
 
     """
     return
