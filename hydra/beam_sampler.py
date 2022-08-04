@@ -98,7 +98,6 @@ def get_zern_trans(Mjk, beam_coeffs, ant_samp_ind, NANTS):
     Returns:
         zern_trans (array_like, complex): An operator that returns visibilities
             when supplied with beam coefficients. Has shape
-            (NFREQS, NTIMES, NANTS, NFREQS, NTIMES, NANTS, NANTS, n_coeff) or
             (NFREQS, NTIMES, NANTS, NFREQS, NTIMES, NANTS, n_coeff)
     """
 
@@ -149,8 +148,8 @@ def apply_operator(x, inv_noise_var, coeff_cov_inv, zern_trans):
 
     return(Ax)
 
-def construct_rhs(vis, inv_noise_var, coeff_mean, coeff_cov_inv_sqrt,
-                  zern_trans):
+def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
+                  coeff_cov_inv_sqrt, zern_trans, n_coeff):
     """
     Construct the right-hand-side of the Gaussian Constrained Realization (GCR)
     equation.
@@ -162,19 +161,58 @@ def construct_rhs(vis, inv_noise_var, coeff_mean, coeff_cov_inv_sqrt,
         inv_noise_var (array_like): Inverse variance of same shape as vis.
             Assumes diagonal covariance matrix, which is true in practice.
 
+        inv_noise_var_sqrt (array_like): Inverse variance of same shape as vis.
+            Assumes diagonal covariance matrix, which is true in practice.
+
         coeff_mean (array_like, complex): Prior mean for the Zernike
             coefficients.
 
+        Cinv_mu (array_like, complex): Prior inverse covariance matrix
+            applied to prior mean for the Zernike coefficients (pre-calculated).
+
         coeff_cov_inv_sqrt (array_like, complex): Square root of the prior
-            inverse covariance matrix for the Zernike coefficients.
+            inverse covariance matrix for the Zernike coefficients that are
+            being sampled.
 
         zern_trans (array_like, complex): Matrix that, when applied to a vector
             of Zernike coefficients for one antenna, returns the visibilities
             associated with that antenna.
 
-    """
-    return
+        n_coeff (int): Number of Zernike coefficients for each beam
 
+    """
+    Ninv_d = inv_noise_var * vis
+    Tdag_Ninv_d = np.einsum(
+                            'ijklmno,ijk -> lmno',
+                            zern_trans.conj(),
+                            Ninv_d,
+                            optimize=True
+                            )
+
+    flx0_shape = vis.shape + (n_coeff, )
+    flx1_shape = vis.shape
+
+    flx0 = (np.random.randn(size=flx0_shape)
+            + 1.j * np.random.randn(size=flx0_shape)) / np.sqrt(2)
+    flx1 = (np.random.randn(size=flx1_shape)
+            + 1.j * np.random.randn(size=flx1_shape)) / np.sqrt(2)
+
+    flx0_add = np.einsum(
+                         'ijklmnop,mnop -> ijkl',
+                         coeff_cov_inv_sqrt,
+                         flx0,
+                         optimize=True
+                         )
+
+    flx1_add = np.einsum(
+                         'ijklmno,ijk -> lmno',
+                         zern_trans.conj(),
+                         inv_noise_var_sqrt * flx1,
+                         optimize=True
+                         )
+    b = Tdag_Ninv_d + Cinv_mu + flx0_add + flx1_add
+
+    return(b)
 
 def zernike(coeffs, x, y):
         """
