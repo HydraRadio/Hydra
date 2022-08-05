@@ -147,7 +147,7 @@ def apply_operator(x, inv_noise_var, coeff_cov_inv, zern_trans):
                     optimize=True)
     # This one is a full matrix multiply since the prior can be non-diagonal
     Ax2 = np.einsum(
-                   'ijklmnop,mnop->ijkl',
+                   'ijklmn,lmn->ijk',
                    coeff_cov_inv,
                    x,
                    optimize=True
@@ -206,7 +206,7 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
             + 1.j * np.random.randn(size=flx1_shape)) / np.sqrt(2)
 
     flx0_add = np.einsum(
-                         'ijklmnop,mnop -> ijkl',
+                         'ijklmn,lmn -> ijk',
                          coeff_cov_inv_sqrt,
                          flx0,
                          optimize=True
