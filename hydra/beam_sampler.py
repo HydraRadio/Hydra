@@ -135,13 +135,13 @@ def apply_operator(x, inv_noise_var, coeff_cov_inv, zern_trans):
                        optimize=True
                        )
     Tdag_Ninv_T = np.einsum(
-                            'ijkl,ijkm -> ijklm',
+                            'ijkl,ijkm -> ijlm',
                             zern_trans.conj(),
                             Ninv_T,
                             optimize=True
                             )
     # Linear so we can split the LHS multiply
-    Ax1 = np.einsum('ijklm,ijkm -> ijkl',
+    Ax1 = np.einsum('ijkl,ijl -> ijk',
                     Tdag_Ninv_T,
                     x,
                     optimize=True)
@@ -191,7 +191,7 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
     """
     Ninv_d = inv_noise_var * vis
     Tdag_Ninv_d = np.einsum(
-                            'ijkl,ijk -> ijkl',
+                            'ijkl,ijk -> ijl',
                             zern_trans.conj(),
                             Ninv_d,
                             optimize=True
@@ -213,7 +213,7 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
                          )
 
     flx1_add = np.einsum(
-                         'ijkl,ijk -> ijkl',
+                         'ijkl,ijk -> ijl',
                          zern_trans.conj(),
                          inv_noise_var_sqrt * flx1,
                          optimize=True
