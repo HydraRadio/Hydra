@@ -98,12 +98,12 @@ def get_zern_trans(Mjk, beam_coeffs, ant_samp_ind, NANTS):
     Returns:
         zern_trans (array_like, complex): An operator that returns visibilities
             when supplied with beam coefficients. Has shape
-            (NFREQS, NTIMES, NANTS, NFREQS, NTIMES, NANTS, n_coeff)
+            (NFREQS, NTIMES, NANTS, NFREQS, NTIMES, n_coeff)
     """
 
     ant_inds = np.where(np.arange(NANTS) != ant_samp_ind)
     zern_trans = np.einsum(
-                           'ijkl,imnop -> jklmnop',
+                           'ijkl,imnlp -> jklmnp',
                            beam_coeffs.conj()[:, :, :, ant_inds],
                            Mjk[:, :, :, ant_inds, ant_samp_ind]
                            optimize=True
@@ -127,20 +127,20 @@ def apply_operator(x, inv_noise_var, coeff_cov_inv, zern_trans):
             of Zernike coefficients for one antenna, returns the visibilities
             associated with that antenna.
     """
-    Ninv_T = np.einsum('ijk,ijklmno -> ijklmno',
+    Ninv_T = np.einsum('ijk,ijklmn -> ijklmn',
                        inv_noise_var,
                        zern_trans,
                        optimize=True
                        )
     Tdag_Ninv_T = np.einsum(
-                            'ijklmno,ijkpqrs -> lmnopqrs',
+                            'ijklmn,ijkpqr -> lmnpqr',
                             zern_trans.conj(),
                             Ninv_T,
                             optimize=True
                             )
     sig_inv = Tdag_Ninv_T + coeff_cov_inv
     Ax = np.einsum(
-                   'ijklmnop,mnop->ijkl',
+                   'ijkmno,mno->ijk',
                    sig_inv,
                    x,
                    optimize=True
@@ -183,7 +183,7 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
     """
     Ninv_d = inv_noise_var * vis
     Tdag_Ninv_d = np.einsum(
-                            'ijklmno,ijk -> lmno',
+                            'ijklmn,ijk -> lmn',
                             zern_trans.conj(),
                             Ninv_d,
                             optimize=True
@@ -198,14 +198,14 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
             + 1.j * np.random.randn(size=flx1_shape)) / np.sqrt(2)
 
     flx0_add = np.einsum(
-                         'ijklmnop,mnop -> ijkl',
+                         'ijkmno,mno -> ijk',
                          coeff_cov_inv_sqrt,
                          flx0,
                          optimize=True
                          )
 
     flx1_add = np.einsum(
-                         'ijklmno,ijk -> lmno',
+                         'ijkmno,ijk -> mno',
                          zern_trans.conj(),
                          inv_noise_var_sqrt * flx1,
                          optimize=True
