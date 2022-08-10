@@ -2,6 +2,40 @@ import numpy as np
 from vis_simulator import simulate_vis_per_source
 from pyuvsim import AnalyticBeam
 
+def split_real_imag(arr, typ):
+    """
+    Split an array into real and imaginary components in different ways
+    depending on whether the array is an operator or a vector.
+
+    Parameters:
+        arr: The array for which the components are to be split
+        typ: The type of array. Either 'op' (for operator) or 'vec' (for vector)
+    """
+    valid_typs = ['op', 'vec']
+    nax = len(arr.shape)
+    if typ not in valid_typs:
+        raise ValueError("typ must be 'op' or 'vec' when splitting complex "
+                         "arrays into real and imaginary components")
+    if typ == 'op':
+        new_arr = np.zeros((2, 2) + arr.shape, dtype=real)
+        new_arr[0, 0] = arr.real
+        new_arr[0, 1] = -arr.imag
+        new_arr[1, 0] = arr.imag
+        new_arr[1, 1] = arr.real
+
+        # Prepare to put these axes at the end
+        axes = list(range(2, nax)) + [0, 1]
+
+    elif typ == 'vec':
+        new_arr = np.zeros((2,) + arr.shape, dtype=real)
+        new_arr[0], new_arr[1] = (arr.real, arr.imag)
+
+        # Prepare to put this axis at the end
+        axes = list(range(1, nax)) + [0, ]
+    # Rearrange axes (they are always expected at the end)
+    new_arr = np.transpose(new_arr, axes=axes)
+
+    return(new_arr)
 
 def construct_Zmatr(nmax, l, m):
     """
@@ -109,11 +143,7 @@ def get_zern_trans(Mjk, beam_coeffs, ant_samp_ind, NANTS):
                            optimize=True
                            )
     # Split into components here
-    zern_trans_real_imag = np.zeros(zern_trans.shape + (2, 2), dtype=real)
-    zern_trans_real_imag[:, :, :, :, 0, 0] = zern_trans.real
-    zern_trans_real_imag[:, :, :, :, 0, 1] = -zern_trans.imag
-    zern_trans_real_imag[:, :, :, :, 1, 0] = zern_trans.imag
-    zern_trans_real_imag[:, :, :, :, 1, 1] = zern_trans.real
+    zern_trans_real_imag = split_real_imag(zern_trans)
 
     return(zern_trans_real_imag)
 
