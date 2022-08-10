@@ -172,7 +172,7 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
     Parameters:
         vis (array_like, real): Subset of visiblities belonging to the
             antenna for which the GCR is being set up. Split into real and
-            imaginary components. Has shape (NTIMES, NFREQS, NANTS - 1, 2).
+            imaginary components. Has shape (NFREQS, NTIMES, NANTS - 1, 2).
 
         inv_noise_var (array_like): Inverse variance of same shape as vis.
             Assumes diagonal covariance matrix, which is true in practice.
@@ -218,7 +218,7 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
                          )
 
     flx1_add = np.einsum(
-                         'ftaZcC,ftacC -> ftZC',
+                         'ftaZcC,ftac -> ftZC',
                          zern_trans,
                          inv_noise_var_sqrt * flx1,
                          optimize=True
