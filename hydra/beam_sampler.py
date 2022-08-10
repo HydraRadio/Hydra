@@ -73,7 +73,7 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
                                             latitude=latitude,
                                             use_feed=use_feed)
     # This should do all the broadcasting
-    Mjk = np.einsum('jk,...k,k...l -> j...l', Z.T, sky_amp_phase, Z,
+    Mjk = np.einsum('jk,...k,kl -> j...l', Z.T, sky_amp_phase, Z,
                     optimize=True)
 
     return(Mjk)
@@ -89,33 +89,40 @@ def get_zern_trans(Mjk, beam_coeffs, ant_samp_ind, NANTS):
             computed ahead of time  from the antenna positions and source model.
             Has shape (n_coeff, NFREQS, NTIMES, NANTS, NANTS, n_coeff)
 
-        beam_coeffs (array_like, complex): Zernike coefficients for the beam at
+        beam_coeffs (array_like, real): Zernike coefficients for the beam at
             each freqency, time, and antenna. Has shape
             (n_coeff, NFREQS, NTIMES, NANTS)
 
         ant_samp_ind (int): Which antenna is being sampled.
 
     Returns:
-        zern_trans (array_like, complex): An operator that returns visibilities
-            when supplied with beam coefficients. Has shape
-            (NFREQS, NTIMES, NANTS, n_coeff)
+        zern_trans_real_imag (array_like, real): An operator that returns
+            visibilities when supplied with beam coefficients. Has shape
+            (NFREQS, NTIMES, NANTS, n_coeff, 2, 2)
     """
 
     ant_inds = np.where(np.arange(NANTS) != ant_samp_ind)
     zern_trans = np.einsum(
-                           'ijkl,ijklm -> jklm',
+                           'zfta,zftaZ -> ftaZ',
                            beam_coeffs.conj()[:, :, :, ant_inds],
                            Mjk[:, :, :, ant_inds, ant_samp_ind]
                            optimize=True
                            )
-    return(zern_trans)
+    # Split into components here
+    zern_trans_real_imag = np.zeros(zern_trans.shape + (2, 2), dtype=real)
+    zern_trans_real_imag[:, :, :, :, 0, 0] = zern_trans.real
+    zern_trans_real_imag[:, :, :, :, 0, 1] = -zern_trans.imag
+    zern_trans_real_imag[:, :, :, :, 1, 0] = zern_trans.imag
+    zern_trans_real_imag[:, :, :, :, 1, 1] = zern_trans.real
+
+    return(zern_trans_real_imag)
 
 def apply_operator(x, inv_noise_var, coeff_cov_inv, zern_trans):
     """
     Apply LHS operator to vector of Zernike coefficients.
 
     Parameters:
-        x (array_like): Complex zernike coefficients.
+        x (array_like): Complex zernike coefficients, split into real/imag.
 
         inv_noise_var (array_like): Inverse variance of same shape as vis.
             Assumes diagonal covariance matrix, which is true in practice.
@@ -129,25 +136,25 @@ def apply_operator(x, inv_noise_var, coeff_cov_inv, zern_trans):
     """
     # These stay as elementwise multiply since the beam at given times/freqs
     # Should not affect the vis at other times/freqs
-    Ninv_T = np.einsum('ijk,ijkl -> ijkl',
+    Ninv_T = np.einsum('ftac,ftaZcC -> ftaZcC',
                        inv_noise_var,
                        zern_trans,
                        optimize=True
                        )
     Tdag_Ninv_T = np.einsum(
-                            'ijkl,ijkm -> ijlm',
-                            zern_trans.conj(),
+                            'ftazcD,ftaZcC -> ftzZDC',
+                            zern_trans,
                             Ninv_T,
                             optimize=True
                             )
     # Linear so we can split the LHS multiply
-    Ax1 = np.einsum('ijkl,ijl -> ijk',
+    Ax1 = np.einsum('ftzZDC,ftZC -> ftzD',
                     Tdag_Ninv_T,
                     x,
                     optimize=True)
-    # This one is a full matrix multiply since the prior can be non-diagonal
+    # This one is a full matrix multiply since the prior can (and should) be non-diagonal
     Ax2 = np.einsum(
-                   'ijklmn,lmn->ijk',
+                   'FTzcftZC,ftZC->FTzc',
                    coeff_cov_inv,
                    x,
                    optimize=True
@@ -191,13 +198,13 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
     """
     Ninv_d = inv_noise_var * vis
     Tdag_Ninv_d = np.einsum(
-                            'ijkl,ijk -> ijl',
-                            zern_trans.conj(),
+                            'ftaZcC,ftacC -> ftZC',
+                            zern_trans,
                             Ninv_d,
                             optimize=True
                             )
 
-    flx0_shape = vis.shape + (n_coeff, )
+    flx0_shape = Cinv_mu.shape
     flx1_shape = vis.shape
 
     flx0 = (np.random.randn(size=flx0_shape)
@@ -206,15 +213,15 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
             + 1.j * np.random.randn(size=flx1_shape)) / np.sqrt(2)
 
     flx0_add = np.einsum(
-                         'ijklmn,lmn -> ijk',
+                         'FTzcftZC,ftZC->FTzc',
                          coeff_cov_inv_sqrt,
                          flx0,
                          optimize=True
                          )
 
     flx1_add = np.einsum(
-                         'ijkl,ijk -> ijl',
-                         zern_trans.conj(),
+                         'ftaZcC,ftacC -> ftZC',
+                         zern_trans,
                          inv_noise_var_sqrt * flx1,
                          optimize=True
                          )
