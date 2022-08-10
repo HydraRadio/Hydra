@@ -170,17 +170,15 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
     equation.
 
     Parameters:
-        vis (array_like, complex): Subset of visiblities belonging to the
-            antenna for which the GCR is being set up.
+        vis (array_like, real): Subset of visiblities belonging to the
+            antenna for which the GCR is being set up. Split into real and
+            imaginary components. Has shape (NTIMES, NFREQS, NANTS - 1, 2).
 
         inv_noise_var (array_like): Inverse variance of same shape as vis.
             Assumes diagonal covariance matrix, which is true in practice.
 
         inv_noise_var_sqrt (array_like): Inverse variance of same shape as vis.
             Assumes diagonal covariance matrix, which is true in practice.
-
-        coeff_mean (array_like, complex): Prior mean for the Zernike
-            coefficients.
 
         Cinv_mu (array_like, complex): Prior inverse covariance matrix
             applied to prior mean for the Zernike coefficients (pre-calculated).
@@ -198,7 +196,7 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
     """
     Ninv_d = inv_noise_var * vis
     Tdag_Ninv_d = np.einsum(
-                            'ftaZcC,ftacC -> ftZC',
+                            'ftaZcC,ftac -> ftZC',
                             zern_trans,
                             Ninv_d,
                             optimize=True
