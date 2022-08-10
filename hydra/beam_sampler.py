@@ -143,7 +143,7 @@ def get_zern_trans(Mjk, beam_coeffs, ant_samp_ind, NANTS):
                            optimize=True
                            )
     # Split into components here
-    zern_trans_real_imag = split_real_imag(zern_trans)
+    zern_trans_real_imag = split_real_imag(zern_trans, 'op')
 
     return(zern_trans_real_imag)
 
