@@ -47,7 +47,7 @@ def apply_sqrt_pspec(sqrt_pspec, v, group_id, ifft=False):
     return z
 
 
-def apply_operator(v, noise_var, sqrt_pspec, group_id, gains, ants, antpairs):
+def apply_operator(v, inv_noise_var, sqrt_pspec, group_id, gains, ants, antpairs):
     """
     Apply LHS operator to a vector of complex visibility Fourier coefficients.
 
@@ -56,8 +56,9 @@ def apply_operator(v, noise_var, sqrt_pspec, group_id, gains, ants, antpairs):
             Vector of model visibility Fourier modes to apply the operator to.
             Shape (Nvis, Ntau, Nfrate).
 
-        noise_var (array_like):
-            Noise variance array, with the same shape as the visibility data.
+        inv_noise_var (array_like):
+            Inverse noise variance array, with the same shape as the visibility
+            data.
 
         sqrt_pspec (dict of array_like):
             Dictionary of power spectra. The key would normally be the ID of
@@ -87,7 +88,7 @@ def apply_operator(v, noise_var, sqrt_pspec, group_id, gains, ants, antpairs):
     y = apply_sqrt_pspec(sqrt_pspec=sqrt_pspec,
                          v=v,
                          group_id=group_id,
-                         ifft=True) / noise_var
+                         ifft=True) * inv_noise_var
 
     # Multiply by gains, then FFT back
     for k, bl in enumerate(antpairs):
@@ -112,7 +113,7 @@ def apply_operator(v, noise_var, sqrt_pspec, group_id, gains, ants, antpairs):
 
 
 def construct_rhs(
-    data, noise_var, sqrt_pspec, group_id, gains, ants, antpairs, realisation=False
+    data, inv_noise_var, sqrt_pspec, group_id, gains, ants, antpairs, realisation=False
 ):
     """
     Construct the RHS vector of the linear system. This will have shape
@@ -122,8 +123,9 @@ def construct_rhs(
         data (array_like):
             Observed visibility data.
 
-        noise_var (array_like):
-            Noise variance array, with the same shape as the visibility data.
+        inv_noise_var (array_like):
+            Inverse noise variance array, with the same shape as the visibility
+            data.
 
         sqrt_pspec (dict of array_like):
             Dictionary of power spectra. The key would normally be the ID of
@@ -179,7 +181,7 @@ def construct_rhs(
 
     # Loop over visibilities, weight terms 1 and 3 by N^-1 and N^-1/2, then
     # apply conjugate of gains, FFT, and apply sqrt power spectrum
-    y = (data / noise_var) + (omega_r / np.sqrt(noise_var))
+    y = (data * inv_noise_var) + (omega_r * np.sqrt(inv_noise_var))
     for k, bl in enumerate(antpairs):
 
         # Get antenna indices

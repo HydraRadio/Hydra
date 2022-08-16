@@ -6,6 +6,7 @@ import hydra
 
 import numpy.fft as fft
 from scipy.sparse.linalg import cg, LinearOperator
+from scipy.signal import blackmanharris
 import pyuvsim
 import time, os
 from hydra.vis_utils import flatten_vector, reconstruct_vector
@@ -15,8 +16,8 @@ np.random.seed(12)
 
 
 SAMPLE_GAINS = True
-SAMPLE_VIS = False
-SAMPLE_PTSRC_AMPS = False
+SAMPLE_VIS = True
+SAMPLE_PTSRC_AMPS = True
 OUTPUT_DIAGNOSTICS = True
 
 # Simulation settings
@@ -24,7 +25,7 @@ Nptsrc = 70
 Ntimes = 30
 Nfreqs = 20
 Nants = 15
-Niters = 100
+Niters = 250
 
 sigma_noise = 0.5
 
@@ -99,13 +100,19 @@ gains = (1. + 0.j) * np.ones((Nants, Nfreqs, Ntimes), dtype=model0.dtype)
 # Generate gain fluctuations from FFT basis
 frate = np.fft.fftfreq(times.size, d=times[1] - times[0])
 tau = np.fft.fftfreq(freqs.size, d=freqs[1] - freqs[0])
-_delta_g = 100. \
+_delta_g = 50. \
          * np.fft.ifft2(np.exp(-0.5 * (((frate[np.newaxis,:]-9.)/2.)**2.
                                      + ((tau[:,np.newaxis] - 0.05)/0.03)**2.)))
-delta_g = np.array([_delta_g for ant in ants])
+delta_g = np.array([_delta_g for ant in ants], dtype=model0.dtype)
+
+# FIXME
+# Apply a Blackman-Harris window to apodise the edges
+window = blackmanharris(model0.shape[1], sym=True)[np.newaxis,:,np.newaxis] \
+       * blackmanharris(model0.shape[2], sym=True)[np.newaxis,np.newaxis,:]
+window = 1.
 
 # Apply gains to model
-data = model0.copy()
+data = model0.copy() * window # FIXME
 hydra.apply_gains(data, gains * (1. + delta_g), ants, antpairs, inline=True)
 
 # Plot input (simulated) gain perturbation for ant 0
@@ -136,12 +143,12 @@ plt.savefig("output/data_000.png")
 
 # Get initial visibility model guesses (use the actual baseline model for now)
 # This SHOULD NOT include gain factors of any kind
-current_data_model = model0.copy()
+current_data_model = 1.01*model0.copy() * window # FIXME
 
 # Initial gain perturbation guesses
 #current_delta_gain = np.zeros(gains.shape, dtype=model0.dtype)
 # FIXME
-current_delta_gain = delta_g.copy()
+current_delta_gain = np.zeros_like(delta_g)
 
 # Initial point source amplitude factor
 current_ptsrc_a = np.ones(ra.size)
@@ -166,13 +173,14 @@ print("Precomp. ptsrc proj. operator took %3.2f sec" % (time.time() - t0))
 # Set priors and auxiliary information
 # FIXME: amp_prior_std is a prior around amp=0 I think, so can skew things low!
 noise_var = (sigma_noise)**2. * np.ones(data.shape)
-inv_noise_var = 1. / noise_var
+inv_noise_var = window / noise_var
 
-gain_pspec_sqrt = 0.6 * np.ones((gains.shape[1], gains.shape[2]))
+gain_pspec_sqrt = 0.1 * np.ones((gains.shape[1], gains.shape[2]))
 gain_pspec_sqrt[0,0] = 1e-3 # FIXME: Try to fix the zero point?
 
 amp_prior_std = 0.1 * np.ones(Nptsrc)
-vis_pspec_sqrt = 0.1 * np.ones((1, Nfreqs, Ntimes)) # currently same for all visibilities
+amp_prior_std[19] = 1e-4 # FIXME
+vis_pspec_sqrt = 0.01 * np.ones((1, Nfreqs, Ntimes)) # currently same for all visibilities
 vis_group_id = np.zeros(len(antpairs), dtype=int) # index 0 for all
 
 A_real, A_imag = hydra.gain_sampler.proj_operator(ants, antpairs)
@@ -183,6 +191,105 @@ N_vis_params = 2 * data.shape[0] * data.shape[1] * data.shape[2]
 
 
 # FIXME: Check that model0 == vis_proj_operator0 @ ones
+
+
+
+
+
+
+"""
+
+# FIXME: Testing projection operator for gains
+
+delta_g_fourier = np.array([fft.fft2(_delta_g) for ant in ants], dtype=model0.dtype)
+
+ggv = hydra.apply_gains(np.ones_like(model0),
+                        gains,
+                        ants,
+                        antpairs,
+                        inline=False)
+
+v_obs_f = hydra.gain_sampler.apply_proj(delta_g_fourier,
+                                      A_real,
+                                      A_imag,
+                                      ggv)
+v_obs = np.array([fft.ifft2(v_obs_f[i]) for i in range(v_obs_f.shape[0])])
+v_obs += ggv
+
+dd = np.ones_like(model0, dtype=np.complex128)
+hydra.apply_gains(dd, gains * (1. + delta_g), ants, antpairs, inline=True)
+
+print("*"*60)
+print(dd.dtype, gains.dtype, delta_g.dtype)
+#print(dd[0])
+
+
+plt.close('all')
+plt.subplot(331)
+plt.matshow(dd[0].real, fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
+plt.colorbar()
+plt.title("real gains real")
+
+plt.subplot(332)
+plt.matshow(dd[0].imag, fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
+plt.colorbar()
+plt.title("real gains imag")
+
+plt.subplot(333)
+plt.matshow(np.abs(dd[0]), fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
+plt.colorbar()
+plt.title("real gains abs")
+
+
+plt.subplot(334)
+plt.matshow(v_obs[0].real, fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
+plt.colorbar()
+plt.title("proj gains real")
+
+plt.subplot(335)
+plt.matshow(v_obs[0].imag, fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
+plt.colorbar()
+plt.title("proj gains imag")
+
+plt.subplot(336)
+plt.matshow(np.abs(v_obs[0]), fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
+plt.colorbar()
+plt.title("proj gains abs")
+
+
+lin_gains = gains[0]*gains[1].conj()*(1. + delta_g[0] + delta_g[1])
+plt.subplot(337)
+plt.matshow(lin_gains.real, fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
+plt.colorbar()
+plt.title("linear gains real")
+
+plt.subplot(338)
+plt.matshow(lin_gains.imag, fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
+plt.colorbar()
+plt.title("linear gains imag")
+
+plt.subplot(339)
+plt.matshow(np.abs(lin_gains), fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
+plt.colorbar()
+plt.title("linear gains abs")
+
+
+print("@"*60)
+print((delta_g[0]*delta_g[1].conj())[0] / (delta_g[0])[0])
+
+plt.gcf().set_size_inches((14., 10.))
+plt.show()
+
+
+exit()
+"""
+
+
+
+
+
+
+
 
 #-------------------------------------------------------------------------------
 # (3) Iterate Gibbs sampler
@@ -256,7 +363,48 @@ for n in range(Niters):
         np.save("output/delta_gain_%05d" % n, x_soln)
         plt.matshow(xgain[0].real, vmin=-vminmax, vmax=vminmax)
         plt.colorbar()
+        plt.title("%05d" % n)
         plt.savefig("output/gain_000_%05d.png" % n)
+
+        # Residual with true gains (abs)
+        plt.matshow(np.abs(xgain[0]) - np.abs(delta_g[0]),
+                    vmin=-np.max(np.abs(delta_g[0])),
+                    vmax=np.max(np.abs(delta_g[0])))
+        plt.colorbar()
+        plt.title("%05d" % n)
+        plt.savefig("output/gain_resid_amp_000_%05d.png" % n)
+
+        # Residual with true gains (real)
+        plt.matshow(np.real(xgain[0]) - np.real(delta_g[0]),
+                    vmin=-np.max(np.real(delta_g[0])),
+                    vmax=np.max(np.real(delta_g[0])))
+        plt.colorbar()
+        plt.title("%05d" % n)
+        plt.savefig("output/gain_resid_real_000_%05d.png" % n)
+
+        # Residual with true gains (imag)
+        plt.matshow(np.imag(xgain[0]) - np.imag(delta_g[0]),
+                    vmin=-np.max(np.imag(delta_g[0])),
+                    vmax=np.max(np.imag(delta_g[0])))
+        plt.colorbar()
+        plt.title("%05d" % n)
+        plt.savefig("output/gain_resid_imag_000_%05d.png" % n)
+
+        # DEBUG
+        # Compare imaginary parts of gains
+        plt.subplot(121)
+        plt.matshow(np.imag(xgain[0]),
+                    vmin=-np.max(np.imag(delta_g[0])),
+                    vmax=np.max(np.imag(delta_g[0])), fignum=False)
+        plt.colorbar()
+
+        plt.subplot(122)
+        plt.matshow(np.imag(delta_g[0]),
+                    vmin=-np.max(np.imag(delta_g[0])),
+                    vmax=np.max(np.imag(delta_g[0])), fignum=False)
+        plt.colorbar()
+        plt.title("%05d" % n)
+        plt.savefig("output/gain_resid_compare_imag_000_%05d.png" % n)
 
         # Update gain model with latest solution (in real space)
         current_delta_gain = xgain
@@ -279,7 +427,7 @@ for n in range(Niters):
         bvis = flatten_vector(
                     hydra.vis_sampler.construct_rhs(
                                                data=resid,
-                                               noise_var=noise_var,
+                                               inv_noise_var=inv_noise_var,
                                                sqrt_pspec=vis_pspec_sqrt,
                                                group_id=vis_group_id,
                                                gains=gains*(1.+current_delta_gain),
@@ -292,7 +440,7 @@ for n in range(Niters):
         def vis_lhs_operator(x):
             # Re-pack flattened x vector into complex vector of the right shape
             y = hydra.vis_sampler.apply_operator(reconstruct_vector(x, data.shape),
-                                                 noise_var=noise_var,
+                                                 inv_noise_var=inv_noise_var,
                                                  sqrt_pspec=vis_pspec_sqrt,
                                                  group_id=vis_group_id,
                                                  gains=gains*(1.+current_delta_gain),
@@ -323,10 +471,29 @@ for n in range(Niters):
                     vmin=-vminmax_vis,
                     vmax=vminmax_vis)
         plt.colorbar()
+        plt.title("%05d" % n)
         plt.savefig("output/vis_000_%05d.png" % n)
 
         # Update current state
         current_data_model = current_data_model + x_soln
+
+        # Residual with true data model
+        plt.subplot(121)
+        plt.matshow(current_data_model[0].real - model0[0].real,
+                    vmin=-0.5,
+                    vmax=0.5,
+                    fignum=False, aspect='auto')
+        plt.colorbar()
+        plt.title("%05d" % n)
+
+        plt.subplot(122)
+        plt.matshow(current_data_model[0].imag - model0[0].imag,
+                    vmin=-0.5,
+                    vmax=0.5,
+                    fignum=False, aspect='auto')
+        plt.colorbar()
+        plt.gcf().set_size_inches((10., 4.))
+        plt.savefig("output/resid_datamodel_000_%05d.png" % n)
 
 
     #---------------------------------------------------------------------------
@@ -383,6 +550,16 @@ for n in range(Niters):
         print("    Example soln:", x_soln[:5]) # this is fractional deviation from assumed amplitude, so should be close to 0
         np.save("output/ptsrc_amp_%05d" % n, x_soln)
 
+        # Plot point source amplitude perturbations
+        plt.subplot(111)
+        plt.plot(x_soln, 'r.')
+        plt.axhline(0., ls='dashed', color='k')
+        plt.axhline(-np.max(amp_prior_std), ls='dotted', color='gray')
+        plt.axhline(np.max(amp_prior_std), ls='dotted', color='gray')
+        plt.ylim((-1., 1.))
+        plt.title("%05d" % n)
+        plt.savefig("output/ptsrc_amp_%05d.png" % n)
+
         # Update visibility model with latest solution (does not include any gains)
         # Applies projection operator to ptsrc amplitude vector
         current_data_model = ( vis_proj_operator0.reshape((-1, Nptsrc)) @ (1. + x_soln) ).reshape(current_data_model.shape)
@@ -390,6 +567,7 @@ for n in range(Niters):
         # Plot visibility waterfalls for current model
         plt.matshow(current_data_model[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
         plt.colorbar()
+        plt.title("%05d" % n)
         plt.savefig("output/data_model_000_%05d.png" % n)
 
     #---------------------------------------------------------------------------
@@ -406,6 +584,7 @@ for n in range(Niters):
         resid = data - ggv
         plt.matshow(np.abs(resid[0]), vmin=-5., vmax=5.)
         plt.colorbar()
+        plt.title("%05d" % n)
         plt.savefig("output/resid_abs_000_%05d.png" % n)
 
         # Output chi^2
@@ -414,6 +593,7 @@ for n in range(Niters):
         plt.matshow(chisq, vmin=0., vmax=40.)
         plt.title(r"$\chi^2_{\rm tot} = %5.3e$" % chisq_tot)
         plt.colorbar()
+        plt.title("%05d" % n)
         plt.savefig("output/chisq_000_%05d.png" % n)
 
 
