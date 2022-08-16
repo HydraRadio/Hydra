@@ -5,7 +5,7 @@ import numpy.fft as fft
 #import pyfftw.interfaces.numpy_fft as fft
 
 from scipy.sparse import dok_matrix
-from scipy.sparse.linalg import cg, LinearOperator, eigs
+from .vis_utils import flatten_vector, reconstruct_vector
 
 r"""
 # Mathematical representation of linear system for gain GCR
@@ -42,23 +42,6 @@ Each of the objects will have the following shape:
  * $A$ is a linear operator that projects and combines the Fourier coefficients
    for each antenna into a visibility vector.
 """
-
-
-def flatten_vector(v):
-    """
-    Flatten a complex vector with shape (Nants, Ntimes, Nfreq) into a block
-    vector of shape (Nants x Ntimes x Nfreqs x 2), i.e. the real and imaginary
-    blocks stuck together.
-    """
-    return np.concatenate((v.real.flatten(), v.imag.flatten()))
-
-
-def reconstruct_vector(v, gain_shape):
-    """
-    Undo the flattening of a complex vector.
-    """
-    y = v[: v.size // 2] + 1.0j * v[v.size // 2 :]
-    return y.reshape(gain_shape)
 
 
 def proj_operator(ants, antpairs):
@@ -171,8 +154,8 @@ def apply_sqrt_pspec(sqrt_pspec, x):
 
     Returns:
         z (array_like):
-            Array of complex Fourier coefficients that have been multiplied by the sqrt of the
-            power spectrum. Same shape as x.
+            Array of complex Fourier coefficients that have been multiplied by
+            the sqrt of the power spectrum. Same shape as x.
     """
     assert len(x.shape) == 3, "x must have shape (Nants, Ntau, Nfrate)"
     if len(sqrt_pspec.shape) == 3:

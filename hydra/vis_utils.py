@@ -1,6 +1,24 @@
 
 import numpy as np
 
+
+def flatten_vector(v):
+    """
+    Flatten a complex vector with shape (N, Ntimes, Nfreq) into a block
+    vector of shape (N x Ntimes x Nfreqs x 2), i.e. the real and imaginary
+    blocks stuck together.
+    """
+    return np.concatenate((v.real.flatten(), v.imag.flatten()))
+
+
+def reconstruct_vector(v, shape):
+    """
+    Undo the flattening of a complex vector.
+    """
+    y = v[: v.size // 2] + 1.0j * v[v.size // 2 :]
+    return y.reshape(shape)
+
+
 def apply_gains(v, gains, ants, antpairs, inline=False):
     """
     Apply gain factors to an input array of complex visibility values.
@@ -11,7 +29,7 @@ def apply_gains(v, gains, ants, antpairs, inline=False):
             have shape (Nbaselines, Nfreqs, Ntimes). The ordering of the 0th
             (baseline) dimension is assumed to be the same ordering as
             `antpairs`.
-        gain (array_like):
+        gains (array_like):
             Complex gains, with the same ordering as `ants`. Expected shape is
             (Nants, Nfreqs, Ntimes).
         ants (array_like):
