@@ -76,14 +76,15 @@ def proj_operator(ants, antpairs):
 
 def apply_proj(x, A_real, A_imag, model_vis):
     """
-    Apply the projection operator to multi-dimensional arrays.
+    Apply the projection operator to multi-dimensional arrays of gain
+    fluctuations.
 
     dot(A, x) = A_real.dot(x.real) + 1.j*A_imag.dot(x.imag)
 
     Parameters:
         x (array_like):
-            Array with shape of vector of complex Fourier coefficients.
-            Shape (Nants, Nfrate, Ntau).
+            Array with shape of vector of gain fluctuations (real space).
+            Shape (Nants, Nfreqs, Ntimes).
 
         A_real, A_imag (sparse array):
             Shape (Nvis, Nants).

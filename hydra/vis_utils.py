@@ -91,3 +91,25 @@ def extract_vis_from_sim(ants, antpairs, sim_vis):
         idx2 = np.where(ants == bl[1])[0][0]
         vis[i,:,:] = sim_vis[:,:,idx1,idx2]
     return vis
+
+
+def timing_info(fname, iter, task, duration, verbose=True):
+    """
+    Append timing information to a file.
+
+    Parameters:
+        fname (str):
+            Filename used to save timing info.
+        iter (int):
+            ID of this iteration.
+        task (str):
+            Name/description of the task.
+        duration (float):
+            Duration of task, in seconds.
+        verbose (bool):
+            If True, print a timing message to stdout too.
+    """
+    with open("output/timing.dat", "a") as f:
+        f.write("%05d %7.5f %s\n" % (iter, duration, task))
+        if verbose:
+            print("%s took %3.2f sec" % (task, duration))

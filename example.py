@@ -9,23 +9,25 @@ from scipy.sparse.linalg import cg, LinearOperator
 from scipy.signal import blackmanharris
 import pyuvsim
 import time, os
-from hydra.vis_utils import flatten_vector, reconstruct_vector
+from hydra.vis_utils import flatten_vector, reconstruct_vector, timing_info
 
 
 np.random.seed(12)
 
 
 SAMPLE_GAINS = True
-SAMPLE_VIS = True
+SAMPLE_VIS = False
 SAMPLE_PTSRC_AMPS = True
+CALCULATE_STATS = True
 OUTPUT_DIAGNOSTICS = True
+SAVE_TIMING_INFO = True
 
 # Simulation settings
 Nptsrc = 70
 Ntimes = 30
 Nfreqs = 20
 Nants = 15
-Niters = 250
+Niters = 100
 
 sigma_noise = 0.5
 
@@ -34,6 +36,7 @@ hera_latitude = -30.7215 * np.pi / 180.0
 # Check that output directory exists
 if not os.path.exists("./output"):
     os.makedirs("./output")
+ftime = "./output/timing.dat"
 
 #-------------------------------------------------------------------------------
 # (1) Simulate some data
@@ -85,7 +88,7 @@ _sim_vis = hydra.vis_simulator.simulate_vis(
         latitude=hera_latitude,
         use_feed="x",
     )
-print("Simulation took %3.2f sec" % (time.time() - t0))
+timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
 
 # Allocate computed visibilities to only the requested baselines (saves memory)
 model0 = hydra.extract_vis_from_sim(ants, antpairs, _sim_vis)
@@ -93,23 +96,19 @@ del _sim_vis # save some memory
 
 # Define gains and gain perturbations
 gains = (1. + 0.j) * np.ones((Nants, Nfreqs, Ntimes), dtype=model0.dtype)
-#delta_g = np.array([0.5*np.sin(times[np.newaxis,:] \
-#                                 * freqs[:,np.newaxis]/100.)
-#                    for ant in ants])
 
 # Generate gain fluctuations from FFT basis
 frate = np.fft.fftfreq(times.size, d=times[1] - times[0])
 tau = np.fft.fftfreq(freqs.size, d=freqs[1] - freqs[0])
-_delta_g = 50. \
+_delta_g = 5. \
          * np.fft.ifft2(np.exp(-0.5 * (((frate[np.newaxis,:]-9.)/2.)**2.
                                      + ((tau[:,np.newaxis] - 0.05)/0.03)**2.)))
 delta_g = np.array([_delta_g for ant in ants], dtype=model0.dtype)
 
-# FIXME
 # Apply a Blackman-Harris window to apodise the edges
-window = blackmanharris(model0.shape[1], sym=True)[np.newaxis,:,np.newaxis] \
-       * blackmanharris(model0.shape[2], sym=True)[np.newaxis,np.newaxis,:]
-window = 1.
+#window = blackmanharris(model0.shape[1], sym=True)[np.newaxis,:,np.newaxis] \
+#       * blackmanharris(model0.shape[2], sym=True)[np.newaxis,np.newaxis,:]
+window = 1. # no window for now
 
 # Apply gains to model
 data = model0.copy() * window # FIXME
@@ -117,9 +116,14 @@ hydra.apply_gains(data, gains * (1. + delta_g), ants, antpairs, inline=True)
 
 # Plot input (simulated) gain perturbation for ant 0
 vminmax = np.max(delta_g[0].real)
-plt.matshow(delta_g[0].real, vmin=-vminmax, vmax=vminmax)
+plt.subplot(121)
+plt.matshow(delta_g[0].real, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
 plt.colorbar()
-plt.savefig("output/gain_000_xxxxx.png")
+plt.subplot(122)
+plt.matshow(delta_g[0].imag, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
+plt.colorbar()
+plt.gcf().set_size_inches((10., 4.))
+plt.savefig("output/delta_g_true_000.png")
 
 # Plot input (simulated) visibility model
 vminmax_vis = np.max(model0[0,:,:].real)
@@ -149,6 +153,8 @@ current_data_model = 1.01*model0.copy() * window # FIXME
 #current_delta_gain = np.zeros(gains.shape, dtype=model0.dtype)
 # FIXME
 current_delta_gain = np.zeros_like(delta_g)
+# FIXME: Trying to fix the amplitude to the correct value
+current_delta_gain[:,0,0] += fft.fft2(delta_g[0])[0,0] # FIXME FIXME
 
 # Initial point source amplitude factor
 current_ptsrc_a = np.ones(ra.size)
@@ -168,7 +174,7 @@ vis_proj_operator0 = hydra.ptsrc_sampler.calc_proj_operator(
                                 beams=beams,
                                 latitude=hera_latitude
 )
-print("Precomp. ptsrc proj. operator took %3.2f sec" % (time.time() - t0))
+timing_info(ftime, 0, "(0) Precomp. ptsrc proj. operator", time.time() - t0)
 
 # Set priors and auxiliary information
 # FIXME: amp_prior_std is a prior around amp=0 I think, so can skew things low!
@@ -191,104 +197,6 @@ N_vis_params = 2 * data.shape[0] * data.shape[1] * data.shape[2]
 
 
 # FIXME: Check that model0 == vis_proj_operator0 @ ones
-
-
-
-
-
-
-"""
-
-# FIXME: Testing projection operator for gains
-
-delta_g_fourier = np.array([fft.fft2(_delta_g) for ant in ants], dtype=model0.dtype)
-
-ggv = hydra.apply_gains(np.ones_like(model0),
-                        gains,
-                        ants,
-                        antpairs,
-                        inline=False)
-
-v_obs_f = hydra.gain_sampler.apply_proj(delta_g_fourier,
-                                      A_real,
-                                      A_imag,
-                                      ggv)
-v_obs = np.array([fft.ifft2(v_obs_f[i]) for i in range(v_obs_f.shape[0])])
-v_obs += ggv
-
-dd = np.ones_like(model0, dtype=np.complex128)
-hydra.apply_gains(dd, gains * (1. + delta_g), ants, antpairs, inline=True)
-
-print("*"*60)
-print(dd.dtype, gains.dtype, delta_g.dtype)
-#print(dd[0])
-
-
-plt.close('all')
-plt.subplot(331)
-plt.matshow(dd[0].real, fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
-plt.colorbar()
-plt.title("real gains real")
-
-plt.subplot(332)
-plt.matshow(dd[0].imag, fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
-plt.colorbar()
-plt.title("real gains imag")
-
-plt.subplot(333)
-plt.matshow(np.abs(dd[0]), fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
-plt.colorbar()
-plt.title("real gains abs")
-
-
-plt.subplot(334)
-plt.matshow(v_obs[0].real, fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
-plt.colorbar()
-plt.title("proj gains real")
-
-plt.subplot(335)
-plt.matshow(v_obs[0].imag, fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
-plt.colorbar()
-plt.title("proj gains imag")
-
-plt.subplot(336)
-plt.matshow(np.abs(v_obs[0]), fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
-plt.colorbar()
-plt.title("proj gains abs")
-
-
-lin_gains = gains[0]*gains[1].conj()*(1. + delta_g[0] + delta_g[1])
-plt.subplot(337)
-plt.matshow(lin_gains.real, fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
-plt.colorbar()
-plt.title("linear gains real")
-
-plt.subplot(338)
-plt.matshow(lin_gains.imag, fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
-plt.colorbar()
-plt.title("linear gains imag")
-
-plt.subplot(339)
-plt.matshow(np.abs(lin_gains), fignum=False, vmin=-1.8, vmax=1.8, cmap='Spectral')
-plt.colorbar()
-plt.title("linear gains abs")
-
-
-print("@"*60)
-print((delta_g[0]*delta_g[1].conj())[0] / (delta_g[0])[0])
-
-plt.gcf().set_size_inches((14., 10.))
-plt.show()
-
-
-exit()
-"""
-
-
-
-
-
-
 
 
 #-------------------------------------------------------------------------------
@@ -346,7 +254,8 @@ for n in range(Niters):
         # Solve using Conjugate Gradients
         t0 = time.time()
         x_soln, convergence_info = cg(gain_linear_op, b)
-        print("(A) Gain sampler took %3.2f sec" % (time.time() - t0))
+        timing_info(ftime, n, "(A) Gain sampler", time.time() - t0)
+
 
         # Reshape solution into complex array and multiply by S^1/2 to get set of
         # Fourier coeffs of the actual solution for the frac. gain perturbation
@@ -361,10 +270,16 @@ for n in range(Niters):
 
         print("    Gain sample:", xgain[0,0,0], xgain.shape)
         np.save("output/delta_gain_%05d" % n, x_soln)
-        plt.matshow(xgain[0].real, vmin=-vminmax, vmax=vminmax)
-        plt.colorbar()
-        plt.title("%05d" % n)
-        plt.savefig("output/gain_000_%05d.png" % n)
+
+        for i in range(len(ants)):
+            plt.subplot(121)
+            plt.matshow(xgain[i].real, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
+            plt.colorbar()
+            plt.subplot(122)
+            plt.matshow(xgain[i].imag, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
+            plt.colorbar()
+            plt.gcf().set_size_inches((10., 4.))
+            plt.savefig("output/delta_g_%03d_%05d.png" % (i, n))
 
         # Residual with true gains (abs)
         plt.matshow(np.abs(xgain[0]) - np.abs(delta_g[0]),
@@ -455,7 +370,7 @@ for n in range(Niters):
         # Solve using Conjugate Gradients
         t0 = time.time()
         x_soln, convergence_info = cg(vis_linear_op, bvis)
-        print("(B) Visibility sampler took %3.2f sec" % (time.time() - t0))
+        timing_info(ftime, n, "(B) Visibility sampler", time.time() - t0)
 
         # Reshape solution into complex array and multiply by S^1/2 to get set of
         # Fourier coeffs of the actual solution for the frac. gain perturbation
@@ -511,14 +426,12 @@ for n in range(Niters):
             i2 = np.where(ants == ant2)[0][0]
             proj[k,:,:,:] *= (gains * (1. + current_delta_gain))[i1,:,:,np.newaxis] \
                            * (gains * (1. + current_delta_gain))[i2,:,:,np.newaxis].conj()
-        print("(C) Applying gains to ptsrc proj. operator took %3.2f sec" \
-              % (time.time() - t0))
+        timing_info(ftime, n, "(C) Applying gains to ptsrc proj. operator", time.time() - t0)
 
         # Precompute the point source matrix operator
         t0 = time.time()
-        ptsrc_precomp_mat = hydra.ptsrc_sampler.precompute_op(proj, noise_var)
-        print("(C) Precomp. ptsrc matrix operator took %3.2f sec" \
-              % (time.time() - t0))
+        ptsrc_precomp_mat = hydra.ptsrc_sampler.precompute_op(proj, inv_noise_var)
+        timing_info(ftime, n, "(C) Precomp. ptsrc matrix operator", time.time() - t0)
 
         # Construct current state of model (residual from amplitudes = 1)
         resid = data.copy() \
@@ -526,7 +439,7 @@ for n in range(Niters):
 
         # Construct RHS of linear system
         bsrc = hydra.ptsrc_sampler.construct_rhs(resid.flatten(),
-                                                 noise_var.flatten(),
+                                                 inv_noise_var.flatten(),
                                                  amp_prior_std,
                                                  proj,
                                                  realisation=True)
@@ -534,7 +447,6 @@ for n in range(Niters):
         ptsrc_lhs_shape = (Nptsrc, Nptsrc)
         def ptsrc_lhs_operator(x):
             return hydra.ptsrc_sampler.apply_operator(x,
-                                                      noise_var.flatten(),
                                                       amp_prior_std,
                                                       ptsrc_precomp_mat)
 
@@ -545,7 +457,7 @@ for n in range(Niters):
         # Solve using Conjugate Gradients
         t0 = time.time()
         x_soln, convergence_info = cg(ptsrc_linear_op, bsrc)
-        print("(C) Point source sampler took %3.2f sec" % (time.time() - t0))
+        timing_info(ftime, n, "(C) Point source sampler", time.time() - t0)
         x_soln *= amp_prior_std # we solved for x = S^-1/2 s, so recover s
         print("    Example soln:", x_soln[:5]) # this is fractional deviation from assumed amplitude, so should be close to 0
         np.save("output/ptsrc_amp_%05d" % n, x_soln)
@@ -569,6 +481,64 @@ for n in range(Niters):
         plt.colorbar()
         plt.title("%05d" % n)
         plt.savefig("output/data_model_000_%05d.png" % n)
+
+
+    #---------------------------------------------------------------------------
+    # (P) Probability values and importance weights
+    #---------------------------------------------------------------------------
+    if CALCULATE_STATS:
+        # Calculate importance weights for this Gibbs sample
+        # FIXME: Ignores priors for now! They will cancel anyway, unless the
+        # prior terms also contain approximations
+
+        # Calculate data minus model (chi^2) for the exact model
+        ggv = hydra.apply_gains(current_data_model,
+                                gains * (1. + current_delta_gain),
+                                ants,
+                                antpairs,
+                                inline=False)
+        chisq_exact = (data - ggv) * np.sqrt(inv_noise_var)
+
+        # Calculate data minus model for the approximate model
+        ggv0 = hydra.apply_gains(current_data_model,
+                                 gains,
+                                 ants,
+                                 antpairs,
+                                 inline=False)
+        ggv_approx = ggv0 + hydra.gain_sampler.apply_proj(current_delta_gain,
+                                                          A_real,
+                                                          A_imag,
+                                                          ggv0)
+        chisq_approx = (data - ggv_approx) * np.sqrt(inv_noise_var)
+
+        # Calculate chi^2 (log-likelihood) term for each model
+        logl_exact = -0.5 * (  np.sum(chisq_exact.real**2.)
+                             + np.sum(chisq_exact.imag**2.))
+        logl_approx = -0.5 * (  np.sum(chisq_approx.real**2.)
+                              + np.sum(chisq_approx.imag**2.))
+
+        # Calculate importance weight (ratio of likelihoods here)
+        importance_weight = np.exp(logl_exact - logl_approx)
+
+        # Approximate number of degrees of freedom
+        Ndof = 2*data.size # real + imaginary
+        if SAMPLE_GAINS:
+            Ndof -= gain_lhs_shape[-1]
+        if SAMPLE_VIS:
+            Ndof -= vis_lhs_shape[-1]
+        if SAMPLE_PTSRC_AMPS:
+            Ndof -= ptsrc_lhs_shape[-1]
+
+        # Print log-likelihood and importance weight
+        print("(P) Log-likelihood and importance weights:")
+        print("    Exact logL   = %+8.5e" % logl_exact)
+        print("    Approx. logL = %+8.5e" % logl_approx)
+        print("    Delta logL   = %+8.5e" % (logl_exact - logl_approx))
+        print("    Import. wgt  = %+8.5e" % importance_weight)
+        print("    Deg. freedom = %+8.5e" % Ndof)
+        print("    chi^2 / Ndof = %+8.5e" % (-2.*logl_approx / Ndof))
+        with open("output/stats.dat", "ab") as f:
+            np.savetxt(f, np.atleast_2d([n, logl_exact, logl_approx, importance_weight, Ndof]))
 
     #---------------------------------------------------------------------------
     # (O) Output diagnostics
@@ -595,6 +565,7 @@ for n in range(Niters):
         plt.colorbar()
         plt.title("%05d" % n)
         plt.savefig("output/chisq_000_%05d.png" % n)
+
 
 
     # Close all figures made in this iteration

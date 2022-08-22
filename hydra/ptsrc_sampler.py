@@ -9,7 +9,7 @@ from .vis_simulator import simulate_vis_per_source
 from scipy.sparse.linalg import cg, LinearOperator
 
 
-def precompute_op(vis_proj_operator, noise_var):
+def precompute_op(vis_proj_operator, inv_noise_var):
     """
     Precompute the real and imaginary blocks of the matrix operator
     (v^T N^-1 v), which is the most expensive component of the LHS operator of
@@ -19,8 +19,9 @@ def precompute_op(vis_proj_operator, noise_var):
         vis_proj_operator (array_like):
             The projection operator from source amplitudes to visibilities,
             from `calc_proj_operator`.
-        noise_var (array_like):
-            Noise variance array, with the same shape as the visibility data.
+        inv_noise_var (array_like):
+            Inverse noise variance array, with the same shape as the visibility
+            data.
 
     Returns:
         vsquared (array_like):
@@ -29,20 +30,18 @@ def precompute_op(vis_proj_operator, noise_var):
             (Nsrcs, Nsrcs).
     """
     nsrcs = vis_proj_operator.shape[-1]
-    v = vis_proj_operator / np.sqrt(noise_var)[:, :, :, np.newaxis]
+    v = vis_proj_operator * np.sqrt(inv_noise_var)[:, :, :, np.newaxis]
     v = v.reshape((-1, nsrcs))
     return v.T.real @ v.real + v.T.imag @ v.imag
 
 
-def apply_operator(x, noise_var, amp_prior_std, vsquared):
+def apply_operator(x, amp_prior_std, vsquared):
     """
     Apply LHS operator to a vector of source amplitudes.
 
     Parameters:
         x (array_like):
             Vector of source amplitudes to apply the operator to.
-        noise_var (array_like):
-            Noise variance array, with the same shape as the visibility data.
         amp_prior_std (array_like):
             Vector of standard deviation values to use for independent Gaussian
             priors on the source amplitudes.
@@ -60,15 +59,19 @@ def apply_operator(x, noise_var, amp_prior_std, vsquared):
 
 
 def construct_rhs(
-    resid, noise_var, amp_prior_std, vis_proj_operator, realisation=False
+    resid, inv_noise_var, amp_prior_std, vis_proj_operator, realisation=False
 ):
     """
     Construct the RHS vector of the linear system. This will have shape
     (2*Nsrcs), as the real and imaginary parts are separated.
 
     Parameters:
-        noise_var (array_like):
-            Noise variance array, with the same shape as the visibility data.
+        resid (array_like):
+            Residual of data minus reference model, with the same shape as the
+            visibility data.
+        inv_noise_var (array_like):
+            Inverse noise variance array, with the same shape as the visibility
+            data.
         amp_prior_std (array_like):
             Vector of standard deviation values to use for independent Gaussian
             priors on the source amplitudes.
@@ -103,7 +106,7 @@ def construct_rhs(
     # Separate complex part of RHS into real and imaginary parts, and apply
     # the real and imaginary parts of the projection operator separately.
     # This is necessary to get a real RHS vector
-    y = ((resid / noise_var) + (omega_n / np.sqrt(noise_var))).flatten()
+    y = ((resid * inv_noise_var) + (omega_n * np.sqrt(inv_noise_var))).flatten()
     b += amp_prior_std * (proj.T.real @ y.real + proj.T.imag @ y.imag)
     return b
 
