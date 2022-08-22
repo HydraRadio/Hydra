@@ -9,7 +9,8 @@ from scipy.sparse.linalg import cg, LinearOperator
 from scipy.signal import blackmanharris
 import pyuvsim
 import time, os
-from hydra.vis_utils import flatten_vector, reconstruct_vector, timing_info
+from hydra.vis_utils import flatten_vector, reconstruct_vector, timing_info, \
+                            build_hex_array
 
 
 np.random.seed(12)
@@ -21,12 +22,13 @@ SAMPLE_PTSRC_AMPS = True
 CALCULATE_STATS = True
 OUTPUT_DIAGNOSTICS = True
 SAVE_TIMING_INFO = True
+PLOTTING = False
 
 # Simulation settings
 Nptsrc = 70
 Ntimes = 30
 Nfreqs = 20
-Nants = 15
+#Nants = 15
 Niters = 100
 
 sigma_noise = 0.5
@@ -46,16 +48,24 @@ ftime = "./output/timing.dat"
 times = np.linspace(0.2, 0.5, Ntimes)
 freqs = np.linspace(100., 120., Nfreqs)
 
-ants = np.arange(Nants)
+#ant_pos = build_hex_array(hex_spec=(3,4), d=14.6)
+ant_pos = build_hex_array(hex_spec=(4,8), d=14.6)
+ants = np.array(list(ant_pos.keys()))
+Nants = len(ants)
+print("Nants =", Nants)
+
+#ants = np.arange(Nants)
 antpairs = []
 for i in range(len(ants)):
     for j in range(i, len(ants)):
         if i != j:
             # Exclude autos
             antpairs.append((i,j))
-ant_pos = {ant: [14.7*(ant % 5) + 0.5*14.7*(ant // 5),
-                 14.7*(ant // 5),
-                 0.] for ant in ants} # hexagon-like packing
+#ant_pos = {ant: [14.7*(ant % 5) + 0.5*14.7*(ant // 5),
+#                 14.7*(ant // 5),
+#                 0.] for ant in ants} # hexagon-like packing
+
+
 ants1, ants2 = list(zip(*antpairs))
 
 # Generate random point source locations
@@ -115,21 +125,22 @@ data = model0.copy() * window # FIXME
 hydra.apply_gains(data, gains * (1. + delta_g), ants, antpairs, inline=True)
 
 # Plot input (simulated) gain perturbation for ant 0
-vminmax = np.max(delta_g[0].real)
-plt.subplot(121)
-plt.matshow(delta_g[0].real, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
-plt.colorbar()
-plt.subplot(122)
-plt.matshow(delta_g[0].imag, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
-plt.colorbar()
-plt.gcf().set_size_inches((10., 4.))
-plt.savefig("output/delta_g_true_000.png")
+if PLOTTING:
+    vminmax = np.max(delta_g[0].real)
+    plt.subplot(121)
+    plt.matshow(delta_g[0].real, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
+    plt.colorbar()
+    plt.subplot(122)
+    plt.matshow(delta_g[0].imag, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
+    plt.colorbar()
+    plt.gcf().set_size_inches((10., 4.))
+    plt.savefig("output/delta_g_true_000.png")
 
-# Plot input (simulated) visibility model
-vminmax_vis = np.max(model0[0,:,:].real)
-plt.matshow(model0[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
-plt.colorbar()
-plt.savefig("output/data_model_000_xxxxx.png")
+    # Plot input (simulated) visibility model
+    vminmax_vis = np.max(model0[0,:,:].real)
+    plt.matshow(model0[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
+    plt.colorbar()
+    plt.savefig("output/data_model_000_xxxxx.png")
 
 # Add noise
 data += sigma_noise * np.sqrt(0.5) \
@@ -137,9 +148,10 @@ data += sigma_noise * np.sqrt(0.5) \
          + 1.j * np.random.randn(*data.shape))
 
 # Plot data (including noise)
-plt.matshow(data[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
-plt.colorbar()
-plt.savefig("output/data_000.png")
+if PLOTTING:
+    plt.matshow(data[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
+    plt.colorbar()
+    plt.savefig("output/data_000.png")
 
 #-------------------------------------------------------------------------------
 # (2) Set up Gibbs sampler
@@ -211,6 +223,7 @@ for n in range(Niters):
     print("-"*60)
     print(">>> Iteration %4d / %4d" % (n+1, Niters))
     print("-"*60)
+    t0iter = time.time()
 
     #---------------------------------------------------------------------------
     # (A) Gain sampler
@@ -271,55 +284,56 @@ for n in range(Niters):
         print("    Gain sample:", xgain[0,0,0], xgain.shape)
         np.save("output/delta_gain_%05d" % n, x_soln)
 
-        for i in range(len(ants)):
+        if PLOTTING:
+            for i in range(len(ants)):
+                plt.subplot(121)
+                plt.matshow(xgain[i].real, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
+                plt.colorbar()
+                plt.subplot(122)
+                plt.matshow(xgain[i].imag, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
+                plt.colorbar()
+                plt.gcf().set_size_inches((10., 4.))
+                plt.savefig("output/delta_g_%03d_%05d.png" % (i, n))
+
+            # Residual with true gains (abs)
+            plt.matshow(np.abs(xgain[0]) - np.abs(delta_g[0]),
+                        vmin=-np.max(np.abs(delta_g[0])),
+                        vmax=np.max(np.abs(delta_g[0])))
+            plt.colorbar()
+            plt.title("%05d" % n)
+            plt.savefig("output/gain_resid_amp_000_%05d.png" % n)
+
+            # Residual with true gains (real)
+            plt.matshow(np.real(xgain[0]) - np.real(delta_g[0]),
+                        vmin=-np.max(np.real(delta_g[0])),
+                        vmax=np.max(np.real(delta_g[0])))
+            plt.colorbar()
+            plt.title("%05d" % n)
+            plt.savefig("output/gain_resid_real_000_%05d.png" % n)
+
+            # Residual with true gains (imag)
+            plt.matshow(np.imag(xgain[0]) - np.imag(delta_g[0]),
+                        vmin=-np.max(np.imag(delta_g[0])),
+                        vmax=np.max(np.imag(delta_g[0])))
+            plt.colorbar()
+            plt.title("%05d" % n)
+            plt.savefig("output/gain_resid_imag_000_%05d.png" % n)
+
+            # DEBUG
+            # Compare imaginary parts of gains
             plt.subplot(121)
-            plt.matshow(xgain[i].real, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
+            plt.matshow(np.imag(xgain[0]),
+                        vmin=-np.max(np.imag(delta_g[0])),
+                        vmax=np.max(np.imag(delta_g[0])), fignum=False)
             plt.colorbar()
+
             plt.subplot(122)
-            plt.matshow(xgain[i].imag, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
+            plt.matshow(np.imag(delta_g[0]),
+                        vmin=-np.max(np.imag(delta_g[0])),
+                        vmax=np.max(np.imag(delta_g[0])), fignum=False)
             plt.colorbar()
-            plt.gcf().set_size_inches((10., 4.))
-            plt.savefig("output/delta_g_%03d_%05d.png" % (i, n))
-
-        # Residual with true gains (abs)
-        plt.matshow(np.abs(xgain[0]) - np.abs(delta_g[0]),
-                    vmin=-np.max(np.abs(delta_g[0])),
-                    vmax=np.max(np.abs(delta_g[0])))
-        plt.colorbar()
-        plt.title("%05d" % n)
-        plt.savefig("output/gain_resid_amp_000_%05d.png" % n)
-
-        # Residual with true gains (real)
-        plt.matshow(np.real(xgain[0]) - np.real(delta_g[0]),
-                    vmin=-np.max(np.real(delta_g[0])),
-                    vmax=np.max(np.real(delta_g[0])))
-        plt.colorbar()
-        plt.title("%05d" % n)
-        plt.savefig("output/gain_resid_real_000_%05d.png" % n)
-
-        # Residual with true gains (imag)
-        plt.matshow(np.imag(xgain[0]) - np.imag(delta_g[0]),
-                    vmin=-np.max(np.imag(delta_g[0])),
-                    vmax=np.max(np.imag(delta_g[0])))
-        plt.colorbar()
-        plt.title("%05d" % n)
-        plt.savefig("output/gain_resid_imag_000_%05d.png" % n)
-
-        # DEBUG
-        # Compare imaginary parts of gains
-        plt.subplot(121)
-        plt.matshow(np.imag(xgain[0]),
-                    vmin=-np.max(np.imag(delta_g[0])),
-                    vmax=np.max(np.imag(delta_g[0])), fignum=False)
-        plt.colorbar()
-
-        plt.subplot(122)
-        plt.matshow(np.imag(delta_g[0]),
-                    vmin=-np.max(np.imag(delta_g[0])),
-                    vmax=np.max(np.imag(delta_g[0])), fignum=False)
-        plt.colorbar()
-        plt.title("%05d" % n)
-        plt.savefig("output/gain_resid_compare_imag_000_%05d.png" % n)
+            plt.title("%05d" % n)
+            plt.savefig("output/gain_resid_compare_imag_000_%05d.png" % n)
 
         # Update gain model with latest solution (in real space)
         current_delta_gain = xgain
@@ -382,33 +396,36 @@ for n in range(Niters):
 
         print("    Vis sample:", x_soln[0,0,0], x_soln.shape)
         np.save("output/vis_%05d" % n, x_soln)
-        plt.matshow(current_data_model[0].real + x_soln[0].real,
-                    vmin=-vminmax_vis,
-                    vmax=vminmax_vis)
-        plt.colorbar()
-        plt.title("%05d" % n)
-        plt.savefig("output/vis_000_%05d.png" % n)
+
+        if PLOTTING:
+            plt.matshow(current_data_model[0].real + x_soln[0].real,
+                        vmin=-vminmax_vis,
+                        vmax=vminmax_vis)
+            plt.colorbar()
+            plt.title("%05d" % n)
+            plt.savefig("output/vis_000_%05d.png" % n)
 
         # Update current state
         current_data_model = current_data_model + x_soln
 
         # Residual with true data model
-        plt.subplot(121)
-        plt.matshow(current_data_model[0].real - model0[0].real,
-                    vmin=-0.5,
-                    vmax=0.5,
-                    fignum=False, aspect='auto')
-        plt.colorbar()
-        plt.title("%05d" % n)
+        if PLOTTING:
+            plt.subplot(121)
+            plt.matshow(current_data_model[0].real - model0[0].real,
+                        vmin=-0.5,
+                        vmax=0.5,
+                        fignum=False, aspect='auto')
+            plt.colorbar()
+            plt.title("%05d" % n)
 
-        plt.subplot(122)
-        plt.matshow(current_data_model[0].imag - model0[0].imag,
-                    vmin=-0.5,
-                    vmax=0.5,
-                    fignum=False, aspect='auto')
-        plt.colorbar()
-        plt.gcf().set_size_inches((10., 4.))
-        plt.savefig("output/resid_datamodel_000_%05d.png" % n)
+            plt.subplot(122)
+            plt.matshow(current_data_model[0].imag - model0[0].imag,
+                        vmin=-0.5,
+                        vmax=0.5,
+                        fignum=False, aspect='auto')
+            plt.colorbar()
+            plt.gcf().set_size_inches((10., 4.))
+            plt.savefig("output/resid_datamodel_000_%05d.png" % n)
 
 
     #---------------------------------------------------------------------------
@@ -463,24 +480,26 @@ for n in range(Niters):
         np.save("output/ptsrc_amp_%05d" % n, x_soln)
 
         # Plot point source amplitude perturbations
-        plt.subplot(111)
-        plt.plot(x_soln, 'r.')
-        plt.axhline(0., ls='dashed', color='k')
-        plt.axhline(-np.max(amp_prior_std), ls='dotted', color='gray')
-        plt.axhline(np.max(amp_prior_std), ls='dotted', color='gray')
-        plt.ylim((-1., 1.))
-        plt.title("%05d" % n)
-        plt.savefig("output/ptsrc_amp_%05d.png" % n)
+        if PLOTTING:
+            plt.subplot(111)
+            plt.plot(x_soln, 'r.')
+            plt.axhline(0., ls='dashed', color='k')
+            plt.axhline(-np.max(amp_prior_std), ls='dotted', color='gray')
+            plt.axhline(np.max(amp_prior_std), ls='dotted', color='gray')
+            plt.ylim((-1., 1.))
+            plt.title("%05d" % n)
+            plt.savefig("output/ptsrc_amp_%05d.png" % n)
 
         # Update visibility model with latest solution (does not include any gains)
         # Applies projection operator to ptsrc amplitude vector
         current_data_model = ( vis_proj_operator0.reshape((-1, Nptsrc)) @ (1. + x_soln) ).reshape(current_data_model.shape)
 
         # Plot visibility waterfalls for current model
-        plt.matshow(current_data_model[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
-        plt.colorbar()
-        plt.title("%05d" % n)
-        plt.savefig("output/data_model_000_%05d.png" % n)
+        if PLOTTING:
+            plt.matshow(current_data_model[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
+            plt.colorbar()
+            plt.title("%05d" % n)
+            plt.savefig("output/data_model_000_%05d.png" % n)
 
 
     #---------------------------------------------------------------------------
@@ -552,21 +571,25 @@ for n in range(Niters):
                                 antpairs,
                                 inline=False)
         resid = data - ggv
-        plt.matshow(np.abs(resid[0]), vmin=-5., vmax=5.)
-        plt.colorbar()
-        plt.title("%05d" % n)
-        plt.savefig("output/resid_abs_000_%05d.png" % n)
 
-        # Output chi^2
-        chisq = (resid[0].real**2. + resid[0].imag**2.) / noise_var[0]
-        chisq_tot = np.sum( (resid.real**2. + resid.imag**2.) / noise_var )
-        plt.matshow(chisq, vmin=0., vmax=40.)
-        plt.title(r"$\chi^2_{\rm tot} = %5.3e$" % chisq_tot)
-        plt.colorbar()
-        plt.title("%05d" % n)
-        plt.savefig("output/chisq_000_%05d.png" % n)
+        if PLOTTING:
+            plt.matshow(np.abs(resid[0]), vmin=-5., vmax=5.)
+            plt.colorbar()
+            plt.title("%05d" % n)
+            plt.savefig("output/resid_abs_000_%05d.png" % n)
+
+            # Output chi^2
+            chisq = (resid[0].real**2. + resid[0].imag**2.) / noise_var[0]
+            chisq_tot = np.sum( (resid.real**2. + resid.imag**2.) / noise_var )
+            plt.matshow(chisq, vmin=0., vmax=40.)
+            plt.title(r"$\chi^2_{\rm tot} = %5.3e$" % chisq_tot)
+            plt.colorbar()
+            plt.title("%05d" % n)
+            plt.savefig("output/chisq_000_%05d.png" % n)
 
 
 
     # Close all figures made in this iteration
-    plt.close('all')
+    if PLOTTING:
+        plt.close('all')
+    timing_info(ftime, n, "(Z) Full iteration", time.time() - t0iter)

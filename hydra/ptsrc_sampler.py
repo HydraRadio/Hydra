@@ -31,8 +31,12 @@ def precompute_op(vis_proj_operator, inv_noise_var):
     """
     nsrcs = vis_proj_operator.shape[-1]
     v = vis_proj_operator * np.sqrt(inv_noise_var)[:, :, :, np.newaxis]
-    v = v.reshape((-1, nsrcs))
-    return v.T.real @ v.real + v.T.imag @ v.imag
+
+    # Treat real and imaginary separately, and get copies, to massively
+    # speed-up the matrix multiplication!
+    v_re = v.reshape((-1, nsrcs)).real.copy()
+    v_im = v.reshape((-1, nsrcs)).imag.copy()
+    return v_re.T @ v_re + v_im.T @ v_im
 
 
 def apply_operator(x, amp_prior_std, vsquared):
