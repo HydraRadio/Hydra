@@ -17,21 +17,21 @@ np.random.seed(12)
 
 
 SAMPLE_GAINS = True
-SAMPLE_VIS = False
+SAMPLE_VIS = True
 SAMPLE_PTSRC_AMPS = True
 CALCULATE_STATS = True
 OUTPUT_DIAGNOSTICS = True
 SAVE_TIMING_INFO = True
-PLOTTING = False
+PLOTTING = True
 
 # Simulation settings
-Nptsrc = 70
+Nptsrc = 100
 Ntimes = 30
-Nfreqs = 20
+Nfreqs = 60
 #Nants = 15
 Niters = 100
 
-sigma_noise = 0.5
+sigma_noise = 0.05
 
 hera_latitude = -30.7215 * np.pi / 180.0
 
@@ -49,7 +49,7 @@ times = np.linspace(0.2, 0.5, Ntimes)
 freqs = np.linspace(100., 120., Nfreqs)
 
 #ant_pos = build_hex_array(hex_spec=(3,4), d=14.6)
-ant_pos = build_hex_array(hex_spec=(4,8), d=14.6)
+ant_pos = build_hex_array(hex_spec=(3,4), d=14.6)
 ants = np.array(list(ant_pos.keys()))
 Nants = len(ants)
 print("Nants =", Nants)
@@ -110,10 +110,14 @@ gains = (1. + 0.j) * np.ones((Nants, Nfreqs, Ntimes), dtype=model0.dtype)
 # Generate gain fluctuations from FFT basis
 frate = np.fft.fftfreq(times.size, d=times[1] - times[0])
 tau = np.fft.fftfreq(freqs.size, d=freqs[1] - freqs[0])
+
+random_phase = np.exp(1.j*np.random.uniform(low=0., high=2.*np.pi, size=Nants))
+random_amp = 1. + 0.05*np.random.randn(Nants)
 _delta_g = 5. \
          * np.fft.ifft2(np.exp(-0.5 * (((frate[np.newaxis,:]-9.)/2.)**2.
                                      + ((tau[:,np.newaxis] - 0.05)/0.03)**2.)))
-delta_g = np.array([_delta_g for ant in ants], dtype=model0.dtype)
+delta_g = np.array([random_amp[i] * _delta_g *random_phase[i] for i in range(Nants)],
+                    dtype=model0.dtype)
 
 # Apply a Blackman-Harris window to apodise the edges
 #window = blackmanharris(model0.shape[1], sym=True)[np.newaxis,:,np.newaxis] \
@@ -159,14 +163,14 @@ if PLOTTING:
 
 # Get initial visibility model guesses (use the actual baseline model for now)
 # This SHOULD NOT include gain factors of any kind
-current_data_model = 1.01*model0.copy() * window # FIXME
+current_data_model = 1.*model0.copy() * window # FIXME
 
 # Initial gain perturbation guesses
 #current_delta_gain = np.zeros(gains.shape, dtype=model0.dtype)
 # FIXME
 current_delta_gain = np.zeros_like(delta_g)
 # FIXME: Trying to fix the amplitude to the correct value
-current_delta_gain[:,0,0] += fft.fft2(delta_g[0])[0,0] # FIXME FIXME
+#current_delta_gain[:,0,0] += fft.fft2(delta_g[0])[0,0] # FIXME FIXME
 
 # Initial point source amplitude factor
 current_ptsrc_a = np.ones(ra.size)
@@ -194,10 +198,19 @@ noise_var = (sigma_noise)**2. * np.ones(data.shape)
 inv_noise_var = window / noise_var
 
 gain_pspec_sqrt = 0.1 * np.ones((gains.shape[1], gains.shape[2]))
-gain_pspec_sqrt[0,0] = 1e-3 # FIXME: Try to fix the zero point?
+gain_pspec_sqrt[0,0] = 1e-2 # FIXME: Try to fix the zero point?
+
+# FIXME: Gain smoothing via priors
+#ii, jj = np.meshgrid(np.arange(gains.shape[2]), np.arange(gains.shape[1]))
+#gain_pspec_sqrt *= np.exp(-0.5 * np.sqrt(ii**2. + jj**2.)/1.**2.)
+
+#plt.matshow(gain_pspec_sqrt, aspect='auto')
+#plt.colorbar()
+#plt.show()
+#exit()
 
 amp_prior_std = 0.1 * np.ones(Nptsrc)
-amp_prior_std[19] = 1e-4 # FIXME
+amp_prior_std[19] = 1e-3 # FIXME
 vis_pspec_sqrt = 0.01 * np.ones((1, Nfreqs, Ntimes)) # currently same for all visibilities
 vis_group_id = np.zeros(len(antpairs), dtype=int) # index 0 for all
 
@@ -287,10 +300,12 @@ for n in range(Niters):
         if PLOTTING:
             for i in range(len(ants)):
                 plt.subplot(121)
-                plt.matshow(xgain[i].real, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
+                plt.matshow(xgain[i].real, vmin=-vminmax, vmax=vminmax,
+                            fignum=False, aspect='auto')
                 plt.colorbar()
                 plt.subplot(122)
-                plt.matshow(xgain[i].imag, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
+                plt.matshow(xgain[i].imag, vmin=-vminmax, vmax=vminmax,
+                            fignum=False, aspect='auto')
                 plt.colorbar()
                 plt.gcf().set_size_inches((10., 4.))
                 plt.savefig("output/delta_g_%03d_%05d.png" % (i, n))
@@ -298,25 +313,31 @@ for n in range(Niters):
             # Residual with true gains (abs)
             plt.matshow(np.abs(xgain[0]) - np.abs(delta_g[0]),
                         vmin=-np.max(np.abs(delta_g[0])),
-                        vmax=np.max(np.abs(delta_g[0])))
+                        vmax=np.max(np.abs(delta_g[0])),
+                        aspect='auto')
             plt.colorbar()
             plt.title("%05d" % n)
+            plt.gcf().set_size_inches((6., 4.))
             plt.savefig("output/gain_resid_amp_000_%05d.png" % n)
 
             # Residual with true gains (real)
             plt.matshow(np.real(xgain[0]) - np.real(delta_g[0]),
                         vmin=-np.max(np.real(delta_g[0])),
-                        vmax=np.max(np.real(delta_g[0])))
+                        vmax=np.max(np.real(delta_g[0])),
+                        aspect='auto')
             plt.colorbar()
             plt.title("%05d" % n)
+            plt.gcf().set_size_inches((6., 4.))
             plt.savefig("output/gain_resid_real_000_%05d.png" % n)
 
             # Residual with true gains (imag)
             plt.matshow(np.imag(xgain[0]) - np.imag(delta_g[0]),
                         vmin=-np.max(np.imag(delta_g[0])),
-                        vmax=np.max(np.imag(delta_g[0])))
+                        vmax=np.max(np.imag(delta_g[0])),
+                        aspect='auto')
             plt.colorbar()
             plt.title("%05d" % n)
+            plt.gcf().set_size_inches((6., 4.))
             plt.savefig("output/gain_resid_imag_000_%05d.png" % n)
 
             # DEBUG
@@ -324,15 +345,36 @@ for n in range(Niters):
             plt.subplot(121)
             plt.matshow(np.imag(xgain[0]),
                         vmin=-np.max(np.imag(delta_g[0])),
-                        vmax=np.max(np.imag(delta_g[0])), fignum=False)
+                        vmax=np.max(np.imag(delta_g[0])),
+                        fignum=False, aspect='auto')
             plt.colorbar()
 
             plt.subplot(122)
             plt.matshow(np.imag(delta_g[0]),
                         vmin=-np.max(np.imag(delta_g[0])),
-                        vmax=np.max(np.imag(delta_g[0])), fignum=False)
+                        vmax=np.max(np.imag(delta_g[0])),
+                        fignum=False, aspect='auto')
             plt.colorbar()
             plt.title("%05d" % n)
+            plt.gcf().set_size_inches((10., 4.))
+            plt.savefig("output/gain_resid_compare_imag_000_%05d.png" % n)
+
+            # Compare real parts of gains
+            plt.subplot(121)
+            plt.matshow(np.imag(xgain[0]),
+                        vmin=-np.max(np.imag(delta_g[0])),
+                        vmax=np.max(np.imag(delta_g[0])),
+                        fignum=False, aspect='auto')
+            plt.colorbar()
+
+            plt.subplot(122)
+            plt.matshow(np.imag(delta_g[0]),
+                        vmin=-np.max(np.imag(delta_g[0])),
+                        vmax=np.max(np.imag(delta_g[0])),
+                        fignum=False, aspect='auto')
+            plt.colorbar()
+            plt.title("%05d" % n)
+            plt.gcf().set_size_inches((10., 4.))
             plt.savefig("output/gain_resid_compare_imag_000_%05d.png" % n)
 
         # Update gain model with latest solution (in real space)
@@ -488,6 +530,7 @@ for n in range(Niters):
             plt.axhline(np.max(amp_prior_std), ls='dotted', color='gray')
             plt.ylim((-1., 1.))
             plt.title("%05d" % n)
+            plt.gcf().set_size_inches((5., 4.))
             plt.savefig("output/ptsrc_amp_%05d.png" % n)
 
         # Update visibility model with latest solution (does not include any gains)
@@ -496,9 +539,11 @@ for n in range(Niters):
 
         # Plot visibility waterfalls for current model
         if PLOTTING:
-            plt.matshow(current_data_model[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
+            plt.matshow(current_data_model[0,:,:].real,
+                        vmin=-vminmax_vis, vmax=vminmax_vis, aspect='auto')
             plt.colorbar()
             plt.title("%05d" % n)
+            plt.gcf().set_size_inches((5., 4.))
             plt.savefig("output/data_model_000_%05d.png" % n)
 
 
@@ -573,18 +618,20 @@ for n in range(Niters):
         resid = data - ggv
 
         if PLOTTING:
-            plt.matshow(np.abs(resid[0]), vmin=-5., vmax=5.)
+            plt.matshow(np.abs(resid[0]), vmin=-5., vmax=5., aspect='auto')
             plt.colorbar()
             plt.title("%05d" % n)
+            plt.gcf().set_size_inches((5., 4.))
             plt.savefig("output/resid_abs_000_%05d.png" % n)
 
             # Output chi^2
             chisq = (resid[0].real**2. + resid[0].imag**2.) / noise_var[0]
             chisq_tot = np.sum( (resid.real**2. + resid.imag**2.) / noise_var )
-            plt.matshow(chisq, vmin=0., vmax=40.)
+            plt.matshow(chisq, vmin=0., vmax=40., aspect='auto')
             plt.title(r"$\chi^2_{\rm tot} = %5.3e$" % chisq_tot)
             plt.colorbar()
             plt.title("%05d" % n)
+            plt.gcf().set_size_inches((5., 4.))
             plt.savefig("output/chisq_000_%05d.png" % n)
 
 
