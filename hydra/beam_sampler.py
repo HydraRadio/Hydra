@@ -60,6 +60,46 @@ def construct_Zmatr(nmax, l, m):
     return(Zmatr)
 
 
+def get_ant_inds(ant_samp_ind, NANTS):
+    """
+    Get the indices of the antennas that are not being sampled, according to the
+    index of the antenna that is being sampled.
+
+    Parameters:
+        ant_samp_ind (int): The index for the antenna being sampled in the
+            current Gibbs step.
+
+        NANTS (int): The total number of antennas in the problem.
+
+    Returns:
+        ant_inds (tuple): A tuple with one entry, which is itself a 1d array of
+            indices corresponding to the antennas that are being conditioned
+            on in the current Gibbs step (an output of np.where on a 1d array).
+    """
+    ant_inds = np.where(np.arange(NANTS) != ant_samp_ind)
+    return(ant_inds)
+
+
+def select_subarr(arr, ant_samp_ind):
+    """
+    Select the subarray for anything of the same shape as the visibilities,
+    such as the inverse noise variance and its square root.
+
+    Parameters:
+        arr (array_like): The array from which the subarray will be extracted.
+
+        ant_samp_ind (int): The index of the current antenna being sampled.
+
+    Returns:
+        subarr (array_like): The subarray relevant to the current Gibbs step.
+    """
+
+    NANTS = arr.shape[3]
+    ant_inds = get_ant_inds(ant_samp_ind, NANTS)
+    subarr = arr[:, :, :, ant_inds, ant_samp_ind]
+    return(subarr)
+
+
 def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
                   precision=1, latitude=-30.7215 * np.pi / 180.0,
                   use_feed="x"):
