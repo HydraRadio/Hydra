@@ -12,26 +12,76 @@ import time, os
 from hydra.vis_utils import flatten_vector, reconstruct_vector, timing_info, \
                             build_hex_array
 
+import argparse
 
-np.random.seed(12)
+description = "Example Gibbs sampling of the joint posterior of several analysis " \
+              "parameters in 21-cm power spectrum estimation from a simulated " \
+              "visibility data set"
+parser = argparse.ArgumentParser(description=description)
+parser.add_argument("-s", type=int, action="store", nargs=1, default=12,
+                    required=False, dest="seed",
+                    help="Sets the random seed for the simulation.")
+parser.add_argument("--no_gains", type=bool, action="store_true", nargs=0,
+                    required=False, dest="no_sample_gains",
+                    help="Do not sample the gains (omit if desire is to sample gains).")
+parser.add_argument("--no_vis", type=bool, action="store_true", nargs=0,
+                    required=False, dest="no_sample_vis",
+                    help="Do not sample the visibilities "
+                         "(omit if desire is to sample visibilities).")
+parser.add_argument("--no_ptsrc", type=bool, action="store_true", nargs=0,
+                    required=False, dest="no_sample_ptsrc",
+                    help="Do not sample the point source amplitudes "
+                         "(omit if desire is to sample point source amplitudes).")
+parser.add_argument("--no_beam", type=bool, actions="store_true", nargs=0,
+                    required=False, dest="no_sample_beam",
+                    help="Do not sample the beam (omit if desire is to sample the beam)")
+parser.add_argument("--no_stats", type=bool, action="store_true", nargs=0,
+                    required=False, dest="no_calculate_stats",
+                    help="Do not calculate statistics about the sampling results.")
+parser.add_argument("--no_diagnostics", type=bool, action="store_true", nargs=0,
+                    required=False, dest="no_output_diagnostics",
+                    help="Do not output diagnostics.")
+parser.add_argument("--no_timing", type=bool, action="store_true", nargs=0,
+                    metavar="no_timing", required=False,
+                    dest="no_save_timing_info", help="Do not save timing info.")
+parser.add_argument("--no_plotting", type=bool, action="store_true", nargs=0,
+                    required=False, dest="no_plotting",
+                    help="Do not make plots.")
+parser.add_argument("--Nptsrc", type=int, action="store", nargs=1, default=100,
+                    required=False, dest="Nptsrc",
+                    help="Number of point sources to use in simulation (and model)")
+parser.add_argument("--Ntimes", type=int, action="store", nargs=1, default=30,
+                    required=False, dest="Ntimes",
+                    help="Number of times to use in simulation")
+parser.add_argument("--Nfreqs", type=int, action="store", nargs=1, default=60,
+                    required=False, dest="Nfreqs",
+                    help="Number of frequencies to use in simulation")
+parser.add_argument("--Niters", type=int, action="store", nargs=1, default=100,
+                    required=False, dest="Niters",
+                    help="Number of joint samples to gather")
+parser.add_argument("--sigma_noise", type=float, action="store", nargs=1,
+                    default=0.05, required=False, dest="sigma_iters",
+                    help="Strength of the noise")
+args = parser.parse_args()
 
+# eliminate the double negatives here.
+SAMPLE_GAINS = not args.no_sample_gains
+SAMPLE_VIS = not args.no_sample_vis
+SAMPLE_PTSRC_AMPS = not args.no_ptsrc
+SAMPLE_BEAM = not args.no_beam
+CALCULATE_STATS = not args.no_calculate_stats
+OUTPUT_DIAGNOSTICS = not args.no_output_diagnostics
+SAVE_TIMING_INFO = not args.no_save_timing_info
+PLOTTING = not args.no_plotting
 
-SAMPLE_GAINS = True
-SAMPLE_VIS = True
-SAMPLE_PTSRC_AMPS = True
-CALCULATE_STATS = True
-OUTPUT_DIAGNOSTICS = True
-SAVE_TIMING_INFO = True
-PLOTTING = True
-
-# Simulation settings
-Nptsrc = 100
-Ntimes = 30
-Nfreqs = 60
+# Simulation settings -- want some shorter variable names
+Nptsrc = args.Nptsrc
+Ntimes = args.Ntimes
+Nfreqs = args.Nfreqs
 #Nants = 15
-Niters = 100
+Niters = args.Niters
 
-sigma_noise = 0.05
+sigma_noise = args.sigma_noise
 
 hera_latitude = -30.7215 * np.pi / 180.0
 
