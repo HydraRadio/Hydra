@@ -1,5 +1,6 @@
 
 import numpy as np
+from vis_cpu import conversions
 
 
 def flatten_vector(v):
@@ -161,3 +162,37 @@ def build_hex_array(hex_spec=(3,4), ants_per_row=None, d=14.6):
             ants[k] = (x[i], y, 0.)
 
     return ants
+
+
+def convert_to_tops(ra, dec, lsts, latitude):
+    """
+    Go to topocentric co-ordinates from sequences of ra, dec at certain lsts,
+    observing from a given latitude. Ripped this out of vis_sim_per_source.
+
+    Parameters:
+        ra (array_like): Right ascensions of interest.
+        dec (array_like): Declinations of interest.
+        lsts (array_like): Local sidereal times of observation.
+        latitude (float): Latidude of observing, in radians.
+
+    Returns:
+        txs, tys, tzs: The topocentric co-ordinates (radio astronomers' l, m, n)
+    """
+    # Source coordinate transform, from equatorial to Cartesian
+    crd_eq = conversions.point_source_crd_eq(ra, dec)
+
+    # Get coordinate transforms as a function of LST
+    eq2tops = np.array([conversions.eci_to_enu_matrix(lst, latitude) for lst in lsts])
+
+    txs, tys, tzs = [], [], []
+
+    for t, eq2top in enumerate(eq2tops.astype(real_dtype)):
+        # Dot product converts ECI cosines (i.e. from RA and Dec) into ENU
+        # (topocentric) cosines, with (tx, ty, tz) = (e, n, u) components
+        # relative to the center of the array
+        tx, ty, tz = crd_top = np.dot(eq2top, crd_eq)
+        txs.append(tx)
+        tys.append(ty)
+        tzs.append(tz)
+
+    return(txs, tys, tzs)
