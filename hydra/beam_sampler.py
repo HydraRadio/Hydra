@@ -147,7 +147,7 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
                                             latitude=latitude,
                                             use_feed=use_feed)
     # This should do all the broadcasting
-    Mjk = np.einsum('jk,...k,kl -> j...l', Z.T, sky_amp_phase, Z,
+    Mjk = np.einsum('tsz,ftaAs,tsZ -> zftaAZ', Z, sky_amp_phase, Z,
                     optimize=True)
 
     return(Mjk)
