@@ -1,6 +1,8 @@
 import numpy as np
+from scipy.linalg import lstsq
 from vis_simulator import simulate_vis_per_source
 from pyuvsim import AnalyticBeam
+import vis_utils
 
 def split_real_imag(arr, typ):
     """
@@ -37,7 +39,7 @@ def split_real_imag(arr, typ):
 
     return(new_arr)
 
-def construct_Zmatr(nmax, l, m):
+def construct_Zmatr(nmax, txs, tys, Ntimes, Nsource):
     """
     Make the matrix that transforms from the zernike basis to direction cosines.
 
@@ -45,9 +47,9 @@ def construct_Zmatr(nmax, l, m):
         nmax: Maximum radial degree to use for the Zernike polynomial basis.
             May range from 0 to 10.
 
-        l: East-West direction cosine
+        tx: East-West direction cosine
 
-        m: North-South direction cosine
+        ty: North-South direction cosine
     """
     # Just get the polynomials at the specified ls and ms
     Zdict = zernike(np.ones(66), l, m)
@@ -55,9 +57,49 @@ def construct_Zmatr(nmax, l, m):
     # Analytic formula  from inspecting zernike function
     ncoeff = (nmax + 1) * (nmax + 2) // 2
 
-    Zmatr = np.array(list(Zdict.values())[:ncoeff])
+    # The order of this reshape depends on what order the convert_to_tops spits
+    # out the answer in.
+    Zmatr = np.array(list(Zdict.values())[:ncoeff]).reshape(Ntimes, Nsource)
 
     return(Zmatr)
+
+def best_fit_beam(beam, nmax, ra, dec, lsts, latitude, freqs):
+    """
+    Get the best fit Zernike coefficients for a beam based on its value at a
+    a set of source positions at certain sidereal times, from a fixed latitude,
+    at a set of frequencies.
+
+    Parameters:
+        beam (pyuvsim.Beam): The beam being fit.
+        nmax (int): Maximum radial mode of the Zernike fit.
+        ra (array_like): Right ascension of the source positions.
+        dec (array_like): Declination of the source positions.
+        lsts (array_like): Sidereal times of the observation.
+        latitude (float): Latitude of observing, in radians.
+        freqs (array_like): Frequencies of obseration
+    Returns:
+        fit_beam (array_like): The best fit beam.
+    """
+    txs, tys, _ = vis_utils.convert_to_tops(ra, dec, lsts, latitude)
+    Ntimes = len(lsts)
+    Nsource = len(ra)
+    Nfreqs = len(freqs)
+    Zmatr = construct_Zmatr(nmax, txs, tys, Ntimes, Nsource)
+    ncoeff = Zmatr.shape[-1]
+
+    # Diagonal so just iterate over times
+    # There is a faster way to do this using scipy.sparse, and encoding Z
+    # as block-diagonal in time and frequency
+    fit_beam = []
+    for tind, tx, ty in enumerate(zip(txs, tyz)):
+        az, za = conversions.enu_to_az_za(enu_e=tx, enu_n=ty, orientation="uvbeam")
+        rhss = beam.interp(az, za, freq)
+        for freq_ind in range(Nfreqs):
+            fit_beam_tf = lstsq(Zmatr[tind], rhss[0, 0, 0, freq_ind, :])
+            fit_beam.append(fit_beam_tf)
+    fit_beam = np.array(fit_beam).reshape(Ntimes, Nfreqs, ncoeff)
+    fit_beam = np.transpose(fit_beam, axes=(1, 0, 2))
+    return(fit_beam)
 
 
 def get_ant_inds(ant_samp_ind, NANTS):
