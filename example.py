@@ -62,6 +62,9 @@ parser.add_argument("--Niters", type=int, action="store", nargs=1, default=100,
 parser.add_argument("--sigma_noise", type=float, action="store", nargs=1,
                     default=0.05, required=False, dest="sigma_iters",
                     help="Strength of the noise")
+parser.add_argument("--beam_nmax", type=float, action="store", nargs=1,
+                    default=10, required=False, dest="beam_nmax",
+                    help="Maximum radial degree of the Zernike basis for the beams")
 args = parser.parse_args()
 
 # eliminate the double negatives here.
@@ -80,6 +83,7 @@ Ntimes = args.Ntimes
 Nfreqs = args.Nfreqs
 #Nants = 15
 Niters = args.Niters
+beam_nmax = args.beam_nmax
 
 sigma_noise = args.sigma_noise
 
@@ -595,6 +599,16 @@ for n in range(Niters):
             plt.title("%05d" % n)
             plt.gcf().set_size_inches((5., 4.))
             plt.savefig("output/data_model_000_%05d.png" % n)
+
+    #---------------------------------------------------------------------------
+    # (D) Beam sampler
+    #---------------------------------------------------------------------------
+
+    if SAMPLE_BEAM:
+        if n == 0: # Have to have an initial guess
+            beam_coeffs = np.array([best_fit_beam(beam, nmax) for beam in beams])
+            beam_coeffs = np.tranpose(beam_coeffs, axes=(3, 1, 2, 0))
+            print(f"Initial beam guess has shape: {beam_coeffs.shape}")
 
 
     #---------------------------------------------------------------------------
