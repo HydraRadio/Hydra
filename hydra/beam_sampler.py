@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.linalg import lstsq, toeplitz, cholesky
+from scipy.linalg import lstsq, toeplitz, cholesky, inv
 from vis_simulator import simulate_vis_per_source
 from pyuvsim import AnalyticBeam
 import vis_utils
@@ -374,23 +374,26 @@ def make_prior_cov(freqs, times, Ncoeff, std, sig_freq, sig_time,
                     complex_matr, optimize=True)
     return(cov)
 
-def get_cov_sqrt(cov):
+def do_cov_op(cov, op):
     """
-    Returns the cholesky decomposition of a matrix with the same shape as the
-    covariance of a given antennas beam coefficients (per time and freq). Gets
-    all the reshaping right.
+    Returns the cholesky decomposition or inverse of a matrix with the same
+    shape as the covariance of a given antennas beam coefficients
+    (per time and freq). Gets all the reshaping right.
 
     Parameters:
         cov (array_like): The covariance-shaped matrix to operate on.
+        op (str): 'sqrt' or 'inv' depending on the desired operation.
     Returns:
-        cov_sqrt (array_like): The cholesky decomposition of the matrix.
+        ret (array_like): The cholesky decomposition or inverse of the matrix.
     """
     axlen = np.prod(cov_sqrt.shape[:4]) # Freq, time, zernike, complex
     cov_reshape = cov.reshape((axlen, axlen))
-    cho = cholesky(cov_reshape, lower=True) # Need lower triangular to get right answer
-    cov_sqrt = cho.reshape(cov.shape)
+    if op == 'sqrt':
+        ret = cholesky(cov_reshape, lower=True) # Need lower triangular to get right answer
+    if op == 'inv':
+        ret = inv(cov_reshape)
 
-    return(cov_sqrt)
+    return(ret.reshape(cov.shape))
 
 def zernike(coeffs, x, y):
         """
