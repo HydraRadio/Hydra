@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.linalg import lstsq
+from scipy.linalg import lstsq, circulant
 from vis_simulator import simulate_vis_per_source
 from pyuvsim import AnalyticBeam
 import vis_utils
@@ -188,6 +188,9 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
     # This should do all the broadcasting
     Mjk = np.einsum('tsz,ftaAs,tsZ -> zftaAZ', Z, sky_amp_phase, Z,
                     optimize=True)
+    # Doubles the autos, but we don't use them
+    # Makes it so we don't have to keep track of conjugates when sampling
+    Mjk = Mjk + np.swapaxes(Mjk.conj(), 3, 4)
 
     return(Mjk)
 
@@ -335,6 +338,39 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
     b = Tdag_Ninv_d + Cinv_mu + flx0_add + flx1_add
 
     return(b)
+
+def non_norm_gauss(A, sig, x):
+    return(A * np.exp(-x**2 / (2 * sig**2)))
+
+def make_prior_cov(freqs, times, Ncoeff, std, sig_freq, sig_time,
+                   constrain_phase=False, constraint=1e-4):
+    """
+    Make a prior covariance for the beam coefficients.
+
+    Parameters:
+        freqs (array_like): Frequencies over which the covariance matrix is calculated.
+        times (array_like): Times over which the covariance matrix is calculated.
+        Ncoeff (int): Number of Zernike coefficients in use.
+        std (float): Square root of the diagonal entries of the matrix.
+        sig_freq (float): Correlation length in frequency.
+        sig_time (float): Correlation length in time.
+        contrain_phase (bool): Whether to constrian the phase of one beam or not.
+            Currently just constrains it to have only small variations in the imaginary part.
+    Returns:
+        cov (array_like): The prior covariance matrix of the beam coefficients.
+    """
+    freq_row = non_norm_gauss(std, sig_freq, freqs - freqs[0])
+    time_row = non_norm_gauss(std, sig_time, times - times[0])
+    freq_matr = circulant(freq_row)
+    time_matr = circulant(time_row)
+    coeff_matr = np.eye(Ncoeff)
+    complex_matr = np.eye(2)
+    if constrain_phase: # Make the imaginary variance small compared to the real one
+        complex_matr[1, 1] = constraint
+
+    cov = np.einsum('Ff,Tt,zZ,cC -> FTzcftZC', freq_matr, time_matr, coeff_matr,
+                    complex_matr, optimize=True)
+    return(cov)
 
 def zernike(coeffs, x, y):
         """
