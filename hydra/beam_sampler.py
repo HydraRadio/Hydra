@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.linalg import lstsq, circulant
+from scipy.linalg import lstsq, toeplitz
 from vis_simulator import simulate_vis_per_source
 from pyuvsim import AnalyticBeam
 import vis_utils
@@ -359,15 +359,17 @@ def make_prior_cov(freqs, times, Ncoeff, std, sig_freq, sig_time,
     Returns:
         cov (array_like): The prior covariance matrix of the beam coefficients.
     """
-    freq_row = non_norm_gauss(std, sig_freq, freqs - freqs[0])
-    time_row = non_norm_gauss(std, sig_time, times - times[0])
-    freq_matr = circulant(freq_row)
-    time_matr = circulant(time_row)
+    freq_col = non_norm_gauss(std, sig_freq, freqs - freqs[0])
+    time_col = non_norm_gauss(std, sig_time, times - times[0])
+    freq_matr = toeplitz(freq_col)
+    time_matr = toeplitz(time_col)
     coeff_matr = np.eye(Ncoeff)
     complex_matr = np.eye(2)
     if constrain_phase: # Make the imaginary variance small compared to the real one
         complex_matr[1, 1] = constraint
 
+    # Some tests show if you give it this shape, you can unravel it and take the
+    # square root, and then ravel it back
     cov = np.einsum('Ff,Tt,zZ,cC -> FTzcftZC', freq_matr, time_matr, coeff_matr,
                     complex_matr, optimize=True)
     return(cov)
