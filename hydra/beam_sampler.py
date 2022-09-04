@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.linalg import lstsq, toeplitz
+from scipy.linalg import lstsq, toeplitz, cholesky
 from vis_simulator import simulate_vis_per_source
 from pyuvsim import AnalyticBeam
 import vis_utils
@@ -373,6 +373,24 @@ def make_prior_cov(freqs, times, Ncoeff, std, sig_freq, sig_time,
     cov = np.einsum('Ff,Tt,zZ,cC -> FTzcftZC', freq_matr, time_matr, coeff_matr,
                     complex_matr, optimize=True)
     return(cov)
+
+def get_cov_sqrt(cov):
+    """
+    Returns the cholesky decomposition of a matrix with the same shape as the
+    covariance of a given antennas beam coefficients (per time and freq). Gets
+    all the reshaping right.
+
+    Parameters:
+        cov (array_like): The covariance-shaped matrix to operate on.
+    Returns:
+        cov_sqrt (array_like): The cholesky decomposition of the matrix.
+    """
+    axlen = np.prod(cov_sqrt.shape[:4]) # Freq, time, zernike, complex
+    cov_reshape = cov.reshape((axlen, axlen))
+    cho = cholesky(cov_reshape, lower=True) # Need lower triangular to get right answer
+    cov_sqrt = cho.reshape(cov.shape)
+
+    return(cov_sqrt)
 
 def zernike(coeffs, x, y):
         """
