@@ -275,7 +275,7 @@ def apply_operator(x, inv_noise_var, coeff_cov_inv, zern_trans):
 
     return(Ax)
 
-def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, coeff_mean, Cinv_mu,
+def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, Cinv_mu,
                   coeff_cov_inv_sqrt, zern_trans, n_coeff):
     """
     Construct the right-hand-side of the Gaussian Constrained Realization (GCR)
