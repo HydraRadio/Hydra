@@ -10,7 +10,7 @@ from scipy.signal import blackmanharris
 import pyuvsim
 import time, os
 from hydra.vis_utils import flatten_vector, reconstruct_vector, timing_info, \
-                            build_hex_array
+                            build_hex_array, get_flux_from_ptsrc_amp, convert_to_tops
 
 import argparse
 
@@ -130,7 +130,7 @@ dec = np.random.uniform(low=-0.6, high=-0.4, size=Nptsrc) # close to HERA stripe
 # Generate fluxes
 beta_ptsrc = -2.7
 ptsrc_amps = 10.**np.random.uniform(low=-1., high=2., size=Nptsrc)
-fluxes = vis_utils.get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc)
+fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc)
 print("pstrc amps (input):", ptsrc_amps[:5])
 
 # Beams
@@ -607,7 +607,7 @@ for n in range(Niters):
     if SAMPLE_BEAM:
         # Have to have an initial guess and do some precompute
         if n == 0:
-            txs, tys, _ = vis_utils.convert_to_tops(ra, dec, times, hera_latitude)
+            txs, tys, _ = convert_to_tops(ra, dec, times, hera_latitude)
             Zmatr = construct_Zmatr(nmax, np.array(txs), np.array(tys), Ntimes, Nptsrc)
             # all the same so just repeat. Should probably have a random guess in the future.
             beam_coeffs = np.array(Nants * [best_fit_beam(beams[0], freqs, Zmatr), ])
@@ -617,46 +617,80 @@ for n in range(Niters):
 
 
             amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
-            flux_use = vis_utils.get_flux_from_ptsrc_amp(amp_use, freqs, beta_ptsrc)
-            Mjk = beam_sampler.construct_Mjk(Zmatr, ants, flux_use, ra, dec,
+            flux_use = get_flux_from_ptsrc_amp(amp_use, freqs, beta_ptsrc)
+            Mjk = hydra.beam_sampler.construct_Mjk(Zmatr, ants, flux_use, ra, dec,
                                              freqs, times, polarized=False,
                                              latitude=hera_latitude)
 
             # Hardcoded parameters. Make variations smooth in time/freq.
             sig_freq = 0.5 * (freqs[-1] - freqs[0])
             sig_time = 0.5 * (times[-1] - times[0])
-            cov = beam_sampler.make_prior_cov(freqs, times, ncoeffs, 1, sig_freq,
+            cov = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs, 1, sig_freq,
                                               sig_time)
             cov_inv = do_cov_op(cov, "inv")
             cov_inv_sqrt = do_dov_op(cov_inv, "sqrt")
             # Be lazy and just use the initial guess.
-            coeff_mean = beam_sampler.split_real_imag(beam_coeffs[:, :, :, 0])
+            coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, :, 0])
 
             Cinv_mu = np.einsum("FTzcftZC,ftZC->FTzc", cov_inv, coeff_mean)
 
-
-
-        # Sample each antenna
+        t0 = time.time()
+        # Round robin through the antennas
         for ant_samp_ind in range(Nants):
-            zern_trans = beam_sampler.get_zern_trans(Mjk, beam_coeffs,
+            zern_trans = hydra.beam_sampler.get_zern_trans(Mjk, beam_coeffs,
                                                      ant_samp_ind, Nants)
-            inv_noise_var_use = beam_sampler.select_subarr(inv_noise_var,
+            inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var,
                                                            ant_samp_ind)
-            inv_noise_var_sqrt_use = beam_sampler.select_subarr(inv_noise_var_sqrt,
+            inv_noise_var_sqrt_use = hydra.beam_sampler.select_subarr(inv_noise_var_sqrt,
                                                                 ant_samp_ind)
-            data_use = beam_sampler.select_subarr(data, at_samp_ind)
+            # Doubles the autos, but we don't use them so it doesn't matter.
+            # This makes it so we do not have to keep track of whether we are sampling
+            # The beam coeffs or their conjugate!
+            data_use = data + np.swapaxes(data.conj(), 2, 3)
+            data_use = hydra.beam_sampler.select_subarr(data, at_samp_ind)
 
             # Have to split real/imag - circ. Gauss so just factor of 2, no off-diags :)
             inv_noise_var_use = np.repeat(inv_noise_var_use[:, :, :, np.newaxis],
                                           2, axis=3) * 0.5
             inv_noise_var_sqrt_use = np.repeat(inv_noise_var_sqrt_use[:, :, :, np.newaxis],
                                                2, axis=3) * 0.5
-            # This one is actually complex so we use a special fn. in beam_sampler
+            # This one is actually complex so we use a special fn. in hydra.beam_sampler
+            data_use = data_use + data_use.conj()
             data_use = bream_sampler.split_real_imag(data_use, 'vec')
 
 
+            rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
+                                                             inv_noise_var_use,
+                                                             inv_noise_var_sqrt_use,
+                                                             Cinv_mu,
+                                                             cov_inv_sqrt,
+                                                             zern_trans,
+                                                             ncoeffs)
+            bbeam = np.flatten(rhs_unflatten)
+            shape = (Nfreqs, Ntimes, ncoeffs, 2)
+            def beam_lhs_operator(x):
+                y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),
+                                                      inv_noise_var_use,
+                                                      cov_inv,
+                                                      zern_trans)
+                return(np.flatten(y))
 
+            # What the shape would be if the matrix were represented densely
+            beam_lhs_shape = (np.prod(shape), np.prod(shape))
+            # Build linear operator object
+            beam_linear_op = LinearOperator(matvec=beam_lhs_operator,
+                                            shape=beam_lhs_shape)
 
+            # Solve using Conjugate Gradients
+            x_soln, convergence_info = cg(beam_linear_op, bbeam)
+            x_soln_res = np.reshape(x_soln, shape)
+            x_soln_swap = np.transpose(x_soln, axes=(2, 0, 1, 3))
+
+            # Gotta update the coeffs b/w rounds
+            beam_coeffs[:, :, :, ant_samp_ind] = xoln_res[:, :, :, 0] + 1.j * xoln_res[:, :, :, 1]
+
+        timing_info(ftime, n, "(D) Beam sampler", time.time() - t0)
+        np.save("output/beam_%05d" % n, beam_coeffs)
 
     #---------------------------------------------------------------------------
     # (P) Probability values and importance weights
