@@ -196,3 +196,8 @@ def convert_to_tops(ra, dec, lsts, latitude):
         tzs.append(tz)
 
     return(txs, tys, tzs)
+
+
+def get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc):
+    fluxes = ptsrc_amps[:,np.newaxis] * ((freqs / 100.)**beta_ptsrc)[np.newaxis,:]
+    return(fluxes)
