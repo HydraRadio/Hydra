@@ -130,7 +130,7 @@ dec = np.random.uniform(low=-0.6, high=-0.4, size=Nptsrc) # close to HERA stripe
 # Generate fluxes
 beta_ptsrc = -2.7
 ptsrc_amps = 10.**np.random.uniform(low=-1., high=2., size=Nptsrc)
-fluxes = ptsrc_amps[:,np.newaxis] * ((freqs / 100.)**beta_ptsrc)[np.newaxis,:]
+fluxes = vis_utils.get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc)
 print("pstrc amps (input):", ptsrc_amps[:5])
 
 # Beams
