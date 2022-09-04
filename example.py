@@ -605,10 +605,57 @@ for n in range(Niters):
     #---------------------------------------------------------------------------
 
     if SAMPLE_BEAM:
-        if n == 0: # Have to have an initial guess
-            beam_coeffs = np.array([best_fit_beam(beam, nmax) for beam in beams])
-            beam_coeffs = np.tranpose(beam_coeffs, axes=(3, 1, 2, 0))
+        # Have to have an initial guess, and do some precompute
+        if n == 0:
+            txs, tys, _ = vis_utils.convert_to_tops(ra, dec, times, hera_latitude)
+            Zmatr = construct_Zmatr(nmax, np.array(txs), np.array(tys), Ntimes, Nptsrc)
+            # all the same so just repeat
+            beam_coeffs = np.array(Nants * [best_fit_beam(beams[0], freqs, Zmatr), ])
+            beam_coeffs = np.swapaxes(beam_coeffs, 0, 3)
             print(f"Initial beam guess has shape: {beam_coeffs.shape}")
+            ncoeffs = beam_coeffs.shape[-1]
+
+
+            amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
+            flux_use = vis_utils.get_flux_from_ptsrc_amp(amp_use, freqs, beta_ptsrc)
+            Mjk = beam_sampler.construct_Mjk(Zmatr, ants, flux_use, ra, dec,
+                                             freqs, times, polarized=False,
+                                             latitude=hera_latitude)
+
+            # Hardcoded parameters. Make variations smooth in time/freq.
+            sig_freq = 0.5 * (freqs[-1] - freqs[0])
+            sig_time = 0.5 * (times[-1] - times[0])
+            cov = beam_sampler.make_prior_cov(freqs, times, ncoeffs, 1, sig_freq,
+                                              sig_time)
+            cov_inv = do_cov_op(cov, "inv")
+            cov_inv_sqrt = do_dov_op(cov_inv, "sqrt")
+            coeff_mean = beam_sampler.split_real_imag(beam_coeffs[:, :, :, 0])
+
+            Cinv_mu = np.einsum("FTzcftZC,ftZC->FTzc", cov_inv, coeff_mean)
+
+
+
+        # Sample each antenna
+        for ant_samp_ind in range(Nants):
+            zern_trans = beam_sampler.get_zern_trans(Mjk, beam_coeffs,
+                                                     ant_samp_ind, Nants)
+            inv_noise_var_use = beam_sampler.select_subarr(inv_noise_var,
+                                                           ant_samp_ind)
+            inv_noise_var_sqrt_use = beam_sampler.select_subarr(inv_noise_var_sqrt,
+                                                                ant_samp_ind)
+            data_use = beam_sampler.select_subarr(data, at_samp_ind)
+
+            # Have to split real/imag - circ. Gauss so just factor of 2, no off-diags :)
+            inv_noise_var_use = np.repeat(inv_noise_var_use[:, :, :, np.newaxis],
+                                          2, axis=3) * 0.5
+            inv_noise_var_sqrt_use = np.repeat(inv_noise_var_sqrt_use[:, :, :, np.newaxis],
+                                               2, axis=3) * 0.5
+            # This one is actually complex so we use a special fn. in beam_sampler
+            data_use = bream_sampler.split_real_imag(data_use, 'vec')
+
+
+
+
 
 
     #---------------------------------------------------------------------------
