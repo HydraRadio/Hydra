@@ -605,11 +605,11 @@ for n in range(Niters):
     #---------------------------------------------------------------------------
 
     if SAMPLE_BEAM:
-        # Have to have an initial guess, and do some precompute
+        # Have to have an initial guess and do some precompute
         if n == 0:
             txs, tys, _ = vis_utils.convert_to_tops(ra, dec, times, hera_latitude)
             Zmatr = construct_Zmatr(nmax, np.array(txs), np.array(tys), Ntimes, Nptsrc)
-            # all the same so just repeat
+            # all the same so just repeat. Should probably have a random guess in the future.
             beam_coeffs = np.array(Nants * [best_fit_beam(beams[0], freqs, Zmatr), ])
             beam_coeffs = np.swapaxes(beam_coeffs, 0, 3)
             print(f"Initial beam guess has shape: {beam_coeffs.shape}")
@@ -629,6 +629,7 @@ for n in range(Niters):
                                               sig_time)
             cov_inv = do_cov_op(cov, "inv")
             cov_inv_sqrt = do_dov_op(cov_inv, "sqrt")
+            # Be lazy and just use the initial guess.
             coeff_mean = beam_sampler.split_real_imag(beam_coeffs[:, :, :, 0])
 
             Cinv_mu = np.einsum("FTzcftZC,ftZC->FTzc", cov_inv, coeff_mean)
@@ -652,7 +653,6 @@ for n in range(Niters):
                                                2, axis=3) * 0.5
             # This one is actually complex so we use a special fn. in beam_sampler
             data_use = bream_sampler.split_real_imag(data_use, 'vec')
-
 
 
 
