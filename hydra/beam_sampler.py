@@ -47,12 +47,12 @@ def construct_Zmatr(nmax, txs, tys, Ntimes, Nsource):
         nmax: Maximum radial degree to use for the Zernike polynomial basis.
             May range from 0 to 10.
 
-        tx: East-West direction cosine
+        txs: East-West direction cosine
 
-        ty: North-South direction cosine
+        tys: North-South direction cosine
     """
     # Just get the polynomials at the specified ls and ms
-    Zdict = zernike(np.ones(66), l, m)
+    Zdict = zernike(np.ones(66), np.array(txs), np.array(tys))
 
     # Analytic formula  from inspecting zernike function
     ncoeff = (nmax + 1) * (nmax + 2) // 2
@@ -63,7 +63,7 @@ def construct_Zmatr(nmax, txs, tys, Ntimes, Nsource):
 
     return(Zmatr)
 
-def best_fit_beam(beam, nmax, ra, dec, lsts, latitude, freqs):
+def best_fit_beam(beam, freqs, Zmatr):
     """
     Get the best fit Zernike coefficients for a beam based on its value at a
     a set of source positions at certain sidereal times, from a fixed latitude,
@@ -72,20 +72,17 @@ def best_fit_beam(beam, nmax, ra, dec, lsts, latitude, freqs):
     Parameters:
         beam (pyuvsim.Beam): The beam being fit.
         nmax (int): Maximum radial mode of the Zernike fit.
-        ra (array_like): Right ascension of the source positions.
-        dec (array_like): Declination of the source positions.
         lsts (array_like): Sidereal times of the observation.
         latitude (float): Latitude of observing, in radians.
         freqs (array_like): Frequencies of obseration
     Returns:
         fit_beam (array_like): The best fit beam.
     """
-    txs, tys, _ = vis_utils.convert_to_tops(ra, dec, lsts, latitude)
-    Ntimes = len(lsts)
-    Nsource = len(ra)
+
+    Ntimes = Zmatr.shape[0]
+    ncoeff = Zamtr.shape[2]
     Nfreqs = len(freqs)
-    Zmatr = construct_Zmatr(nmax, txs, tys, Ntimes, Nsource)
-    ncoeff = Zmatr.shape[-1]
+
 
     # Diagonal so just iterate over times
     # There is a faster way to do this using scipy.sparse, and encoding Z
