@@ -59,7 +59,8 @@ def construct_Zmatr(nmax, txs, tys, Ntimes, Nsource):
 
     # The order of this reshape depends on what order the convert_to_tops spits
     # out the answer in.
-    Zmatr = np.array(list(Zdict.values())[:ncoeff]).reshape(Ntimes, Nsource)
+    Zmatr = np.array(list(Zdict.values())[:ncoeff]).reshape(ncoeff, Ntimes, Nsource)
+    Zmatr = np.transpose(Zmatr, axes=(1, 2, 0))
 
     return(Zmatr)
 
@@ -423,7 +424,7 @@ def zernike(coeffs, x, y):
         # Setting the equations for the Zernike polynomials
         # r = np.sqrt(powl(x,2) + powl(y,2))
         Z = {
-            1: c[0] * np.ones(len(x)),  # m = 0    n = 0
+            1: c[0] * np.ones_like(x),  # m = 0    n = 0
             2: c[1] * x,  # m = -1   n = 1
             3: c[2] * y,  # m = 1    n = 1
             4: c[3] * 2 * x * y,  # m = -2   n = 2
