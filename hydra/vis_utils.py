@@ -164,7 +164,7 @@ def build_hex_array(hex_spec=(3,4), ants_per_row=None, d=14.6):
     return ants
 
 
-def convert_to_tops(ra, dec, lsts, latitude):
+def convert_to_tops(ra, dec, lsts, latitude, precision=1):
     """
     Go to topocentric co-ordinates from sequences of ra, dec at certain lsts,
     observing from a given latitude. Ripped this out of vis_sim_per_source.
@@ -174,10 +174,15 @@ def convert_to_tops(ra, dec, lsts, latitude):
         dec (array_like): Declinations of interest.
         lsts (array_like): Local sidereal times of observation.
         latitude (float): Latidude of observing, in radians.
+        precision (int): If 1, use 32-bit floats, else use 64-bit floats
 
     Returns:
         txs, tys, tzs: The topocentric co-ordinates (radio astronomers' l, m, n)
     """
+    if precision == 1:
+        real_dtype = np.float32
+    else:
+        real_dtype = np.float64
     # Source coordinate transform, from equatorial to Cartesian
     crd_eq = conversions.point_source_crd_eq(ra, dec)
 
