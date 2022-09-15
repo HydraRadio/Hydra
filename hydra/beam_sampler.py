@@ -59,7 +59,7 @@ def construct_Zmatr(nmax, txs, tys, Ntimes, Nsource):
 
     # The order of this reshape depends on what order the convert_to_tops spits
     # out the answer in.
-    Zmatr = np.array(list(Zdict.values())[:ncoeff]).reshape(ncoeff, Ntimes, Nsource)
+    Zmatr = np.array(list(Zdict.values())[:ncoeff])
     Zmatr = np.transpose(Zmatr, axes=(1, 2, 0))
 
     return(Zmatr)
