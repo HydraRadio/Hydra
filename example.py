@@ -21,30 +21,29 @@ parser = argparse.ArgumentParser(description=description)
 parser.add_argument("-s", type=int, action="store", nargs=1, default=12,
                     required=False, dest="seed",
                     help="Sets the random seed for the simulation.")
-parser.add_argument("--no_gains", type=bool, action="store_true", nargs=0,
+parser.add_argument("--no_gains", action="store_true",
                     required=False, dest="no_sample_gains",
                     help="Do not sample the gains (omit if desire is to sample gains).")
-parser.add_argument("--no_vis", type=bool, action="store_true", nargs=0,
+parser.add_argument("--no_vis", action="store_true",
                     required=False, dest="no_sample_vis",
                     help="Do not sample the visibilities "
                          "(omit if desire is to sample visibilities).")
-parser.add_argument("--no_ptsrc", type=bool, action="store_true", nargs=0,
+parser.add_argument("--no_ptsrc", action="store_true",
                     required=False, dest="no_sample_ptsrc",
                     help="Do not sample the point source amplitudes "
                          "(omit if desire is to sample point source amplitudes).")
-parser.add_argument("--no_beam", type=bool, actions="store_true", nargs=0,
+parser.add_argument("--no_beam", action="store_true",
                     required=False, dest="no_sample_beam",
                     help="Do not sample the beam (omit if desire is to sample the beam)")
-parser.add_argument("--no_stats", type=bool, action="store_true", nargs=0,
+parser.add_argument("--no_stats", action="store_true",
                     required=False, dest="no_calculate_stats",
                     help="Do not calculate statistics about the sampling results.")
-parser.add_argument("--no_diagnostics", type=bool, action="store_true", nargs=0,
+parser.add_argument("--no_diagnostics", action="store_true",
                     required=False, dest="no_output_diagnostics",
                     help="Do not output diagnostics.")
-parser.add_argument("--no_timing", type=bool, action="store_true", nargs=0,
-                    metavar="no_timing", required=False,
+parser.add_argument("--no_timing", action="store_true", required=False,
                     dest="no_save_timing_info", help="Do not save timing info.")
-parser.add_argument("--no_plotting", type=bool, action="store_true", nargs=0,
+parser.add_argument("--no_plotting", action="store_true",
                     required=False, dest="no_plotting",
                     help="Do not make plots.")
 parser.add_argument("--Nptsrc", type=int, action="store", nargs=1, default=100,
@@ -60,7 +59,7 @@ parser.add_argument("--Niters", type=int, action="store", nargs=1, default=100,
                     required=False, dest="Niters",
                     help="Number of joint samples to gather")
 parser.add_argument("--sigma_noise", type=float, action="store", nargs=1,
-                    default=0.05, required=False, dest="sigma_iters",
+                    default=0.05, required=False, dest="sigma_noise",
                     help="Strength of the noise")
 parser.add_argument("--beam_nmax", type=float, action="store", nargs=1,
                     default=10, required=False, dest="beam_nmax",
@@ -70,8 +69,8 @@ args = parser.parse_args()
 # eliminate the double negatives here.
 SAMPLE_GAINS = not args.no_sample_gains
 SAMPLE_VIS = not args.no_sample_vis
-SAMPLE_PTSRC_AMPS = not args.no_ptsrc
-SAMPLE_BEAM = not args.no_beam
+SAMPLE_PTSRC_AMPS = not args.no_sample_ptsrc
+SAMPLE_BEAM = not args.no_sample_beam
 CALCULATE_STATS = not args.no_calculate_stats
 OUTPUT_DIAGNOSTICS = not args.no_output_diagnostics
 SAVE_TIMING_INFO = not args.no_save_timing_info
