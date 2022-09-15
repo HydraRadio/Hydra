@@ -1,8 +1,8 @@
 import numpy as np
 from scipy.linalg import lstsq, toeplitz, cholesky, inv
-from vis_simulator import simulate_vis_per_source
+from hydra.vis_simulator import simulate_vis_per_source
 from pyuvsim import AnalyticBeam
-import vis_utils
+from hydra import vis_utils
 
 def split_real_imag(arr, typ):
     """
