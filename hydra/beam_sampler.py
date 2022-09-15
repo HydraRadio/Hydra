@@ -221,7 +221,7 @@ def get_zern_trans(Mjk, beam_coeffs, ant_samp_ind, NANTS):
     zern_trans = np.einsum(
                            'zfta,zftaZ -> ftaZ',
                            beam_coeffs.conj()[:, :, :, ant_inds],
-                           Mjk[:, :, :, ant_inds, ant_samp_ind]
+                           Mjk[:, :, :, ant_inds, ant_samp_ind],
                            optimize=True
                            )
     # Split into components here
