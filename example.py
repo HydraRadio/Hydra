@@ -607,7 +607,7 @@ for n in range(Niters):
         # Have to have an initial guess and do some precompute
         if n == 0:
             txs, tys, _ = convert_to_tops(ra, dec, times, hera_latitude)
-            Zmatr = construct_Zmatr(nmax, np.array(txs), np.array(tys), Ntimes, Nptsrc)
+            Zmatr = hydra.beam_sampler.construct_Zmatr(nmax, np.array(txs), np.array(tys), Ntimes, Nptsrc)
             # all the same so just repeat. Should probably have a random guess in the future.
             beam_coeffs = np.array(Nants * [best_fit_beam(beams[0], freqs, Zmatr), ])
             beam_coeffs = np.swapaxes(beam_coeffs, 0, 3)
