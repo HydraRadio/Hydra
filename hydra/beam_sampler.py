@@ -20,21 +20,21 @@ def split_real_imag(arr, typ):
         raise ValueError("typ must be 'op' or 'vec' when splitting complex "
                          "arrays into real and imaginary components")
     if typ == 'op':
-        new_arr = np.zeros((2, 2) + arr.shape, dtype=real)
+        new_arr = np.zeros((2, 2) + arr.shape, dtype=float)
         new_arr[0, 0] = arr.real
         new_arr[0, 1] = -arr.imag
         new_arr[1, 0] = arr.imag
         new_arr[1, 1] = arr.real
 
         # Prepare to put these axes at the end
-        axes = list(range(2, nax)) + [0, 1]
+        axes = list(range(2, nax + 2)) + [0, 1]
 
     elif typ == 'vec':
-        new_arr = np.zeros((2,) + arr.shape, dtype=real)
+        new_arr = np.zeros((2,) + arr.shape, dtype=float)
         new_arr[0], new_arr[1] = (arr.real, arr.imag)
 
         # Prepare to put this axis at the end
-        axes = list(range(1, nax)) + [0, ]
+        axes = list(range(1, nax + 1)) + [0, ]
     # Rearrange axes (they are always expected at the end)
     new_arr = np.transpose(new_arr, axes=axes)
 
@@ -397,7 +397,6 @@ def do_cov_op(cov, op, check_op=False):
     """
     axlen = np.prod(cov.shape[:4]) # Freq, time, zernike, complex
     cov_reshape = cov.reshape((axlen, axlen))
-    print(f"hermitian?:{np.allclose(cov_reshape, cov_reshape.conj().T)}")
     if op == 'sqrt':
         ret = cholesky(cov_reshape, lower=True).reshape(cov.shape) # Need lower triangular to get right answer
         if check_op:

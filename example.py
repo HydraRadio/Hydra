@@ -61,7 +61,7 @@ parser.add_argument("--Niters", type=int, action="store", default=100,
 parser.add_argument("--sigma_noise", type=float, action="store",
                     default=0.05, required=False, dest="sigma_noise",
                     help="Strength of the noise")
-parser.add_argument("--beam_nmax", type=float, action="store",
+parser.add_argument("--beam_nmax", type=int, action="store",
                     default=10, required=False, dest="beam_nmax",
                     help="Maximum radial degree of the Zernike basis for the beams")
 args = parser.parse_args()
@@ -621,7 +621,7 @@ for n in range(Niters):
                                                                      tys), ])
             beam_coeffs = np.swapaxes(beam_coeffs, 0, 3)
             print(f"Initial beam guess has shape: {beam_coeffs.shape}")
-            ncoeffs = beam_coeffs.shape[-1]
+            ncoeffs = beam_coeffs.shape[0]
 
 
             amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
@@ -639,9 +639,12 @@ for n in range(Niters):
             cov_inv = hydra.beam_sampler.do_cov_op(cov, "inv", check_op=True)
             cov_inv_sqrt = hydra.beam_sampler.do_cov_op(cov_inv, "sqrt", check_op=True)
             # Be lazy and just use the initial guess.
-            coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, :, 0])
-
-            Cinv_mu = np.einsum("FTzcftZC,ftZC->FTzc", cov_inv, coeff_mean)
+            coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, :, 0],
+                                                            'vec')
+            print(f"cov shape: {cov.shape}")
+            print(f"cov_inv_shape: {cov_inv.shape}")
+            print(f"coeff_mean.shape: {coeff_mean.shape}")
+            Cinv_mu = np.einsum("FTzcftZC,ZftC->FTzc", cov_inv, coeff_mean)
 
         t0 = time.time()
         # Round robin through the antennas
