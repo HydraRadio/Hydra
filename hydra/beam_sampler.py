@@ -3,6 +3,8 @@ from scipy.linalg import lstsq, toeplitz, cholesky, inv
 from hydra.vis_simulator import simulate_vis_per_source
 from pyuvsim import AnalyticBeam
 from hydra import vis_utils
+from vis_cpu import conversions
+from pyuvsim.analyticbeam import diameter_to_sigma
 
 def split_real_imag(arr, typ):
     """
@@ -64,7 +66,7 @@ def construct_Zmatr(nmax, txs, tys, Ntimes, Nsource):
 
     return(Zmatr)
 
-def best_fit_beam(beam, freqs, Zmatr):
+def best_fit_beam(beam, freqs, Zmatr, txs, tys):
     """
     Get the best fit Zernike coefficients for a beam based on its value at a
     a set of source positions at certain sidereal times, from a fixed latitude,
@@ -81,19 +83,19 @@ def best_fit_beam(beam, freqs, Zmatr):
     """
 
     Ntimes = Zmatr.shape[0]
-    ncoeff = Zamtr.shape[2]
+    ncoeff = Zmatr.shape[2]
     Nfreqs = len(freqs)
 
 
     # Diagonal so just iterate over times
-    # There is a faster way to do this using scipy.sparse, and encoding Z
+    # There is a faster way to do this using scipy.sparse and encoding Z
     # as block-diagonal in time and frequency
     fit_beam = []
-    for tind, tx, ty in enumerate(zip(txs, tyz)):
+    for tind, (tx, ty) in enumerate(zip(txs, tys)):
         az, za = conversions.enu_to_az_za(enu_e=tx, enu_n=ty, orientation="uvbeam")
-        rhss = beam.interp(az, za, freq)
+        rhss = beam.interp(az, za, freqs)[0]
         for freq_ind in range(Nfreqs):
-            fit_beam_tf = lstsq(Zmatr[tind], rhss[0, 0, 0, freq_ind, :])
+            fit_beam_tf = lstsq(Zmatr[tind], rhss[0, 0, 0, freq_ind, :])[0]
             fit_beam.append(fit_beam_tf)
     fit_beam = np.array(fit_beam).reshape(Ntimes, Nfreqs, ncoeff)
     fit_beam = np.transpose(fit_beam, axes=(1, 0, 2))
