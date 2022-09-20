@@ -141,7 +141,7 @@ def get_ant_inds(ant_samp_ind, nants):
             corresponding to the antennas that are being conditioned on in the
             current Gibbs step (an output of np.where on a 1D array).
     """
-    ant_inds = np.where(np.arange(nants) != ant_samp_ind)
+    ant_inds = np.arange(nants) != ant_samp_ind
     return ant_inds
 
 
@@ -226,7 +226,7 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
     return Mjk
 
 
-def get_zernike_transpose(Mjk, beam_coeffs, ant_samp_ind, nants):
+def get_zernike_to_vis(Mjk, beam_coeffs, ant_samp_ind, nants):
     """
     Get the 'T' operator that, when applied to a vector of beam coefficients,
     produces visibilities.
@@ -251,7 +251,8 @@ def get_zernike_transpose(Mjk, beam_coeffs, ant_samp_ind, nants):
             A real-valued operator that returns visibilities when supplied with
             beam coefficients. Shape (NFREQS, NTIMES, NANTS, ncoeff, 2, 2)`.
     """
-    ant_inds = np.where(np.arange(nants) != ant_samp_ind)
+    ant_inds = get_ant_inds(ant_samp_ind, nants)
+
     zern_trans = np.einsum(
                            'zfta,zftaZ -> ftaZ',
                            beam_coeffs.conj()[:, :, :, ant_inds],
