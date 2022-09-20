@@ -607,14 +607,14 @@ for n in range(Niters):
         # Have to have an initial guess and do some precompute
         if n == 0:
             txs, tys, _ = convert_to_tops(ra, dec, times, hera_latitude)
-            Zmatr = hydra.beam_sampler.construct_Zmatr(beam_nmax,
-                                                       np.array(txs),
-                                                       np.array(tys),
-                                                       Ntimes,
-                                                       Nptsrc)
-            # all the same so just repeat. Should probably have a random guess in the future.
+            Zmatr = hydra.beam_sampler.construct_zernike_matrix(beam_nmax,
+                                                                np.array(txs),
+                                                                np.array(tys))
+
+            # All the same, so just repeat (for now)
             beam_coeffs = np.array(Nants * \
-                                   [hydra.beam_sampler.best_fit_beam(beams[0],
+                                   [hydra.beam_sampler.fit_zernike_to_beam(
+                                                                     beams[0],
                                                                      freqs,
                                                                      Zmatr,
                                                                      txs,
@@ -647,7 +647,8 @@ for n in range(Niters):
             Cinv_mu = np.einsum("FTzcftZC,ZftC->FTzc", cov_inv, coeff_mean)
 
         t0 = time.time()
-        # Round robin through the antennas
+
+        # Round robin loop through the antennas
         for ant_samp_ind in range(Nants):
             zern_trans = hydra.beam_sampler.get_zern_trans(Mjk, beam_coeffs,
                                                      ant_samp_ind, Nants)
@@ -670,7 +671,7 @@ for n in range(Niters):
             data_use = data_use + data_use.conj()
             data_use = bream_sampler.split_real_imag(data_use, 'vec')
 
-
+            # Construct RHS vector
             rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
                                                              inv_noise_var_use,
                                                              inv_noise_var_sqrt_use,
@@ -680,6 +681,7 @@ for n in range(Niters):
                                                              ncoeffs)
             bbeam = np.flatten(rhs_unflatten)
             shape = (Nfreqs, Ntimes, ncoeffs, 2)
+
             def beam_lhs_operator(x):
                 y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),
                                                       inv_noise_var_use,
@@ -689,6 +691,7 @@ for n in range(Niters):
 
             # What the shape would be if the matrix were represented densely
             beam_lhs_shape = (np.prod(shape), np.prod(shape))
+
             # Build linear operator object
             beam_linear_op = LinearOperator(matvec=beam_lhs_operator,
                                             shape=beam_lhs_shape)
@@ -698,8 +701,9 @@ for n in range(Niters):
             x_soln_res = np.reshape(x_soln, shape)
             x_soln_swap = np.transpose(x_soln, axes=(2, 0, 1, 3))
 
-            # Gotta update the coeffs b/w rounds
-            beam_coeffs[:, :, :, ant_samp_ind] = xoln_res[:, :, :, 0] + 1.j * xoln_res[:, :, :, 1]
+            # Update the coeffs between rounds
+            beam_coeffs[:, :, :, ant_samp_ind] = 1.0 * xoln_res[:, :, :, 0] \
+                                               + 1.j * xoln_res[:, :, :, 1]
 
         timing_info(ftime, n, "(D) Beam sampler", time.time() - t0)
         np.save("output/beam_%05d" % n, beam_coeffs)
