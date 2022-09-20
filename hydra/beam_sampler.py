@@ -4,7 +4,6 @@ from hydra.vis_simulator import simulate_vis_per_source
 from pyuvsim import AnalyticBeam
 from hydra import vis_utils
 from vis_cpu import conversions
-from pyuvsim.analyticbeam import diameter_to_sigma
 
 def split_real_imag(arr, typ):
     """
@@ -189,7 +188,7 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
                                             latitude=latitude,
                                             use_feed=use_feed)
     # This should do all the broadcasting
-    Mjk = np.einsum('tsz,ftaAs,tsZ -> zftaAZ', Z, sky_amp_phase, Z,
+    Mjk = np.einsum('tsz,ftaAs,tsZ -> zftaAZ', Zmatr.conj(), sky_amp_phase, Zmatr,
                     optimize=True)
     # Doubles the autos, but we don't use them
     # Makes it so we don't have to keep track of conjugates when sampling
