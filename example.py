@@ -18,7 +18,7 @@ description = "Example Gibbs sampling of the joint posterior of several analysis
               "parameters in 21-cm power spectrum estimation from a simulated " \
               "visibility data set"
 parser = argparse.ArgumentParser(description=description)
-parser.add_argument("-s", type=int, action="store", nargs=1, default=12,
+parser.add_argument("-s", type=int, action="store", default=12,
                     required=False, dest="seed",
                     help="Sets the random seed for the simulation.")
 parser.add_argument("--no_gains", action="store_true",
@@ -46,22 +46,22 @@ parser.add_argument("--no_timing", action="store_true", required=False,
 parser.add_argument("--no_plotting", action="store_true",
                     required=False, dest="no_plotting",
                     help="Do not make plots.")
-parser.add_argument("--Nptsrc", type=int, action="store", nargs=1, default=100,
+parser.add_argument("--Nptsrc", type=int, action="store", default=100,
                     required=False, dest="Nptsrc",
                     help="Number of point sources to use in simulation (and model)")
-parser.add_argument("--Ntimes", type=int, action="store", nargs=1, default=30,
+parser.add_argument("--Ntimes", type=int, action="store", default=30,
                     required=False, dest="Ntimes",
                     help="Number of times to use in simulation")
-parser.add_argument("--Nfreqs", type=int, action="store", nargs=1, default=60,
+parser.add_argument("--Nfreqs", type=int, action="store", default=60,
                     required=False, dest="Nfreqs",
                     help="Number of frequencies to use in simulation")
-parser.add_argument("--Niters", type=int, action="store", nargs=1, default=100,
+parser.add_argument("--Niters", type=int, action="store", default=100,
                     required=False, dest="Niters",
                     help="Number of joint samples to gather")
-parser.add_argument("--sigma_noise", type=float, action="store", nargs=1,
+parser.add_argument("--sigma_noise", type=float, action="store",
                     default=0.05, required=False, dest="sigma_noise",
                     help="Strength of the noise")
-parser.add_argument("--beam_nmax", type=float, action="store", nargs=1,
+parser.add_argument("--beam_nmax", type=float, action="store",
                     default=10, required=False, dest="beam_nmax",
                     help="Maximum radial degree of the Zernike basis for the beams")
 args = parser.parse_args()
@@ -626,7 +626,7 @@ for n in range(Niters):
 
             amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
             flux_use = get_flux_from_ptsrc_amp(amp_use, freqs, beta_ptsrc)
-            Mjk = hydra.beam_sampler.construct_Mjk(Zmatr, ants, flux_use, ra, dec,
+            Mjk = hydra.beam_sampler.construct_Mjk(Zmatr, ant_pos, flux_use, ra, dec,
                                              freqs, times, polarized=False,
                                              latitude=hera_latitude)
 
