@@ -634,9 +634,10 @@ for n in range(Niters):
             sig_freq = 0.5 * (freqs[-1] - freqs[0])
             sig_time = 0.5 * (times[-1] - times[0])
             cov = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs, 1, sig_freq,
-                                              sig_time)
-            cov_inv = do_cov_op(cov, "inv")
-            cov_inv_sqrt = do_dov_op(cov_inv, "sqrt")
+                                                    sig_time, check_cond=True,
+                                                    ridge=1e-3)
+            cov_inv = hydra.beam_sampler.do_cov_op(cov, "inv", check_op=True)
+            cov_inv_sqrt = hydra.beam_sampler.do_cov_op(cov_inv, "sqrt", check_op=True)
             # Be lazy and just use the initial guess.
             coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, :, 0])
 

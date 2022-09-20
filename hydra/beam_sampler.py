@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.linalg import lstsq, toeplitz, cholesky, inv
+from scipy.linalg import lstsq, toeplitz, cholesky, inv, LinAlgError
 from hydra.vis_simulator import simulate_vis_per_source
 from pyuvsim import AnalyticBeam
 from hydra import vis_utils
@@ -345,7 +345,8 @@ def non_norm_gauss(A, sig, x):
     return(A * np.exp(-x**2 / (2 * sig**2)))
 
 def make_prior_cov(freqs, times, Ncoeff, std, sig_freq, sig_time,
-                   constrain_phase=False, constraint=1e-4):
+                   constrain_phase=False, constraint=1e-4,
+                   check_cond=False, ridge=0):
     """
     Make a prior covariance for the beam coefficients.
 
@@ -363,6 +364,8 @@ def make_prior_cov(freqs, times, Ncoeff, std, sig_freq, sig_time,
     """
     freq_col = non_norm_gauss(std, sig_freq, freqs - freqs[0])
     time_col = non_norm_gauss(std, sig_time, times - times[0])
+    freq_col[0] += ridge
+    time_col[0] += ridge
     freq_matr = toeplitz(freq_col)
     time_matr = toeplitz(time_col)
     coeff_matr = np.eye(Ncoeff)
@@ -374,9 +377,13 @@ def make_prior_cov(freqs, times, Ncoeff, std, sig_freq, sig_time,
     # square root, and then ravel it back
     cov = np.einsum('Ff,Tt,zZ,cC -> FTzcftZC', freq_matr, time_matr, coeff_matr,
                     complex_matr, optimize=True)
+    if check_cond:
+        axlen = np.prod(cov.shape[:4]) # Freq, time, zernike, complex
+        cov_reshape = cov.reshape((axlen, axlen))
+        print(f"beam prior cov condition number: {np.linalg.cond(cov_reshape)}")
     return(cov)
 
-def do_cov_op(cov, op):
+def do_cov_op(cov, op, check_op=False):
     """
     Returns the cholesky decomposition or inverse of a matrix with the same
     shape as the covariance of a given antennas beam coefficients
@@ -388,14 +395,31 @@ def do_cov_op(cov, op):
     Returns:
         ret (array_like): The cholesky decomposition or inverse of the matrix.
     """
-    axlen = np.prod(cov_sqrt.shape[:4]) # Freq, time, zernike, complex
+    axlen = np.prod(cov.shape[:4]) # Freq, time, zernike, complex
     cov_reshape = cov.reshape((axlen, axlen))
+    print(f"hermitian?:{np.allclose(cov_reshape, cov_reshape.conj().T)}")
     if op == 'sqrt':
-        ret = cholesky(cov_reshape, lower=True) # Need lower triangular to get right answer
+        ret = cholesky(cov_reshape, lower=True).reshape(cov.shape) # Need lower triangular to get right answer
+        if check_op:
+            cov_recon = np.einsum("FTzcftZC,REqbftZC->FTzcREqb",
+                                  ret, ret.conj())
+            allclose = np.allclose(cov_recon, cov)
+            print(f"Inverse beam covariance sqrt successful?: {allclose}")
+            if not allclose:
+                raise LinAlgError ("Matrix not properly square rooted."
+                                   "May have poor condition number.")
     if op == 'inv':
-        ret = inv(cov_reshape)
+        ret = inv(cov_reshape).reshape(cov.shape)
+        if check_op:
+            cov_inv_cov = np.einsum("FTzcftZC,ftZCREqb->FTzcREqb",
+                                    ret, cov)
+            allclose = np.allclose(cov_inv_cov, np.eye(axlen).reshape(cov.shape))
+            print(f"Beam prior covariance inverted?: {allclose}")
+            if not allclose:
+                raise LinAlgError("Covariance was not properly inverted. ",
+                                  "May need a ridge adjustment or smaller covariance scale.")
 
-    return(ret.reshape(cov.shape))
+    return(ret)
 
 def zernike(coeffs, x, y):
         """
