@@ -701,7 +701,7 @@ for n in range(Niters):
                                             shape=beam_lhs_shape)
             print("Beginning solve")
             # Solve using Conjugate Gradients
-            x_soln, convergence_info = cg(beam_linear_op, bbeam, maxiter=10)
+            x_soln, convergence_info = cg(beam_linear_op, bbeam, maxiter=100)
             print(f"Done solving, convergence_info: {convergence_info}")
             x_soln_res = np.reshape(x_soln, shape)
             x_soln_swap = np.transpose(x_soln_res, axes=(2, 0, 1, 3))
