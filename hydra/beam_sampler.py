@@ -409,7 +409,6 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
 
 
     freq_cho, time_cho, comp_cho = cho_tuple
-    print(flx0.shape)
     flx0_add = np.einsum(
                          'fF,tT,c,zFTc->zftc',
                          freq_cho,
