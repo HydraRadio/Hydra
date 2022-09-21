@@ -651,7 +651,7 @@ for n in range(Niters):
             cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs, 1, sig_freq,
                                                           sig_time, check_cond=False,
                                                           ridge=1e-3)
-            cho_tuple = hydra.beam_sampler.do_cov_cho(cov_inv, check_op=False)
+            cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             # Be lazy and just use the initial guess.
             coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, :, 0],
                                                             'vec')
@@ -681,7 +681,7 @@ for n in range(Niters):
             rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
                                                              inv_noise_var_use,
                                                              inv_noise_var_sqrt_use,
-                                                             mu,
+                                                             coeff_mean,
                                                              cov_Tdag,
                                                              cho_tuple)
             bbeam = rhs_unflatten.flatten()

@@ -68,12 +68,12 @@ def reshape_data_arr(arr, Nfreqs, Ntimes, Nants):
             The reshaped array
     """
 
-    arr_trans = np.transpose(arr, (2, 0, 1))
+    arr_trans = np.transpose(arr, (1, 2, 0))
     arr_beam = np.zeros([Nfreqs, Ntimes, Nants, Nants])
     for freq_ind in range(Nfreqs):
         for time_ind in range(Ntimes):
-                tril_inds = np.tril_indices(Nants)
-                arr_beam[freq_ind, time_ind, tril_inds] = arr_trans[freq_ind, time_ind]
+                tril_inds = np.tril_indices(Nants, k=-1)
+                arr_beam[freq_ind, time_ind, tril_inds[0], tril_inds[1]] = arr_trans[freq_ind, time_ind]
 
     return arr_beam
 
@@ -312,7 +312,7 @@ def get_cov_Tdag(cov_tuple, zern_trans):
                          time_matr,
                          comp_matr,
                          zern_trans.conj(),
-                         optmize=True)
+                         optimize=True)
 
     return cov_Tdag
 
@@ -401,19 +401,20 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
     Ninv_d = inv_noise_var * vis
     N_inv_sqrt_flx1 = inv_noise_var_sqrt * flx1
     cov_Tdag_terms = np.einsum(
-                               'fFtTazcC,FTaC -> ftzc',
+                               'fFtTazcC,FTaC -> zftc',
                                cov_Tdag,
                                Ninv_d + N_inv_sqrt_flx1,
                                optimize=True
                                )
 
 
-    freq_matr, time_matr, comp_matr = cho_tuple
+    freq_cho, time_cho, comp_cho = cho_tuple
+    print(flx0.shape)
     flx0_add = np.einsum(
-                         'fF,tT,cC,FTzC->ftzc',
-                         freq_matr,
-                         time_matr,
-                         comp_matr,
+                         'fF,tT,c,zFTc->zftc',
+                         freq_cho,
+                         time_cho,
+                         comp_cho,
                          flx0,
                          optimize=True
                          )
