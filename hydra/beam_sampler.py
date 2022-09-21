@@ -316,13 +316,12 @@ def get_cov_Tdag(cov_tuple, zern_trans):
 
     return cov_Tdag
 
-def apply_operator(x, inv_noise_var, cov_Tdag, zern_trans):
+
+def get_cov_Tdag_Ninv_T(inv_noise_var, cov_Tdag, zern_trans):
     """
-    Apply LHS operator to vector of Zernike coefficients.
+    Construct the LHS operator for the Gibbs sampling.
 
     Parameters:
-        x (array_like):
-            Complex zernike coefficients, split into real/imag.
         inv_noise_var (array_like):
             Inverse variance of same shape as vis. Assumes diagonal covariance
             matrix, which is true in practice.
@@ -331,11 +330,8 @@ def apply_operator(x, inv_noise_var, cov_Tdag, zern_trans):
         zern_trans: (array_like): (Complex) matrix that, when applied to a
             vector of Zernike coefficients for one antenna, returns the
             visibilities associated with that antenna.
-
-    Returns:
-        Ax (array_like):
-            Result of multiplying input vector by the LHS matrix.
     """
+
     # These stay as elementwise multiply since the beam at given times/freqs
     # Should not affect the vis at other times/freqs
     Ninv_T = np.einsum('ftac,ftaZcC -> ftaZcC',
@@ -349,6 +345,25 @@ def apply_operator(x, inv_noise_var, cov_Tdag, zern_trans):
                                 Ninv_T,
                                 optimize=True
                                 )
+    return(cov_Tdag_Ninv_T)
+
+
+def apply_operator(x, cov_Tdag_Ninv_T):
+    """
+    Apply LHS operator to vector of Zernike coefficients.
+
+    Parameters:
+        x (array_like):
+            Complex zernike coefficients, split into real/imag.
+        cov_Tdag_Ninv_T (array_like):
+            One summand of LHS matrix applied to x
+
+
+    Returns:
+        Ax (array_like):
+            Result of multiplying input vector by the LHS matrix.
+    """
+
 
     # Linear so we can split the LHS multiply
     Ax1 = np.einsum('fFtTzZcd,FTZd -> ftzc',
@@ -356,7 +371,7 @@ def apply_operator(x, inv_noise_var, cov_Tdag, zern_trans):
                     x,
                     optimize=True)
 
-
+    # Second term is identity due to preconditioning
     Ax = Ax1 + x
     return Ax
 

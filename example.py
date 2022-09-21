@@ -684,12 +684,13 @@ for n in range(Niters):
                                                              cho_tuple)
             bbeam = rhs_unflatten.flatten()
             shape = (Nfreqs, Ntimes, ncoeffs, 2)
+            cov_Tdag_Ninv_T = hydra.beam_sampler.get_cov_Tdag_Ninv_T(inv_noise_var_use,
+                                                                     cov_Tdag,
+                                                                     zern_trans)
 
             def beam_lhs_operator(x):
                 y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),
-                                                      inv_noise_var_use,
-                                                      cov_Tdag,
-                                                      zern_trans)
+                                                      cov_Tdag_Ninv_T)
                 return(y.flatten())
 
             # What the shape would be if the matrix were represented densely
@@ -700,7 +701,7 @@ for n in range(Niters):
                                             shape=beam_lhs_shape)
             print("Beginning solve")
             # Solve using Conjugate Gradients
-            x_soln, convergence_info = cg(beam_linear_op, bbeam, maxiter=2)
+            x_soln, convergence_info = cg(beam_linear_op, bbeam, maxiter=10)
             print(f"Done solving, convergence_info: {convergence_info}")
             x_soln_res = np.reshape(x_soln, shape)
             x_soln_swap = np.transpose(x_soln_res, axes=(2, 0, 1, 3))
