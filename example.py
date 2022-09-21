@@ -635,7 +635,6 @@ for n in range(Niters):
                                                                      txs,
                                                                      tys), ])
             beam_coeffs = np.swapaxes(beam_coeffs, 0, 3).astype(complex)
-            print(f"Initial beam guess has shape: {beam_coeffs.shape}")
             ncoeffs = beam_coeffs.shape[0]
 
 
