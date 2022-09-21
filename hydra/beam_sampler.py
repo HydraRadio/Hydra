@@ -428,8 +428,7 @@ def non_norm_gauss(A, sig, x):
     return A * np.exp(-x**2 / (2 * sig**2))
 
 def make_prior_cov(freqs, times, ncoeff, std, sig_freq, sig_time,
-                   constrain_phase=False, constraint=1e-4,
-                   check_cond=False, ridge=0):
+                   constrain_phase=False, constraint=1e-4, ridge=0):
     """
     Make a prior covariance for the beam coefficients.
 
