@@ -648,16 +648,13 @@ for n in range(Niters):
             # Hardcoded parameters. Make variations smooth in time/freq.
             sig_freq = 0.5 * (freqs[-1] - freqs[0])
             sig_time = 0.5 * (times[-1] - times[0])
-            cov = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs, 1, sig_freq,
-                                                    sig_time, check_cond=False,
-                                                    ridge=1e-3)
-            cov_inv = hydra.beam_sampler.do_cov_op(cov, "inv", check_op=False)
-            cov_inv_sqrt = hydra.beam_sampler.do_cov_op(cov_inv, "sqrt", check_op=False)
+            cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs, 1, sig_freq,
+                                                          sig_time, check_cond=False,
+                                                          ridge=1e-3)
+            cho_tuple = hydra.beam_sampler.do_cov_cho(cov_inv, check_op=False)
             # Be lazy and just use the initial guess.
             coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, :, 0],
                                                             'vec')
-
-            Cinv_mu = np.einsum("FTzcftZC,ZftC->FTzc", cov_inv, coeff_mean)
 
         t0 = time.time()
 
@@ -665,6 +662,7 @@ for n in range(Niters):
         for ant_samp_ind in range(Nants):
             zern_trans = hydra.beam_sampler.get_zernike_to_vis(Mjk, beam_coeffs,
                                                      ant_samp_ind, Nants)
+            cov_Tdag = hydra.beam_sampler.get_cov_Tdag(cho_tuple, zern_trans)
 
             inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var_beam,
                                                            ant_samp_ind, Nants)
@@ -683,16 +681,16 @@ for n in range(Niters):
             rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
                                                              inv_noise_var_use,
                                                              inv_noise_var_sqrt_use,
-                                                             Cinv_mu,
-                                                             cov_inv_sqrt,
-                                                             zern_trans)
+                                                             mu,
+                                                             cov_Tdag,
+                                                             cho_tuple)
             bbeam = rhs_unflatten.flatten()
             shape = (Nfreqs, Ntimes, ncoeffs, 2)
 
             def beam_lhs_operator(x):
                 y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),
                                                       inv_noise_var_use,
-                                                      cov_inv,
+                                                      cov_Tdag,
                                                       zern_trans)
                 return(y.flatten())
 
