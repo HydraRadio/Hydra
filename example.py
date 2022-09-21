@@ -647,9 +647,8 @@ for n in range(Niters):
             # Hardcoded parameters. Make variations smooth in time/freq.
             sig_freq = 0.5 * (freqs[-1] - freqs[0])
             sig_time = 0.5 * (times[-1] - times[0])
-            cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs, 1, sig_freq,
-                                                          sig_time, check_cond=False,
-                                                          ridge=1e-3)
+            cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs, 1e-4, sig_freq,
+                                                          sig_time, ridge=1e-6)
             cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             # Be lazy and just use the initial guess.
             coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, :, 0],
@@ -701,7 +700,7 @@ for n in range(Niters):
                                             shape=beam_lhs_shape)
             print("Beginning solve")
             # Solve using Conjugate Gradients
-            x_soln, convergence_info = cg(beam_linear_op, bbeam, maxiter=1000)
+            x_soln, convergence_info = cg(beam_linear_op, bbeam, maxiter=2)
             print(f"Done solving, convergence_info: {convergence_info}")
             x_soln_res = np.reshape(x_soln, shape)
             x_soln_swap = np.transpose(x_soln_res, axes=(2, 0, 1, 3))
@@ -709,7 +708,6 @@ for n in range(Niters):
             # Update the coeffs between rounds
             beam_coeffs[:, :, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, :, 0] \
                                                + 1.j * x_soln_swap[:, :, :, 1]
-            print("Got one antenna.")
 
         timing_info(ftime, n, "(D) Beam sampler", time.time() - t0)
         np.save("output/beam_%05d" % n, beam_coeffs)
