@@ -48,6 +48,36 @@ def split_real_imag(arr, kind):
     return new_arr
 
 
+def reshape_data_arr(arr, Nfreqs, Ntimes, Nants):
+    """
+    Reshape a data-shaped array into something more convenient for beam calculation.
+    Makes a copy of the data twice as large as the data.
+
+    Parameters:
+        arr (array_like, complex):
+            Array to be reshaped.
+        Nfreqs (int):
+            Number of frequencies in the data.
+        Ntimes (int):
+            Number of times in the data.
+        Nants (int):
+            Number of antennas in the data.
+
+    Returns:
+        arr_beam (array_like, complex):
+            The reshaped array
+    """
+
+    arr_trans = np.transpose(arr, (2, 0, 1))
+    arr_beam = np.zeros([Nfreqs, Ntimes, Nants, Nants])
+    for freq_ind in range(Nfreqs):
+        for time_ind in range(Ntimes):
+                tril_inds = np.tril_indices(Nants)
+                arr_beam[freq_ind, time_ind, tril_inds] = arr_trans[freq_ind, time_ind]
+
+    return arr_beam
+
+
 def construct_zernike_matrix(nmax, txs, tys):
     """
     Make the matrix that transforms from the Zernike basis to direction cosines.
@@ -145,7 +175,7 @@ def get_ant_inds(ant_samp_ind, nants):
     return ant_inds
 
 
-def select_subarr(arr, ant_samp_ind):
+def select_subarr(arr, ant_samp_ind, Nants):
     """
     Select the subarray for anything of the same shape as the visibilities,
     such as the inverse noise variance and its square root.
@@ -160,9 +190,8 @@ def select_subarr(arr, ant_samp_ind):
         subarr (array_like):
             The subarray relevant to the current Gibbs step.
     """
-    nants = arr.shape[3]
-    ant_inds = get_ant_inds(ant_samp_ind, nants)
-    subarr = arr[:, :, :, ant_inds, ant_samp_ind]
+    ant_inds = get_ant_inds(ant_samp_ind, Nants)
+    subarr = arr[:, :, ant_inds, ant_samp_ind]
     return subarr
 
 
@@ -359,10 +388,10 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, Cinv_mu,
     flx0_shape = Cinv_mu.shape
     flx1_shape = vis.shape
 
-    flx0 = (np.random.randn(size=flx0_shape)
-            + 1.j * np.random.randn(size=flx0_shape)) / np.sqrt(2)
-    flx1 = (np.random.randn(size=flx1_shape)
-            + 1.j * np.random.randn(size=flx1_shape)) / np.sqrt(2)
+    flx0 = (np.random.normal(size=flx0_shape)
+            + 1.j * np.random.normal(size=flx0_shape)) / np.sqrt(2)
+    flx1 = (np.random.normal(size=flx1_shape)
+            + 1.j * np.random.normal(size=flx1_shape)) / np.sqrt(2)
 
     flx0_add = np.einsum(
                          'FTzcftZC,ftZC->FTzc',
