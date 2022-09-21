@@ -293,7 +293,30 @@ def get_zernike_to_vis(Mjk, beam_coeffs, ant_samp_ind, nants):
     return zern_trans_real_imag
 
 
-def apply_operator(x, inv_noise_var, coeff_cov_inv, zern_trans):
+def get_cov_Tdag(cov_tuple, zern_trans):
+    """
+    Construct the matrix product of the beam covariance and the transformation
+    operator from Zernike coefficients to visibilities
+
+    Parameters:
+        cov (array_like):
+            The beam prior covariance
+        zern_trans (array_like):
+            Operator that provides visibilities when handed some beam coefficients.
+    Returns:
+        cov_Tdag (array_like): The desired matrix product
+    """
+    freq_matr, time_matr, comp_matr = cov_tuple
+    cov_Tdag = np.einsum('fF,tT,C,FTazcC->fFtTazcC',
+                         freq_matr,
+                         time_matr,
+                         comp_matr,
+                         zern_trans.conj(),
+                         optmize=True)
+
+    return cov_Tdag
+
+def apply_operator(x, inv_noise_var, cov_Tdag, zern_trans):
     """
     Apply LHS operator to vector of Zernike coefficients.
 
@@ -303,8 +326,8 @@ def apply_operator(x, inv_noise_var, coeff_cov_inv, zern_trans):
         inv_noise_var (array_like):
             Inverse variance of same shape as vis. Assumes diagonal covariance
             matrix, which is true in practice.
-        coeff_cov_inv (array_like): (Complex) inverse prior covariance matrix
-            for the Zernike coeffs.
+        cov_Tdag (array_like):
+            Prior covariance matrix times the vis-to-zernike transform.
         zern_trans: (array_like): (Complex) matrix that, when applied to a
             vector of Zernike coefficients for one antenna, returns the
             visibilities associated with that antenna.
@@ -320,33 +343,26 @@ def apply_operator(x, inv_noise_var, coeff_cov_inv, zern_trans):
                        zern_trans,
                        optimize=True
                        )
-    Tdag_Ninv_T = np.einsum(
-                            'ftazcD,ftaZcC -> ftzZDC',
-                            zern_trans,
-                            Ninv_T,
-                            optimize=True
-                            )
+    cov_Tdag_Ninv_T = np.einsum(
+                                'fFtTazcC,FTaZCd -> fFtTzZcd',
+                                cov_Tdag,
+                                Ninv_T,
+                                optimize=True
+                                )
 
     # Linear so we can split the LHS multiply
-    Ax1 = np.einsum('ftzZDC,ftZC -> ftzD',
-                    Tdag_Ninv_T,
+    Ax1 = np.einsum('fFtTzZcd,FTZd -> ftzc',
+                    cov_Tdag_Ninv_T,
                     x,
                     optimize=True)
 
-    # This one is a full matrix multiply since the prior can (and should) be
-    # non-diagonal
-    Ax2 = np.einsum(
-                   'FTzcftZC,ftZC->FTzc',
-                   coeff_cov_inv,
-                   x,
-                   optimize=True
-                   )
-    Ax = Ax1 + Ax2
+
+    Ax = Ax1 + x
     return Ax
 
 
-def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, Cinv_mu,
-                  coeff_cov_inv_sqrt, zern_trans):
+def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
+                  cho_tuple):
     """
     Construct the right hand side of the Gaussian Constrained Realization (GCR)
     equation.
@@ -362,30 +378,19 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, Cinv_mu,
         inv_noise_var_sqrt (array_like):
             Inverse variance of same shape as vis. Assumes diagonal covariance
             matrix, which is true in practice.
-        Cinv_mu (array_like):
-            (Complex) prior inverse covariance matrix applied to prior mean for
-            the Zernike coefficients (pre-calculated).
-        coeff_cov_inv_sqrt (array_like): (Complex) square root of the prior
-            inverse covariance matrix for the Zernike coefficients that are
-            being sampled.
-        zern_trans (array_like):
-            (Complex) matrix that, when applied to a vector of Zernike
-            coefficients for one antenna, returns the visibilities associated
-            with that antenna.
+        mu (array_like):
+            (Complex) prior mean for the Zernike coefficients (pre-calculated).
+        cho_tuple (tuple of arr): tensor-factored, cholesky decomposed prior
+            covariance matrix.
+        cov_Tdag (array_like):
+            Matrix product of prior covariance and zernike_to_vis conjugate transpose.
 
     Returns:
         rhs (array_like):
             RHS vector.
     """
-    Ninv_d = inv_noise_var * vis
-    Tdag_Ninv_d = np.einsum(
-                            'ftaZcC,ftac -> ftZC',
-                            zern_trans,
-                            Ninv_d,
-                            optimize=True
-                            )
 
-    flx0_shape = Cinv_mu.shape
+    flx0_shape = mu.shape
     flx1_shape = vis.shape
 
     flx0 = (np.random.normal(size=flx0_shape)
@@ -393,20 +398,28 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, Cinv_mu,
     flx1 = (np.random.normal(size=flx1_shape)
             + 1.j * np.random.normal(size=flx1_shape)) / np.sqrt(2)
 
+    Ninv_d = inv_noise_var * vis
+    N_inv_sqrt_flx1 = inv_noise_var_sqrt * flx1
+    cov_Tdag_terms = np.einsum(
+                               'fFtTazcC,FTaC -> ftzc',
+                               cov_Tdag,
+                               Ninv_d + N_inv_sqrt_flx1,
+                               optimize=True
+                               )
+
+
+    freq_matr, time_matr, comp_matr = cho_tuple
     flx0_add = np.einsum(
-                         'FTzcftZC,ftZC->FTzc',
-                         coeff_cov_inv_sqrt,
+                         'fF,tT,cC,FTzC->ftzc',
+                         freq_matr,
+                         time_matr,
+                         comp_matr,
                          flx0,
                          optimize=True
                          )
 
-    flx1_add = np.einsum(
-                         'ftaZcC,ftac -> ftZC',
-                         zern_trans,
-                         inv_noise_var_sqrt * flx1,
-                         optimize=True
-                         )
-    b = Tdag_Ninv_d + Cinv_mu + flx0_add + flx1_add
+
+    b = cov_Tdag_terms + mu + flx0_add
     return b
 
 
@@ -437,8 +450,8 @@ def make_prior_cov(freqs, times, ncoeff, std, sig_freq, sig_time,
             constrains it to have only small variations in the imaginary part.
 
     Returns:
-        cov (array_like):
-            The prior covariance matrix of the beam coefficients.
+        cov_tuple (array_like):
+            Tuple of tensor components of covariance matrix.
     """
     freq_col = non_norm_gauss(std, sig_freq, freqs - freqs[0])
     time_col = non_norm_gauss(std, sig_time, times - times[0])
@@ -446,61 +459,45 @@ def make_prior_cov(freqs, times, ncoeff, std, sig_freq, sig_time,
     time_col[0] += ridge
     freq_matr = toeplitz(freq_col)
     time_matr = toeplitz(time_col)
-    coeff_matr = np.eye(ncoeff)
-    complex_matr = np.eye(2)
+    comp_matr = np.ones(2)
     if constrain_phase: # Make the imaginary variance small compared to the real one
-        complex_matr[1, 1] = constraint
+        comp_matr[1] = constraint
 
-    # Some tests show if you give it this shape, you can unravel it and take the
-    # square root, and then ravel it back
-    cov = np.einsum('Ff,Tt,zZ,cC -> FTzcftZC', freq_matr, time_matr, coeff_matr,
-                    complex_matr, optimize=True)
-    if check_cond:
-        axlen = np.prod(cov.shape[:4]) # Freq, time, zernike, complex
-        cov_reshape = cov.reshape((axlen, axlen))
-        print(f"beam prior cov condition number: {np.linalg.cond(cov_reshape)}")
-    return cov
+    cov_tuple = (freq_matr, time_matr, comp_matr)
 
-def do_cov_op(cov, op, check_op=False):
+    return cov_tuple
+
+def do_cov_cho(cov_tuple, check_op=False):
     """
-    Returns the Cholesky decomposition or inverse of a matrix with the same
+    Returns the Cholesky decomposition of a matrix factorable over
+    time/frequency/complex component with the same
     shape as the covariance of a given antennas beam coefficients (per time and
-    freq). Gets all the reshaping right.
+    freq).
 
     Parameters:
-        cov (array_like):
-            The covariance-shaped matrix to operate on.
-        op (str):
-            'sqrt' or 'inv' depending on the desired operation.
+        cov_tuple (tuple of arr):
+            The factors that make up the operator.
 
     Returns:
-        ret (array_like):
-            The Cholesky decomposition or inverse of the matrix.
+        cho_tuple (array_like):
+            The factored Cholesky decomposition.
     """
-    axlen = np.prod(cov.shape[:4]) # Freq, time, zernike, complex
-    cov_reshape = cov.reshape((axlen, axlen))
-    if op == 'sqrt':
-        ret = cholesky(cov_reshape, lower=True).reshape(cov.shape) # Need lower triangular to get right answer
-        if check_op:
-            cov_recon = np.einsum("FTzcftZC,REqbftZC->FTzcREqb",
-                                  ret, ret.conj())
-            allclose = np.allclose(cov_recon, cov)
-            print(f"Inverse beam covariance sqrt successful?: {allclose}")
-            if not allclose:
-                raise LinAlgError ("Matrix not properly square rooted."
-                                   "May have poor condition number.")
-    if op == 'inv':
-        ret = inv(cov_reshape).reshape(cov.shape)
-        if check_op:
-            cov_inv_cov = np.einsum("FTzcftZC,ftZCREqb->FTzcREqb",
-                                    ret, cov)
-            allclose = np.allclose(cov_inv_cov, np.eye(axlen).reshape(cov.shape))
-            print(f"Beam prior covariance inverted?: {allclose}")
-            if not allclose:
-                raise LinAlgError("Covariance was not properly inverted. ",
-                                  "May need a ridge adjustment or smaller covariance scale.")
+    freq_matr, time_matr, comp_matr = cov_tuple
+    freq_cho = cholesky(freq_matr, lower=True)
+    time_cho = cholesky(time_matr, lower=True)
+    comp_cho = np.sqrt(comp_matr)
 
-    return ret
+    cho_tuple = (freq_cho, time_cho, comp_cho)
+    if check_op:
+        for axis, ax_name in enumerate('time', 'freq'):
+            prod = cho_tuple[axis] @ cho_tuple[axis].T.conj()
+            allclose = np.allclose(prod, cov_tuple[axis])
+            print(f"Successful cholesky factorization of beam for {axname} axis?: "
+                  f"{allclose}")
+            if not allclose:
+                raise LinAlgError(f"Cholesky factorization failed for {axname} axis")
+
+    return cho_tuple
 
 def zernike(coeffs, x, y):
     """
