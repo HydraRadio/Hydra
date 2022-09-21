@@ -216,7 +216,7 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
                                             latitude=latitude,
                                             use_feed=use_feed)
 
-    # This should do all the broadcasting
+    # FIXME: Huge memory requirements. Can't do this for the full-scale problem.
     Mjk = np.einsum('tsz,ftaAs,tsZ -> zftaAZ', Zmatr.conj(), sky_amp_phase, Zmatr,
                     optimize=True)
 
