@@ -489,13 +489,13 @@ def do_cov_cho(cov_tuple, check_op=False):
 
     cho_tuple = (freq_cho, time_cho, comp_cho)
     if check_op:
-        for axis, ax_name in enumerate('time', 'freq'):
+        for axis, ax_name in enumerate(['time', 'freq']):
             prod = cho_tuple[axis] @ cho_tuple[axis].T.conj()
             allclose = np.allclose(prod, cov_tuple[axis])
-            print(f"Successful cholesky factorization of beam for {axname} axis?: "
+            print(f"Successful cholesky factorization of beam for {ax_name} axis?: "
                   f"{allclose}")
             if not allclose:
-                raise LinAlgError(f"Cholesky factorization failed for {axname} axis")
+                raise LinAlgError(f"Cholesky factorization failed for {ax_name} axis")
 
     return cho_tuple
 
