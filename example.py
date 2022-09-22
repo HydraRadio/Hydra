@@ -7,6 +7,7 @@ import hydra
 import numpy.fft as fft
 from scipy.sparse.linalg import cg, LinearOperator
 from scipy.signal import blackmanharris
+from scipy.sparse import coo_matrix
 import pyuvsim
 import time, os
 from hydra.vis_utils import flatten_vector, reconstruct_vector, timing_info, \
@@ -710,6 +711,7 @@ for n in range(Niters):
             # Build linear operator object
             beam_linear_op = LinearOperator(matvec=beam_lhs_operator,
                                             shape=beam_lhs_shape)
+
             print("Beginning solve")
             # Solve using Conjugate Gradients
             x_soln, convergence_info = cg(beam_linear_op, bbeam, maxiter=100)
