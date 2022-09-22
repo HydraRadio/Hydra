@@ -70,7 +70,7 @@ def reshape_data_arr(arr, Nfreqs, Ntimes, Nants):
     """
 
     arr_trans = np.transpose(arr, (1, 2, 0))
-    arr_beam = np.zeros([Nfreqs, Ntimes, Nants, Nants])
+    arr_beam = np.zeros([Nfreqs, Ntimes, Nants, Nants], dtype=arr_trans.dtype)
     for freq_ind in range(Nfreqs):
         for time_ind in range(Ntimes):
                 tril_inds = np.tril_indices(Nants, k=-1)
