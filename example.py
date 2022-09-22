@@ -692,9 +692,11 @@ for n in range(Niters):
             axlen = np.prod(shape)
             matr = cov_Tdag_Ninv_T.reshape([axlen, axlen]) + np.eye(axlen)
             plt.figure()
-            plt.matshow(matr, vmin=0, vmax=1)
+            plt.matshow(np.log10(np.abs(matr)), vmax=0, vmin=-8)
+            plt.colorbar()
             plt.savefig(f"output/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
             plt.close()
+
 
             def beam_lhs_operator(x):
                 y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),
