@@ -683,7 +683,7 @@ for n in range(Niters):
                                                              cov_Tdag,
                                                              cho_tuple)
             bbeam = rhs_unflatten.flatten()
-            shape = (Nfreqs, Ntimes, ncoeffs, 2)
+            shape = (Nfreqs, Ntimes, ncoeffs,  2)
             cov_Tdag_Ninv_T = hydra.beam_sampler.get_cov_Tdag_Ninv_T(inv_noise_var_use,
                                                                      cov_Tdag,
                                                                      zern_trans)

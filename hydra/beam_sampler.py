@@ -307,7 +307,7 @@ def get_cov_Tdag(cov_tuple, zern_trans):
         cov_Tdag (array_like): The desired matrix product
     """
     freq_matr, time_matr, comp_matr = cov_tuple
-    cov_Tdag = np.einsum('fF,tT,C,FTazcC->fFtTazcC',
+    cov_Tdag = np.einsum('fF,tT,C,FTazcC->ftazcFTC',
                          freq_matr,
                          time_matr,
                          comp_matr,
@@ -340,7 +340,7 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, cov_Tdag, zern_trans):
                        optimize=True
                        )
     cov_Tdag_Ninv_T = np.einsum(
-                                'fFtTazcC,FTaZCd -> fFtTzZcd',
+                                'ftazcFTd,FTaZdC -> ftzcFTZd',
                                 cov_Tdag,
                                 Ninv_T,
                                 optimize=True
@@ -366,7 +366,7 @@ def apply_operator(x, cov_Tdag_Ninv_T):
 
 
     # Linear so we can split the LHS multiply
-    Ax1 = np.einsum('fFtTzZcd,FTZd -> ftzc',
+    Ax1 = np.einsum('ftzcFTZC,FTZC -> ftzc',
                     cov_Tdag_Ninv_T,
                     x,
                     optimize=True)
@@ -416,7 +416,7 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
     Ninv_d = inv_noise_var * vis
     N_inv_sqrt_flx1 = inv_noise_var_sqrt * flx1
     cov_Tdag_terms = np.einsum(
-                               'fFtTazcC,FTaC -> zftc',
+                               'ftazcFTC,FTaC -> zftc',
                                cov_Tdag,
                                Ninv_d + N_inv_sqrt_flx1,
                                optimize=True
@@ -433,8 +433,8 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
                          optimize=True
                          )
 
-
-    b = cov_Tdag_terms + mu + flx0_add
+    # Need to make it match LHS
+    b = np.transpose(cov_Tdag_terms + mu + flx0_add, axes=(1, 2, 0, 3))
     return b
 
 
