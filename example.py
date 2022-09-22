@@ -622,7 +622,8 @@ for n in range(Niters):
                                                                      Nants)
             inv_noise_var_beam = inv_noise_var_beam + np.swapaxes(inv_noise_var_beam, -1, -2)
 
-            txs, tys, _ = convert_to_tops(ra, dec, times, hera_latitude)
+            txs, tys, tzs = convert_to_tops(ra, dec, times, hera_latitude)
+
             Zmatr = hydra.beam_sampler.construct_zernike_matrix(beam_nmax,
                                                                 np.array(txs),
                                                                 np.array(tys))
@@ -631,7 +632,7 @@ for n in range(Niters):
             beam_coeffs = np.array(Nants * \
                                    [hydra.beam_sampler.fit_zernike_to_beam(
                                                                      beams[0],
-                                                                     freqs,
+                                                                     1e6 * freqs,
                                                                      Zmatr,
                                                                      txs,
                                                                      tys), ])
@@ -661,7 +662,7 @@ for n in range(Niters):
         for ant_samp_ind in range(Nants):
             zern_trans = hydra.beam_sampler.get_zernike_to_vis(Mjk, beam_coeffs,
                                                      ant_samp_ind, Nants)
-            cov_Tdag = hydra.beam_sampler.get_cov_Tdag(cho_tuple, zern_trans)
+            cov_Tdag = hydra.beam_sampler.get_cov_Tdag(cov_tuple, zern_trans)
 
             inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var_beam,
                                                            ant_samp_ind, Nants)

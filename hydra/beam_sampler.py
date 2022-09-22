@@ -2,6 +2,7 @@ import numpy as np
 from scipy.linalg import lstsq, toeplitz, cholesky, inv, LinAlgError
 from hydra.vis_simulator import simulate_vis_per_source
 from pyuvsim import AnalyticBeam
+from pyuvsim.analyticbeam import diameter_to_sigma
 from hydra import vis_utils
 from vis_cpu import conversions
 
@@ -140,12 +141,14 @@ def fit_zernike_to_beam(beam, freqs, Zmatr, txs, tys):
     # as block-diagonal in time and frequency
     fit_beam = []
     for tind, (tx, ty) in enumerate(zip(txs, tys)):
-        az, za = conversions.enu_to_az_za(enu_e=tx, enu_n=ty, orientation="uvbeam")
+        az, za = conversions.enu_to_az_za(enu_e=tx,
+                                          enu_n=ty,
+                                          orientation="uvbeam")
         rhss = beam.interp(az, za, freqs)[0]
 
         # Loop over frequencies
         for freq_ind in range(Nfreqs):
-            fit_beam_tf = lstsq(Zmatr[tind], rhss[0, 0, 0, freq_ind, :])[0]
+            fit_beam_tf = lstsq(Zmatr[tind], rhss[1, 0, 0, freq_ind, :])[0]
             fit_beam.append(fit_beam_tf)
 
     # Reshape coefficients array
@@ -345,6 +348,8 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, cov_Tdag, zern_trans):
                                 Ninv_T,
                                 optimize=True
                                 )
+
+
     return cov_Tdag_Ninv_T
 
 
