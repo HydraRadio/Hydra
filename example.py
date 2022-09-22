@@ -690,12 +690,13 @@ for n in range(Niters):
                                                                      cov_Tdag,
                                                                      zern_trans)
             axlen = np.prod(shape)
-            matr = cov_Tdag_Ninv_T.reshape([axlen, axlen]) + np.eye(axlen)
-            plt.figure()
-            plt.matshow(np.log10(np.abs(matr)), vmax=0, vmin=-8)
-            plt.colorbar()
-            plt.savefig(f"output/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
-            plt.close()
+            if PLOTTING:
+                matr = cov_Tdag_Ninv_T.reshape([axlen, axlen]) + np.eye(axlen)
+                plt.figure()
+                plt.matshow(np.log10(np.abs(matr)), vmax=0, vmin=-8)
+                plt.colorbar()
+                plt.savefig(f"output/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
+                plt.close()
 
 
             def beam_lhs_operator(x):
@@ -704,7 +705,7 @@ for n in range(Niters):
                 return(y.flatten())
 
             # What the shape would be if the matrix were represented densely
-            beam_lhs_shape = (np.prod(shape), np.prod(shape))
+            beam_lhs_shape = (axlen, axlen)
 
             # Build linear operator object
             beam_linear_op = LinearOperator(matvec=beam_lhs_operator,
