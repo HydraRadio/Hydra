@@ -620,6 +620,7 @@ for n in range(Niters):
                                                                      Nfreqs,
                                                                      Ntimes,
                                                                      Nants)
+            inv_noise_var_beam = inv_noise_var_beam + np.swapaxes(inv_noise_var_beam, -1, -2)
 
             txs, tys, _ = convert_to_tops(ra, dec, times, hera_latitude)
             Zmatr = hydra.beam_sampler.construct_zernike_matrix(beam_nmax,
@@ -687,6 +688,12 @@ for n in range(Niters):
             cov_Tdag_Ninv_T = hydra.beam_sampler.get_cov_Tdag_Ninv_T(inv_noise_var_use,
                                                                      cov_Tdag,
                                                                      zern_trans)
+            axlen = np.prod(shape)
+            matr = cov_Tdag_Ninv_T.reshape([axlen, axlen]) + np.eye(axlen)
+            plt.figure()
+            plt.matshow(matr, vmin=0, vmax=1)
+            plt.savefig(f"output/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
+            plt.close()
 
             def beam_lhs_operator(x):
                 y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),

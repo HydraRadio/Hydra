@@ -345,7 +345,7 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, cov_Tdag, zern_trans):
                                 Ninv_T,
                                 optimize=True
                                 )
-    return(cov_Tdag_Ninv_T)
+    return cov_Tdag_Ninv_T
 
 
 def apply_operator(x, cov_Tdag_Ninv_T):
