@@ -109,6 +109,9 @@ hera_latitude = -30.7215 * np.pi / 180.0
 output_dir = args.output_dir
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
+print("\nOutput directory:", output_dir)
+
+# Timing file
 ftime = os.path.join(output_dir, "timing.dat")
 
 #-------------------------------------------------------------------------------
