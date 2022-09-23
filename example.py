@@ -18,80 +18,98 @@ description = "Example Gibbs sampling of the joint posterior of several analysis
               "parameters in 21-cm power spectrum estimation from a simulated " \
               "visibility data set"
 parser = argparse.ArgumentParser(description=description)
-parser.add_argument("-s", type=int, action="store", default=12,
+parser.add_argument("--seed", type=int, action="store", default=0,
                     required=False, dest="seed",
-                    help="Sets the random seed for the simulation.")
-parser.add_argument("--no_gains", action="store_true",
-                    required=False, dest="no_sample_gains",
-                    help="Do not sample the gains (omit if desire is to sample gains).")
-parser.add_argument("--no_vis", action="store_true",
-                    required=False, dest="no_sample_vis",
-                    help="Do not sample the visibilities "
-                         "(omit if desire is to sample visibilities).")
-parser.add_argument("--no_ptsrc", action="store_true",
-                    required=False, dest="no_sample_ptsrc",
-                    help="Do not sample the point source amplitudes "
-                         "(omit if desire is to sample point source amplitudes).")
-parser.add_argument("--no_beam", action="store_true",
-                    required=False, dest="no_sample_beam",
-                    help="Do not sample the beam (omit if desire is to sample the beam)")
-parser.add_argument("--no_stats", action="store_true",
-                    required=False, dest="no_calculate_stats",
-                    help="Do not calculate statistics about the sampling results.")
-parser.add_argument("--no_diagnostics", action="store_true",
-                    required=False, dest="no_output_diagnostics",
-                    help="Do not output diagnostics.")
-parser.add_argument("--no_timing", action="store_true", required=False,
-                    dest="no_save_timing_info", help="Do not save timing info.")
-parser.add_argument("--no_plotting", action="store_true",
-                    required=False, dest="no_plotting",
-                    help="Do not make plots.")
+                    help="Set the random seed.")
+parser.add_argument("--gains", action="store_true",
+                    required=False, dest="sample_gains",
+                    help="Sample gains.")
+parser.add_argument("--vis", action="store_true",
+                    required=False, dest="sample_vis",
+                    help="Sample visibilities in general.")
+parser.add_argument("--ptsrc", action="store_true",
+                    required=False, dest="sample_ptsrc",
+                    help="Sample point source amplitudes.")
+parser.add_argument("--beam", action="store_true",
+                    required=False, dest="sample_beam",
+                    help="Sample beams.")
+parser.add_argument("--stats", action="store_true",
+                    required=False, dest="calculate_stats",
+                    help="Calculate statistics about the sampling results.")
+parser.add_argument("--diagnostics", action="store_true",
+                    required=False, dest="output_diagnostics",
+                    help="Output diagnostics.")
+parser.add_argument("--timing", action="store_true", required=False,
+                    dest="save_timing_info", help="Save timing info.")
+parser.add_argument("--plotting", action="store_true",
+                    required=False, dest="plotting",
+                    help="Output plots.")
+parser.add_argument('--hex-array', type=int, action="store", default=(3,4),
+                    required=False, nargs='+', dest="hex_array",
+                    help="Hex array layout, specified as the no. of antennas "
+                         "in the 1st and middle rows, e.g. '--hex-array 3 4'.")
 parser.add_argument("--Nptsrc", type=int, action="store", default=100,
                     required=False, dest="Nptsrc",
-                    help="Number of point sources to use in simulation (and model)")
+                    help="Number of point sources to use in simulation (and model).")
 parser.add_argument("--Ntimes", type=int, action="store", default=30,
                     required=False, dest="Ntimes",
-                    help="Number of times to use in simulation")
+                    help="Number of times to use in the simulation.")
 parser.add_argument("--Nfreqs", type=int, action="store", default=60,
                     required=False, dest="Nfreqs",
-                    help="Number of frequencies to use in simulation")
+                    help="Number of frequencies to use in the simulation.")
 parser.add_argument("--Niters", type=int, action="store", default=100,
                     required=False, dest="Niters",
-                    help="Number of joint samples to gather")
-parser.add_argument("--sigma_noise", type=float, action="store",
+                    help="Number of joint samples to gather.")
+parser.add_argument("--sigma-noise", type=float, action="store",
                     default=0.05, required=False, dest="sigma_noise",
-                    help="Strength of the noise")
-parser.add_argument("--beam_nmax", type=int, action="store",
+                    help="Standard deviation of the noise, in the same units "
+                         "as the visibility data.")
+parser.add_argument("--beam-nmax", type=int, action="store",
                     default=10, required=False, dest="beam_nmax",
-                    help="Maximum radial degree of the Zernike basis for the beams")
+                    help="Maximum radial degree of the Zernike basis for the beams.")
+parser.add_argument("--output-dir", type=str, action="store",
+                    default="./output", required=False, dest="output_dir",
+                    help="Output directory.")
 args = parser.parse_args()
 
-# eliminate the double negatives here.
-SAMPLE_GAINS = not args.no_sample_gains
-SAMPLE_VIS = not args.no_sample_vis
-SAMPLE_PTSRC_AMPS = not args.no_sample_ptsrc
-SAMPLE_BEAM = not args.no_sample_beam
-CALCULATE_STATS = not args.no_calculate_stats
-OUTPUT_DIAGNOSTICS = not args.no_output_diagnostics
-SAVE_TIMING_INFO = not args.no_save_timing_info
-PLOTTING = not args.no_plotting
+# Set switches
+SAMPLE_GAINS = args.sample_gains
+SAMPLE_VIS = args.sample_vis
+SAMPLE_PTSRC_AMPS = args.sample_ptsrc
+SAMPLE_BEAM = args.sample_beam
+CALCULATE_STATS = args.calculate_stats
+OUTPUT_DIAGNOSTICS = args.output_diagnostics
+SAVE_TIMING_INFO = args.save_timing_info
+PLOTTING = args.plotting
+
+# Print what's switched on
+print("    Gain sampler:       ", SAMPLE_GAINS)
+print("    Vis. sampler:       ", SAMPLE_VIS)
+print("    Ptsrc. amp. sampler:", SAMPLE_PTSRC_AMPS)
+print("    Beam sampler:       ", SAMPLE_BEAM)
+
+# Check that at least one thing is being sampled
+if not SAMPLE_GAINS and not SAMPLE_VIS and not SAMPLE_PTSRC_AMPS and not SAMPLE_BEAM:
+    raise ValueError("No samplers were enabled. Must enable at least one "
+                     "of 'gains', 'vis', 'ptsrc', 'beams'.")
 
 # Simulation settings -- want some shorter variable names
 Nptsrc = args.Nptsrc
 Ntimes = args.Ntimes
 Nfreqs = args.Nfreqs
-#Nants = 15
 Niters = args.Niters
+hex_array = tuple(args.hex_array)
+assert len(hex_array) == 2, "hex-array argument must have length 2."
 beam_nmax = args.beam_nmax
-
 sigma_noise = args.sigma_noise
 
 hera_latitude = -30.7215 * np.pi / 180.0
 
 # Check that output directory exists
-if not os.path.exists("./output"):
-    os.makedirs("./output")
-ftime = "./output/timing.dat"
+output_dir = args.output_dir
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+ftime = os.path.join(output_dir, "timing.dat")
 
 #-------------------------------------------------------------------------------
 # (1) Simulate some data
@@ -102,7 +120,7 @@ times = np.linspace(0.2, 0.5, Ntimes)
 freqs = np.linspace(100., 120., Nfreqs)
 
 #ant_pos = build_hex_array(hex_spec=(3,4), d=14.6)
-ant_pos = build_hex_array(hex_spec=(3,4), d=14.6)
+ant_pos = build_hex_array(hex_spec=hex_array, d=14.6)
 ants = np.array(list(ant_pos.keys()))
 Nants = len(ants)
 print("Nants =", Nants)
@@ -191,13 +209,13 @@ if PLOTTING:
     plt.matshow(delta_g[0].imag, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
     plt.colorbar()
     plt.gcf().set_size_inches((10., 4.))
-    plt.savefig("output/delta_g_true_000.png")
+    plt.savefig(os.path.join(output_dir, "delta_g_true_000.png"))
 
     # Plot input (simulated) visibility model
     vminmax_vis = np.max(model0[0,:,:].real)
     plt.matshow(model0[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
     plt.colorbar()
-    plt.savefig("output/data_model_000_xxxxx.png")
+    plt.savefig(os.path.join(output_dir, "data_model_000_xxxxx.png"))
 
 # Add noise
 data += sigma_noise * np.sqrt(0.5) \
@@ -208,7 +226,7 @@ data += sigma_noise * np.sqrt(0.5) \
 if PLOTTING:
     plt.matshow(data[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
     plt.colorbar()
-    plt.savefig("output/data_000.png")
+    plt.savefig(os.path.join(output_dir, "data_000.png"))
 
 #-------------------------------------------------------------------------------
 # (2) Set up Gibbs sampler
@@ -348,7 +366,7 @@ for n in range(Niters):
             xgain[k, :, :] = fft.ifft2(x_soln[k, :, :])
 
         print("    Gain sample:", xgain[0,0,0], xgain.shape)
-        np.save("output/delta_gain_%05d" % n, x_soln)
+        np.save(os.path.join(output_dir, "delta_gain_%05d" % n), x_soln)
 
         if PLOTTING:
             for i in range(len(ants)):
@@ -361,7 +379,7 @@ for n in range(Niters):
                             fignum=False, aspect='auto')
                 plt.colorbar()
                 plt.gcf().set_size_inches((10., 4.))
-                plt.savefig("output/delta_g_%03d_%05d.png" % (i, n))
+                plt.savefig(os.path.join(output_dir, "delta_g_%03d_%05d.png" % (i, n)))
 
             # Residual with true gains (abs)
             plt.matshow(np.abs(xgain[0]) - np.abs(delta_g[0]),
@@ -371,7 +389,7 @@ for n in range(Niters):
             plt.colorbar()
             plt.title("%05d" % n)
             plt.gcf().set_size_inches((6., 4.))
-            plt.savefig("output/gain_resid_amp_000_%05d.png" % n)
+            plt.savefig(os.path.join(output_dir, "gain_resid_amp_000_%05d.png" % n))
 
             # Residual with true gains (real)
             plt.matshow(np.real(xgain[0]) - np.real(delta_g[0]),
@@ -381,7 +399,7 @@ for n in range(Niters):
             plt.colorbar()
             plt.title("%05d" % n)
             plt.gcf().set_size_inches((6., 4.))
-            plt.savefig("output/gain_resid_real_000_%05d.png" % n)
+            plt.savefig(os.path.join(output_dir, "gain_resid_real_000_%05d.png" % n))
 
             # Residual with true gains (imag)
             plt.matshow(np.imag(xgain[0]) - np.imag(delta_g[0]),
@@ -391,7 +409,7 @@ for n in range(Niters):
             plt.colorbar()
             plt.title("%05d" % n)
             plt.gcf().set_size_inches((6., 4.))
-            plt.savefig("output/gain_resid_imag_000_%05d.png" % n)
+            plt.savefig(os.path.join(output_dir, "gain_resid_imag_000_%05d.png" % n))
 
             # DEBUG
             # Compare imaginary parts of gains
@@ -410,7 +428,7 @@ for n in range(Niters):
             plt.colorbar()
             plt.title("%05d" % n)
             plt.gcf().set_size_inches((10., 4.))
-            plt.savefig("output/gain_resid_compare_imag_000_%05d.png" % n)
+            plt.savefig(os.path.join(output_dir, "gain_resid_compare_imag_000_%05d.png" % n))
 
             # Compare real parts of gains
             plt.subplot(121)
@@ -428,7 +446,7 @@ for n in range(Niters):
             plt.colorbar()
             plt.title("%05d" % n)
             plt.gcf().set_size_inches((10., 4.))
-            plt.savefig("output/gain_resid_compare_imag_000_%05d.png" % n)
+            plt.savefig(os.path.join(output_dir, "gain_resid_compare_imag_000_%05d.png" % n))
 
         # Update gain model with latest solution (in real space)
         current_delta_gain = xgain
@@ -490,7 +508,7 @@ for n in range(Niters):
                                                     ifft=True)
 
         print("    Vis sample:", x_soln[0,0,0], x_soln.shape)
-        np.save("output/vis_%05d" % n, x_soln)
+        np.save(os.path.join(output_dir, "vis_%05d" % n), x_soln)
 
         if PLOTTING:
             plt.matshow(current_data_model[0].real + x_soln[0].real,
@@ -498,7 +516,7 @@ for n in range(Niters):
                         vmax=vminmax_vis)
             plt.colorbar()
             plt.title("%05d" % n)
-            plt.savefig("output/vis_000_%05d.png" % n)
+            plt.savefig(os.path.join(output_dir, "vis_000_%05d.png" % n))
 
         # Update current state
         current_data_model = current_data_model + x_soln
@@ -520,7 +538,7 @@ for n in range(Niters):
                         fignum=False, aspect='auto')
             plt.colorbar()
             plt.gcf().set_size_inches((10., 4.))
-            plt.savefig("output/resid_datamodel_000_%05d.png" % n)
+            plt.savefig(os.path.join(output_dir, "resid_datamodel_000_%05d.png" % n))
 
 
     #---------------------------------------------------------------------------
@@ -572,7 +590,7 @@ for n in range(Niters):
         timing_info(ftime, n, "(C) Point source sampler", time.time() - t0)
         x_soln *= amp_prior_std # we solved for x = S^-1/2 s, so recover s
         print("    Example soln:", x_soln[:5]) # this is fractional deviation from assumed amplitude, so should be close to 0
-        np.save("output/ptsrc_amp_%05d" % n, x_soln)
+        np.save(os.path.join(output_dir, "ptsrc_amp_%05d" % n), x_soln)
 
         # Plot point source amplitude perturbations
         if PLOTTING:
@@ -584,7 +602,7 @@ for n in range(Niters):
             plt.ylim((-1., 1.))
             plt.title("%05d" % n)
             plt.gcf().set_size_inches((5., 4.))
-            plt.savefig("output/ptsrc_amp_%05d.png" % n)
+            plt.savefig(os.path.join(output_dir, "ptsrc_amp_%05d.png" % n))
 
         # Update visibility model with latest solution (does not include any gains)
         # Applies projection operator to ptsrc amplitude vector
@@ -597,7 +615,7 @@ for n in range(Niters):
             plt.colorbar()
             plt.title("%05d" % n)
             plt.gcf().set_size_inches((5., 4.))
-            plt.savefig("output/data_model_000_%05d.png" % n)
+            plt.savefig(os.path.join(output_dir, "data_model_000_%05d.png" % n))
 
     #---------------------------------------------------------------------------
     # (D) Beam sampler
@@ -706,7 +724,7 @@ for n in range(Niters):
                                                + 1.j * xoln_res[:, :, :, 1]
 
         timing_info(ftime, n, "(D) Beam sampler", time.time() - t0)
-        np.save("output/beam_%05d" % n, beam_coeffs)
+        np.save(os.path.join(output_dir, "beam_%05d" % n), beam_coeffs)
 
     #---------------------------------------------------------------------------
     # (P) Probability values and importance weights
@@ -762,7 +780,7 @@ for n in range(Niters):
         print("    Import. wgt  = %+8.5e" % importance_weight)
         print("    Deg. freedom = %+8.5e" % Ndof)
         print("    chi^2 / Ndof = %+8.5e" % (-2.*logl_approx / Ndof))
-        with open("output/stats.dat", "ab") as f:
+        with open(os.path.join(output_dir, "stats.dat"), "ab") as f:
             np.savetxt(f, np.atleast_2d([n, logl_exact, logl_approx, importance_weight, Ndof]))
 
     #---------------------------------------------------------------------------
@@ -783,7 +801,7 @@ for n in range(Niters):
             plt.colorbar()
             plt.title("%05d" % n)
             plt.gcf().set_size_inches((5., 4.))
-            plt.savefig("output/resid_abs_000_%05d.png" % n)
+            plt.savefig(os.path.join(output_dir, "resid_abs_000_%05d.png" % n))
 
             # Output chi^2
             chisq = (resid[0].real**2. + resid[0].imag**2.) / noise_var[0]
@@ -793,7 +811,7 @@ for n in range(Niters):
             plt.colorbar()
             plt.title("%05d" % n)
             plt.gcf().set_size_inches((5., 4.))
-            plt.savefig("output/chisq_000_%05d.png" % n)
+            plt.savefig(os.path.join(output_dir, "chisq_000_%05d.png" % n))
 
 
 
