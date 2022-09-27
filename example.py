@@ -8,7 +8,7 @@ import numpy.fft as fft
 from scipy.sparse.linalg import cg, LinearOperator
 from scipy.signal import blackmanharris
 import pyuvsim
-import time, os
+import time, os, resource
 from hydra.vis_utils import flatten_vector, reconstruct_vector, timing_info, \
                             build_hex_array, get_flux_from_ptsrc_amp, convert_to_tops
 
@@ -822,3 +822,10 @@ for n in range(Niters):
     if PLOTTING:
         plt.close('all')
     timing_info(ftime, n, "(Z) Full iteration", time.time() - t0iter)
+
+
+# Print final resource usage info
+rusage = resource.getrusage(resource.RUSAGE_SELF)
+print("\nResource usage (final):")
+print("    Max. RSS (MB):   %8.2f" % (rusage.ru_maxrss/1024.))
+print("    User time (sec): %8.2f" % (rusage.ru_utime))
