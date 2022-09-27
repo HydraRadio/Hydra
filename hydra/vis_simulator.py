@@ -9,7 +9,8 @@ from astropy.constants import c
 from pyuvdata import UVBeam
 from typing import Optional, Sequence
 from vis_cpu import conversions
-
+from multiprocessing import Pool, cpu_count
+import os
 
 def run_checks(
     antpos: np.ndarray,
@@ -381,23 +382,35 @@ def simulate_vis_per_source(
             (freqs.size, lsts.size, nants, nants, nsrcs), dtype=complex_dtype
         )
 
-    # Loop over frequencies and call vis_cpu for UVBeam
-    for i in range(freqs.size):
+    # Parallel loop over frequencies that calls vis_cpu for UVBeam
+    # The `global` declaration is needed so that multiprocessing can handle
+    # the input args correctly
+    global _sim_fn_simulate_vis_per_source
+    def _sim_fn_simulate_vis_per_source(i):
+        return vis_sim_per_source(
+                                  antpos,
+                                  freqs[i],
+                                  eq2tops,
+                                  crd_eq,
+                                  fluxes[:, i],
+                                  beam_list=beams,
+                                  precision=precision,
+                                  polarized=polarized,
+                                 )
+    # Set up parallel loop
+    try:
+        Nthreads = int(os.environ['OMP_NUM_THREADS'])
+    except:
+        Nthreads = cpu_count()
+    with Pool(Nthreads) as pool:
+        vv = pool.map(_sim_fn_simulate_vis_per_source, range(freqs.size))
 
-        v = vis_sim_per_source(
-            antpos,
-            freqs[i],
-            eq2tops,
-            crd_eq,
-            fluxes[:, i],
-            beam_list=beams,
-            precision=precision,
-            polarized=polarized,
-        )
+    # Assign returned values to array
+    for i in range(freqs.size):
         if polarized:
-            vis[:, :, i] = v  # v.shape: (nax, nfeed, ntimes, nant, nant, nsrcs)
+            vis[:, :, i] = vv[i]  # v.shape: (nax, nfeed, ntimes, nant, nant, nsrcs)
         else:
-            vis[i] = v  # v.shape: (ntimes, nant, nant, nsrcs)
+            vis[i] = vv[i]  # v.shape: (ntimes, nant, nant, nsrcs)
 
     return vis
 
