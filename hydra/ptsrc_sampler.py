@@ -6,7 +6,6 @@ import pyuvsim
 import time
 
 from .vis_simulator import simulate_vis_per_source
-from scipy.sparse.linalg import cg, LinearOperator
 
 
 def precompute_op(vis_proj_operator, inv_noise_var):

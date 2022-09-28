@@ -5,7 +5,8 @@ import pylab as plt
 import hydra
 
 import numpy.fft as fft
-from scipy.sparse.linalg import cg, LinearOperator
+import scipy.linalg
+from scipy.sparse.linalg import cg, gmres, LinearOperator
 from scipy.signal import blackmanharris
 import pyuvsim
 import time, os, resource
@@ -67,6 +68,9 @@ parser.add_argument("--sigma-noise", type=float, action="store",
 parser.add_argument("--beam-nmax", type=int, action="store",
                     default=10, required=False, dest="beam_nmax",
                     help="Maximum radial degree of the Zernike basis for the beams.")
+parser.add_argument("--solver", type=str, action="store",
+                    default='cg', required=False, dest="solver_name",
+                    help="Which sparse matrix solver to use for linear systems ('cg' or 'gmres').")
 parser.add_argument("--output-dir", type=str, action="store",
                     default="./output", required=False, dest="output_dir",
                     help="Output directory.")
@@ -110,6 +114,19 @@ output_dir = args.output_dir
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 print("\nOutput directory:", output_dir)
+
+# Linear solver to use
+if args.solver_name == 'cg':
+    solver = cg
+elif args.solver_name == 'gmres':
+    solver = gmres
+else:
+    raise ValueError("Solver '%s' not recognised." % args.solver_name)
+print("    Solver: %s" % args.solver_name)
+
+# Random seed
+np.random.seed(args.seed)
+print("    Seed:   %d" % args.seed)
 
 # Timing file
 ftime = os.path.join(output_dir, "timing.dat")
@@ -353,7 +370,7 @@ for n in range(Niters):
 
         # Solve using Conjugate Gradients
         t0 = time.time()
-        x_soln, convergence_info = cg(gain_linear_op, b)
+        x_soln, convergence_info = solver(gain_linear_op, b)
         timing_info(ftime, n, "(A) Gain sampler", time.time() - t0)
 
 
@@ -499,7 +516,7 @@ for n in range(Niters):
 
         # Solve using Conjugate Gradients
         t0 = time.time()
-        x_soln, convergence_info = cg(vis_linear_op, bvis)
+        x_soln, convergence_info = solver(vis_linear_op, bvis)
         timing_info(ftime, n, "(B) Visibility sampler", time.time() - t0)
 
         # Reshape solution into complex array and multiply by S^1/2 to get set of
@@ -553,12 +570,13 @@ for n in range(Niters):
         # Get the projection operator with most recent gains applied
         t0 = time.time()
         proj = vis_proj_operator0.copy()
+        gain_pert = gains * (1. + current_delta_gain)
         for k, bl in enumerate(antpairs):
             ant1, ant2 = bl
             i1 = np.where(ants == ant1)[0][0]
             i2 = np.where(ants == ant2)[0][0]
-            proj[k,:,:,:] *= (gains * (1. + current_delta_gain))[i1,:,:,np.newaxis] \
-                           * (gains * (1. + current_delta_gain))[i2,:,:,np.newaxis].conj()
+            proj[k,:,:,:] *= gain_pert[i1,:,:,np.newaxis] \
+                           * gain_pert[i2,:,:,np.newaxis].conj()
         timing_info(ftime, n, "(C) Applying gains to ptsrc proj. operator", time.time() - t0)
 
         # Precompute the point source matrix operator
@@ -589,7 +607,7 @@ for n in range(Niters):
 
         # Solve using Conjugate Gradients
         t0 = time.time()
-        x_soln, convergence_info = cg(ptsrc_linear_op, bsrc)
+        x_soln, convergence_info = solver(ptsrc_linear_op, bsrc)
         timing_info(ftime, n, "(C) Point source sampler", time.time() - t0)
         x_soln *= amp_prior_std # we solved for x = S^-1/2 s, so recover s
         print("    Example soln:", x_soln[:5]) # this is fractional deviation from assumed amplitude, so should be close to 0
@@ -718,7 +736,7 @@ for n in range(Niters):
                                             shape=beam_lhs_shape)
 
             # Solve using Conjugate Gradients
-            x_soln, convergence_info = cg(beam_linear_op, bbeam)
+            x_soln, convergence_info = solver(beam_linear_op, bbeam)
             x_soln_res = np.reshape(x_soln, shape)
             x_soln_swap = np.transpose(x_soln, axes=(2, 0, 1, 3))
 
