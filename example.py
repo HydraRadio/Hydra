@@ -10,6 +10,7 @@ from scipy.sparse.linalg import cg, gmres, LinearOperator
 from scipy.signal import blackmanharris
 import pyuvsim
 import time, os, resource
+import multiprocessing
 from hydra.vis_utils import flatten_vector, reconstruct_vector, timing_info, \
                             build_hex_array, get_flux_from_ptsrc_amp, convert_to_tops
 
@@ -122,11 +123,17 @@ elif args.solver_name == 'gmres':
     solver = gmres
 else:
     raise ValueError("Solver '%s' not recognised." % args.solver_name)
-print("    Solver: %s" % args.solver_name)
+print("    Solver:  %s" % args.solver_name)
 
 # Random seed
 np.random.seed(args.seed)
-print("    Seed:   %d" % args.seed)
+print("    Seed:    %d" % args.seed)
+
+# Check number of threads available
+Nthreads = int(os.environ.get('OMP_NUM_THREADS'))
+if Nthreads is None:
+    Nthreads = multiprocessing.cpu_count()
+print("    Threads: %d available" % Nthreads)
 
 # Timing file
 ftime = os.path.join(output_dir, "timing.dat")
