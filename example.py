@@ -685,7 +685,8 @@ for n in range(Niters):
                                                                      Zmatr,
                                                                      txs,
                                                                      tys), ])
-            beam_coeffs = np.swapaxes(beam_coeffs, 0, 3).astype(complex)
+            # Want shape ncoeff, Nfreqs, Nants
+            beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
             ncoeffs = beam_coeffs.shape[0]
 
 
@@ -734,7 +735,7 @@ for n in range(Niters):
                                                              cov_Tdag,
                                                              cho_tuple)
             bbeam = rhs_unflatten.flatten()
-            shape = (Nfreqs, Ntimes, ncoeffs,  2)
+            shape = (Nfreqs, ncoeffs,  2)
             cov_Tdag_Ninv_T = hydra.beam_sampler.get_cov_Tdag_Ninv_T(inv_noise_var_use,
                                                                      cov_Tdag,
                                                                      zern_trans)
