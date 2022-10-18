@@ -766,11 +766,14 @@ for n in range(Niters):
             x_soln, convergence_info = solver(beam_linear_op, bbeam, maxiter=100)
             print(f"Done solving, convergence_info: {convergence_info}")
             x_soln_res = np.reshape(x_soln, shape)
-            x_soln_swap = np.transpose(x_soln_res, axes=(2, 0, 1, 3))
+
+            # Has shape Nfreqs, ncoeff, ncomp
+            # Want shape ncoeff, Nfreqs, ncomp
+            x_soln_swap = np.swapzxes(x_soln_res, 0, 1)
 
             # Update the coeffs between rounds
-            beam_coeffs[:, :, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, :, 0] \
-                                               + 1.j * x_soln_swap[:, :, :, 1]
+            beam_coeffs[:, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, 0] \
+                                               + 1.j * x_soln_swap[:, :, 1]
 
         timing_info(ftime, n, "(D) Beam sampler", time.time() - t0)
         np.save(os.path.join(output_dir, "beam_%05d" % n), beam_coeffs)
