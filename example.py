@@ -131,9 +131,11 @@ np.random.seed(args.seed)
 print("    Seed:    %d" % args.seed)
 
 # Check number of threads available
-Nthreads = int(os.environ.get('OMP_NUM_THREADS'))
+Nthreads = os.environ.get('OMP_NUM_THREADS')
 if Nthreads is None:
     Nthreads = multiprocessing.cpu_count()
+else:
+    Nthreads = int(Nthreads)
 print("    Threads: %d available" % Nthreads)
 
 # Timing file
