@@ -134,28 +134,32 @@ def fit_zernike_to_beam(beam, freqs, Zmatr, txs, tys):
         fit_beam (array_like):
             The best-fit Zernike coefficients for the input beam.
     """
-    Ntimes = Zmatr.shape[0]
-    ncoeff = Zmatr.shape[2]
+    Ntimes, Nsource, ncoeff = Zmatr.shape
     Nfreqs = len(freqs)
 
     # Diagonal so just iterate over times
     # There is a faster way to do this using scipy.sparse and encoding Z
     # as block-diagonal in time and frequency
     fit_beam = []
+    rhss = []
     for tind, (tx, ty) in enumerate(zip(txs, tys)):
         az, za = conversions.enu_to_az_za(enu_e=tx,
                                           enu_n=ty,
                                           orientation="uvbeam")
-        rhss = beam.interp(az, za, freqs)[0]
+        rhs = beam.interp(az, za, freqs)[0][1, 0, 0]
+        rhs = np.swapaxes(rhs, 0, 1) # Swap source/freq axis
+        rhss.append(rhs)
 
-        # Loop over frequencies
-        for freq_ind in range(Nfreqs):
-            fit_beam_tf = lstsq(Zmatr[tind], rhss[1, 0, 0, freq_ind, :])[0]
-            fit_beam.append(fit_beam_tf)
+    rhss = np.reshape(rhss, (Ntimes * Nsource, Nfreqs))
+
+    # Loop over frequencies
+    for freq_ind in range(Nfreqs):
+        fit_beam_f = lstsq(Zmatr.reshape(), rhss[:, freq_ind])[0]
+        fit_beam.append(fit_beam_tf)
 
     # Reshape coefficients array
-    fit_beam = np.array(fit_beam).reshape(Ntimes, Nfreqs, ncoeff)
-    fit_beam = np.transpose(fit_beam, axes=(1, 0, 2))
+    fit_beam = np.array(fit_beam) # Has shape Nfreqs, ncoeffs
+
     return fit_beam
 
 
