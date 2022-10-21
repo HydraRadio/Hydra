@@ -149,6 +149,35 @@ def extract_vis_from_uvdata(uvd, exclude_autos=True, lst_pad=[0,0], freq_pad=[0,
     return np.array(vis), antpair, np.array(ants)
 
 
+def extend_coords_with_padding(arr, pad=[0,0]):
+    """
+    Take an array with (e.g.) frequencies or times and extend it by a number 
+    of elements of padding on either side. The values are extrapolated into 
+    the padded region.
+
+    Parameters:
+        arr (array_like):
+            Array of coordinates. Expected to be monotonic and equally-spaced.
+        pad (list):
+            How many array elements of padding to add on either side of the 
+            array. For example, if `arr` has size `10` and `pad=[2,3]`, the 
+            new array will have `15` elements, with `2` added to the start 
+            and `3` added to the end.
+
+    Returns:
+        arr_pad (array_like):
+            New array with coordinates extrapolated into the padded ends.
+    """
+    # Create new copy of the array with zero padding around it
+    arr_new = np.zeros(pad[0] + arr.size + pad[1], dtype=arr.dtype)
+    arr_new[pad[0]:arr_new.size-pad[1]] = arr[:]
+
+    # Extrapolate into the padded regions
+    diff = arr[1] - arr[0]
+    arr_new[arr_new.size-pad[1]:] = arr[-1] + diff * (1.+np.arange(pad[1]))
+    arr_new[:pad[0]] = arr[0] - diff * (np.arange(pad[0]) + 1.)[::-1]
+    return arr_new
+
 
 def timing_info(fname, iter, task, duration, verbose=True):
     """
