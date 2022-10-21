@@ -95,7 +95,7 @@ def extract_vis_from_sim(ants, antpairs, sim_vis):
     return vis
 
 
-def extract_vis_from_uvdata(uvd, exclude_autos=True):
+def extract_vis_from_uvdata(uvd, exclude_autos=True, lst_pad=[0,0], freq_pad=[0,0]):
     """
     Extract only the desired set of visibilities from a UVData object, in
     the desired order.
@@ -105,6 +105,12 @@ def extract_vis_from_uvdata(uvd, exclude_autos=True):
             UVData object containing the visibility data.
         exclude_autos (bool):
             Whether to exclude auto (zero-spacing) baselines.
+        lst_pad (list of int):
+            How many time samples to add as zero-padding to the data arrays. 
+            The list should have two entries, with the number of channels to  
+            add before and after the existing ones.
+        freq_pad (list of int):
+            Same as `lst_pad`, but for frequency channels. 
 
     Returns:
         vis (array_like):
@@ -126,8 +132,13 @@ def extract_vis_from_uvdata(uvd, exclude_autos=True):
             continue # exclude autos
         antpairs.append(antpair)
         
-        # Add data for this bl to array
-        vis.append(bl_data)
+        # Add data for this bl to array (with zero-padding if necessary)
+        dat = np.zeros((freq_pad[0] + bl_data.shape[0] + freq_pad[1],
+                        lst_pad[0] + bl_data.shape[1] + lst_pad[1]), 
+                       dtype=bl_data.dtype)
+        dat[freq_pad[0]:bl_data.shape[0]-freq_pad[1], 
+            lst_pad[0]:bl_data.shape[1]-lst_pad[1]] = bl_data[:,:]
+        vis.append(dat)
 
         # Add antenna to list if not there already
         if ant1 not in ants:
