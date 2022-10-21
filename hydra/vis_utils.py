@@ -1,6 +1,7 @@
 
 import numpy as np
 from vis_cpu import conversions
+import pyuvdata
 
 
 def flatten_vector(v):
@@ -92,6 +93,50 @@ def extract_vis_from_sim(ants, antpairs, sim_vis):
         idx2 = np.where(ants == bl[1])[0][0]
         vis[i,:,:] = sim_vis[:,:,idx1,idx2]
     return vis
+
+
+def extract_vis_from_uvdata(uvd, exclude_autos=True):
+    """
+    Extract only the desired set of visibilities from a UVData object, in
+    the desired order.
+
+    Parameters:
+        uvd (array_like):
+            UVData object containing the visibility data.
+        exclude_autos (bool):
+            Whether to exclude auto (zero-spacing) baselines.
+
+    Returns:
+        vis (array_like):
+            Array of complex visibilities with shape (Nbls, Nfreqs, Ntimes).
+        antpair (list of tuple):
+            Ordered list of antenna pairs, with the same ordering as the 
+            first dimension of `vis`.
+        ants (list):
+            List of unique antenna IDs.
+    """
+    ants = []
+    antpairs = []
+    vis = []
+    for antpair, bl_data in uvd.antpairpol_iter(squeeze='full'):
+        ant1, ant2 = antpair
+        
+        # Add antpair to the list
+        if ant1 == ant2 and exclude_autos:
+            continue # exclude autos
+        antpairs.append(antpair)
+        
+        # Add data for this bl to array
+        vis.append(bl_data)
+
+        # Add antenna to list if not there already
+        if ant1 not in ants:
+            ants.append(ant1)
+        if ant2 not in ants:
+            ants.append(ant2)
+
+    return np.array(vis), antpair, np.array(ants)
+
 
 
 def timing_info(fname, iter, task, duration, verbose=True):
@@ -203,6 +248,38 @@ def convert_to_tops(ra, dec, lsts, latitude, precision=1):
     return(txs, tys, tzs)
 
 
-def get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc):
-    fluxes = ptsrc_amps[:,np.newaxis] * ((freqs / 100.)**beta_ptsrc)[np.newaxis,:]
+def get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc, ref_freq=100.):
+    fluxes = ptsrc_amps[:,np.newaxis] * ((freqs / ref_freq)**beta_ptsrc)[np.newaxis,:]
     return(fluxes)
+
+
+def antenna_dict_from_uvd(uvd):
+    """
+    Construct an antenna dictionary (keys are antenna IDs, values are ENU 
+    x/y/z coords of the antennas) from a UVData object.
+
+    Parameters:
+        uvd (UVData object):
+            UVData object that contains necessary metadata about antenna 
+            and telescope position.
+
+    Returns:
+        ants (dict):
+            Dictionary containing antenna IDs (keys) and x/y/z positions 
+            in ENU coordinates local to the array (values).
+    """
+    # Get ENU positions of antennas
+    enu = pyuvdata.utils.ENU_from_ECEF(uvd.antenna_positions + uvd.telescope_location, 
+                                       *uvd.telescope_location_lat_lon_alt)
+
+    # Get antenna IDs
+    ant_ids = uvd.antenna_numbers
+
+    assert ant_ids.size == enu.shape[0], \
+        "antenna_number and antenna_positions are mis-matched"
+
+    # Output dict
+    ants = {}
+    for i, ant in enumerate(ant_ids):
+        ants[ant] = enu[i]
+    return ants
