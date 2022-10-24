@@ -13,7 +13,7 @@ import pyuvsim
 from pyuvdata import UVData
 import time, os, resource
 import multiprocessing
-from hydra.vis_utils import flatten_vector, reconstruct_vector, timing_info, \
+from hydra.utils import flatten_vector, reconstruct_vector, timing_info, \
                             build_hex_array, get_flux_from_ptsrc_amp, convert_to_tops
 
 import argparse
@@ -157,7 +157,7 @@ print("Vis. data loaded from:", data_file)
 telescope_latitude = uvd.telescope_location_lat_lon_alt[0] # radians
 
 # Get antenna info
-ant_pos = hydra.vis_utils.antenna_dict_from_uvd(uvd)
+ant_pos = hydra.utils.antenna_dict_from_uvd(uvd)
 ants = np.array(list(ant_pos.keys()))
 Nants = len(ants)
 
@@ -167,18 +167,20 @@ data, antpairs, _ = hydra.extract_vis_from_uvdata(uvd,
                                                   lst_pad=lst_pad, 
                                                   freq_pad=freq_pad)
 ants1, ants2 = list(zip(*antpairs))
-Nfreqs = data.shape[1]
-Ntimes = data.shape[2]
+Nfreqs_orig = data.shape[1]
+Ntimes_orig = data.shape[2]
 
 # Times and frequencies
 # (FIXME: Time ordering not guaranteed)
-times = hydra.vis_utils.extend_coords_with_padding(np.unique(uvd.lst_array),
+times = hydra.utils.extend_coords_with_padding(np.unique(uvd.lst_array),
                                                    pad=lst_pad) # rad
-freqs = hydra.vis_utils.extend_coords_with_padding(np.unique(uvd.freq_array)/1e6,
+freqs = hydra.utils.extend_coords_with_padding(np.unique(uvd.freq_array)/1e6,
                                                    pad=freq_pad) # MHz
+Nfreqs = freqs.size
+Ntimes = times.size
 
 # Load point source catalogue (ra/dec in degrees)
-src_ra, src_dec, src_flux, src_beta = np.loadtxt(source_catalogue).T
+src_ra, src_dec, src_flux, src_beta = np.loadtxt(source_catalogue)
 Nptsrc = src_ra.size
 fluxes = get_flux_from_ptsrc_amp(src_flux, freqs, src_beta, ref_freq=100.)
 src_ra = np.deg2rad(src_ra)
@@ -196,7 +198,9 @@ beams = [pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14.)
          for ant in ants]
 
 # Define gains and gain perturbations
-gains = np.load(gain_ref_file)
+gains = hydra.utils.load_gain_model(gain_ref_file, 
+                                    lst_pad=lst_pad, 
+                                    freq_pad=freq_pad)
 assert gains.shape == (Nants, Nfreqs, Ntimes)
 
 # Empty gain fluctuation model in FFT basis
@@ -357,7 +361,7 @@ for n in range(Niters):
 
         # Reshape solution into complex array and multiply by S^1/2 to get set of
         # Fourier coeffs of the actual solution for the frac. gain perturbation
-        x_soln = hydra.vis_utils.reconstruct_vector(x_soln, gain_shape)
+        x_soln = hydra.utils.reconstruct_vector(x_soln, gain_shape)
         x_soln = hydra.gain_sampler.apply_sqrt_pspec(gain_pspec_sqrt, x_soln)
 
         # x_soln is a set of Fourier coefficients, so transform to real space
@@ -502,7 +506,7 @@ for n in range(Niters):
 
         # Reshape solution into complex array and multiply by S^1/2 to get set of
         # Fourier coeffs of the actual solution for the frac. gain perturbation
-        x_soln = hydra.vis_utils.reconstruct_vector(x_soln, data.shape)
+        x_soln = hydra.utils.reconstruct_vector(x_soln, data.shape)
         x_soln = hydra.vis_sampler.apply_sqrt_pspec(vis_pspec_sqrt,
                                                     x_soln,
                                                     vis_group_id,

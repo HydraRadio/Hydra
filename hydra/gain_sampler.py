@@ -5,7 +5,7 @@ import numpy.fft as fft
 #import pyfftw.interfaces.numpy_fft as fft
 
 from scipy.sparse import dok_matrix
-from .vis_utils import flatten_vector, reconstruct_vector
+from .utils import flatten_vector, reconstruct_vector
 
 r"""
 # Mathematical representation of linear system for gain GCR

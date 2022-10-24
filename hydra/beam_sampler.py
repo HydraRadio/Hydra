@@ -1,10 +1,12 @@
 import numpy as np
 from scipy.linalg import lstsq, toeplitz, cholesky, inv, LinAlgError
-from hydra.vis_simulator import simulate_vis_per_source
+
 from pyuvsim import AnalyticBeam
 from pyuvsim.analyticbeam import diameter_to_sigma
-from hydra import vis_utils
 from vis_cpu import conversions
+
+from .vis_simulator import simulate_vis_per_source
+from . import utils
 
 
 def split_real_imag(arr, kind):

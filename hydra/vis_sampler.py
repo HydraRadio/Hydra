@@ -3,7 +3,7 @@ import pylab as plt
 import scipy.sparse
 import numpy.fft as fft
 
-from .vis_utils import flatten_vector, reconstruct_vector
+from .utils import flatten_vector, reconstruct_vector
 
 
 def apply_sqrt_pspec(sqrt_pspec, v, group_id, ifft=False):

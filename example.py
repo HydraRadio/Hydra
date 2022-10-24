@@ -12,7 +12,7 @@ from scipy.sparse import coo_matrix
 import pyuvsim
 import time, os, resource
 import multiprocessing
-from hydra.vis_utils import flatten_vector, reconstruct_vector, timing_info, \
+from hydra.utils import flatten_vector, reconstruct_vector, timing_info, \
                             build_hex_array, get_flux_from_ptsrc_amp, convert_to_tops
 
 import argparse
@@ -386,7 +386,7 @@ for n in range(Niters):
 
         # Reshape solution into complex array and multiply by S^1/2 to get set of
         # Fourier coeffs of the actual solution for the frac. gain perturbation
-        x_soln = hydra.vis_utils.reconstruct_vector(x_soln, gain_shape)
+        x_soln = hydra.utils.reconstruct_vector(x_soln, gain_shape)
         x_soln = hydra.gain_sampler.apply_sqrt_pspec(gain_pspec_sqrt, x_soln)
 
         # x_soln is a set of Fourier coefficients, so transform to real space
@@ -531,7 +531,7 @@ for n in range(Niters):
 
         # Reshape solution into complex array and multiply by S^1/2 to get set of
         # Fourier coeffs of the actual solution for the frac. gain perturbation
-        x_soln = hydra.vis_utils.reconstruct_vector(x_soln, data.shape)
+        x_soln = hydra.utils.reconstruct_vector(x_soln, data.shape)
         x_soln = hydra.vis_sampler.apply_sqrt_pspec(vis_pspec_sqrt,
                                                     x_soln,
                                                     vis_group_id,
