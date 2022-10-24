@@ -137,8 +137,8 @@ def extract_vis_from_uvdata(uvd, exclude_autos=True, lst_pad=[0,0], freq_pad=[0,
         dat = np.zeros((freq_pad[0] + bl_data.shape[0] + freq_pad[1],
                         lst_pad[0] + bl_data.shape[1] + lst_pad[1]), 
                        dtype=bl_data.dtype)
-        dat[freq_pad[0]:bl_data.shape[0]-freq_pad[1], 
-            lst_pad[0]:bl_data.shape[1]-lst_pad[1]] = bl_data[:,:]
+        dat[freq_pad[0]:bl_data.shape[0]+freq_pad[0], 
+            lst_pad[0]:bl_data.shape[1]+lst_pad[0]] = bl_data[:,:]
         vis.append(dat)
 
         # Add antenna to list if not there already
