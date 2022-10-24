@@ -131,7 +131,7 @@ def extract_vis_from_uvdata(uvd, exclude_autos=True, lst_pad=[0,0], freq_pad=[0,
         # Add antpair to the list
         if ant1 == ant2 and exclude_autos:
             continue # exclude autos
-        antpairs.append(antpair)
+        antpairs.append((ant1, ant2))
         
         # Add data for this bl to array (with zero-padding if necessary)
         dat = np.zeros((freq_pad[0] + bl_data.shape[0] + freq_pad[1],
@@ -147,7 +147,7 @@ def extract_vis_from_uvdata(uvd, exclude_autos=True, lst_pad=[0,0], freq_pad=[0,
         if ant2 not in ants:
             ants.append(ant2)
 
-    return np.array(vis), antpair, np.array(ants)
+    return np.array(vis), antpairs, np.array(ants)
 
 
 def extend_coords_with_padding(arr, pad=[0,0]):
