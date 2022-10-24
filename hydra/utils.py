@@ -142,7 +142,7 @@ def extract_vis_from_sim(ants, antpairs, sim_vis):
         # Extract data for this antenna pair
         idx1 = np.where(ants == ant1)[0][0]
         idx2 = np.where(ants == ant2)[0][0]
-        vis[i,:,:] = sim_vis[:,:,idx1,idx2].conj()
+        vis[i,:,:] = sim_vis[:,:,idx1,idx2]
     return vis
 
 

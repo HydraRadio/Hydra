@@ -389,7 +389,7 @@ for n in range(Niters):
         np.save(os.path.join(output_dir, "delta_gain_%05d" % n), x_soln)
 
         if PLOTTING:
-            vminmax = 0.4 # FIXME
+            vminmax = 0.02 # FIXME
             for i in range(len(ants)):
                 plt.subplot(121)
                 plt.matshow(xgain[i].real, vmin=-vminmax, vmax=vminmax,
