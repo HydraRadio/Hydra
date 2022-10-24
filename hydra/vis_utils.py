@@ -165,7 +165,7 @@ def extend_coords_with_padding(arr, pad=[0,0]):
             and `3` added to the end.
 
     Returns:
-        arr_pad (array_like):
+        arr_new (array_like):
             New array with coordinates extrapolated into the padded ends.
     """
     # Create new copy of the array with zero padding around it
@@ -288,9 +288,43 @@ def convert_to_tops(ra, dec, lsts, latitude, precision=1):
     return(txs, tys, tzs)
 
 
-def get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc, ref_freq=100.):
-    fluxes = ptsrc_amps[:,np.newaxis] * ((freqs / ref_freq)**beta_ptsrc)[np.newaxis,:]
-    return(fluxes)
+def get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc, curv_ptsrc=None, ref_freq=100.):
+    """
+    Calculate flux as a function of frequency for each point source, assuming 
+    a power-law spectrum.
+
+    Parameters:
+        pstsrc_amps (array_like):
+            Amplitude of each point source at the reference frequency (in Jy).
+        freqs (array_like):
+            Frequencies, in MHz.
+        beta_ptsrc (float or array_like):
+            Power law spectral index for each source.
+        curv_ptsrc (float or array_like):
+            Spectral index curvature. If None, no curvature is added.
+        ref_freq (float):
+            Reference frequency for the power-law spectrum, in MHz.
+
+    Returns:
+        fluxes (array_like):
+            Flux of each source at each frequency, shape `(Nsrc, Nfreqs)`.
+    """
+    # Check input arguments
+    if isinstance(beta_ptsrc, float):
+        beta_ptsrc = beta_ptsrc * np.ones_like(ptsrc_amps)
+    assert ptsrc_amps.size == beta_ptsrc.size
+    
+    if curv_ptsrc is not None and isinstance(curv_ptsrc, float):
+        curv_ptsrc = curv_ptsrc * np.ones_like(ptsrc_amps)
+    if curv_ptsrc is None:
+        curv_ptsrc = np.zeros_like(ptsrc_amps)
+    assert ptsrc_amps.size == curv_ptsrc.size
+    
+    # Make SEDs
+    spec_idx = beta_ptsrc[:,np.newaxis] + curv_ptsrc[:,np.newaxis] \
+                                          * np.log(freqs / ref_freq)[np.newaxis,:]
+    fluxes = ptsrc_amps[:,np.newaxis] * (freqs / ref_freq)[np.newaxis,:]**spec_idx
+    return fluxes
 
 
 def antenna_dict_from_uvd(uvd):
