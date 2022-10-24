@@ -125,7 +125,8 @@ def extract_vis_from_uvdata(uvd, exclude_autos=True, lst_pad=[0,0], freq_pad=[0,
     antpairs = []
     vis = []
     for antpair, bl_data in uvd.antpairpol_iter(squeeze='full'):
-        ant1, ant2 = antpair
+        ant1 = antpair[0]
+        ant2 = antpair[1]
         
         # Add antpair to the list
         if ant1 == ant2 and exclude_autos:
