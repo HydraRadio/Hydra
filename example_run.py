@@ -113,7 +113,7 @@ sigma_noise = args.sigma_noise
 data_file = args.data_file
 gain_ref_file = args.gain_ref_file
 source_catalogue = args.source_catalogue
-freq_pad = args.lst_pad
+freq_pad = args.freq_pad
 lst_pad = args.lst_pad
 
 # Check that output directory exists
@@ -167,8 +167,8 @@ data, antpairs, _ = hydra.extract_vis_from_uvdata(uvd,
                                                   lst_pad=lst_pad, 
                                                   freq_pad=freq_pad)
 ants1, ants2 = list(zip(*antpairs))
-Nfreqs_orig = data.shape[1]
-Ntimes_orig = data.shape[2]
+Nfreqs_orig = data.shape[1] - sum(freq_pad)
+Ntimes_orig = data.shape[2] - sum(lst_pad)
 
 # Times and frequencies
 # (FIXME: Time ordering not guaranteed)
@@ -178,6 +178,7 @@ freqs = hydra.utils.extend_coords_with_padding(np.unique(uvd.freq_array)/1e6,
                                                    pad=freq_pad) # MHz
 Nfreqs = freqs.size
 Ntimes = times.size
+assert data.shape == (len(antpairs), Nfreqs, Ntimes)
 
 # Load point source catalogue (ra/dec in degrees)
 src_ra, src_dec, src_flux, src_beta = np.loadtxt(source_catalogue)
@@ -189,19 +190,25 @@ print("Source catalogue loaded from:", source_catalogue)
 
 # Print basic info about data
 print("    Nants: ", Nants)
-print("    Nfreqs:", Nfreqs)
-print("    Ntimes:", Ntimes)
+print("    Nfreqs: %d (padding %d | %d | %d)" % (Nfreqs, freq_pad[0], Nfreqs_orig, freq_pad[1]))
+print("    Ntimes: %d (padding %d | %d | %d)" % (Ntimes, lst_pad[0], Ntimes_orig, lst_pad[1]))
 print("    Nptsrc:", Nptsrc)
 
 # Beams (FIXME)
-beams = [pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14.)
-         for ant in ants]
+#beams = [pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14.)
+#         for ant in ants]
+beams = [pyuvsim.AnalyticBeam('airy', diameter=14.6) for ant in ants]
+
 
 # Define gains and gain perturbations
 gains = hydra.utils.load_gain_model(gain_ref_file, 
                                     lst_pad=lst_pad, 
-                                    freq_pad=freq_pad)
+                                    freq_pad=freq_pad, 
+                                    pad_value=1.)
 assert gains.shape == (Nants, Nfreqs, Ntimes)
+
+# FIXME:
+gains = 0.*gains + 1.
 
 # Empty gain fluctuation model in FFT basis
 frate = np.fft.fftfreq(times.size, d=times[1] - times[0])
@@ -215,7 +222,9 @@ window = 1. # no window for now
 
 # Plot data
 if PLOTTING:
-    plt.matshow(data[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
+    vminmax_vis = 1.1*np.max(data[0,:,:].real) # FIXME
+    plt.matshow(data[0,:,:].real, vmin=-10., vmax=10.) #, vmin=-vminmax_vis, vmax=vminmax_vis)
+    plt.title("data[0] real")
     plt.colorbar()
     plt.savefig(os.path.join(output_dir, "data_000.png"))
 
@@ -252,7 +261,7 @@ current_data_model = 1.*model0.copy() * window
 current_delta_gain = np.zeros_like(gains)
 
 # Initial point source amplitude factor
-current_ptsrc_a = np.ones(ra.size)
+current_ptsrc_a = np.ones(src_ra.size)
 
 # Precompute visibility projection operator (without gain factors) for ptsrc
 # amplitude sampling step. NOTE: This has to be updated within the Gibbs loop
@@ -275,6 +284,12 @@ timing_info(ftime, 0, "(0) Precomp. ptsrc proj. operator", time.time() - t0)
 # FIXME: amp_prior_std is a prior around amp=0 I think, so can skew things low!
 noise_var = (sigma_noise)**2. * np.ones(data.shape)
 inv_noise_var = window / noise_var
+
+# FIXME: Add padding to inverse noise variance
+inv_noise_var[:,:freq_pad[0],:] = 0.
+inv_noise_var[:,Nfreqs_orig+freq_pad[0]:,:] = 0.
+inv_noise_var[:,:,:lst_pad[0]] = 0.
+inv_noise_var[:,:,Ntimes_orig+lst_pad[0]:] = 0.
 
 gain_pspec_sqrt = 0.1 * np.ones((gains.shape[1], gains.shape[2]))
 gain_pspec_sqrt[0,0] = 1e-2 # FIXME: Try to fix the zero point?
@@ -374,6 +389,7 @@ for n in range(Niters):
         np.save(os.path.join(output_dir, "delta_gain_%05d" % n), x_soln)
 
         if PLOTTING:
+            vminmax = 0.4 # FIXME
             for i in range(len(ants)):
                 plt.subplot(121)
                 plt.matshow(xgain[i].real, vmin=-vminmax, vmax=vminmax,

@@ -62,6 +62,48 @@ def apply_gains(v, gains, ants, antpairs, inline=False):
     return ggv
 
 
+def load_gain_model(gain_model_file, lst_pad=[0,0], freq_pad=[0,0], pad_value=1.):
+    """
+    Load complex gain model for each antenna into a single array, and 
+    zero-pad the edges of the array in the time and frequency dimensions 
+    if needed.
+
+    Parameters:
+        gain_model_file (str):
+            Path to file containing a numpy array of shape 
+            `(Nants, Nfreqs, Ntimes)`. The antenna ordering is assumed to 
+            be correct; the ordering is not checked.
+        lst_pad (list of int):
+            How many time samples to add as zero-padding to the data arrays. 
+            The list should have two entries, with the number of channels to  
+            add before and after the existing ones.
+        freq_pad (list of int):
+            Same as `lst_pad`, but for frequency channels.
+        pad_value (float):
+            Value to use for the gain model in the padded regions.
+
+    Returns:
+        gain_model (array_like):
+            Model for each antenna gain, of shape `(Nants, Nfreqs, Ntimes)`, 
+            where the frequency and time dimensions have now been zero-padded 
+            if requested.
+    """
+    # Load file
+    orig_model = np.load(gain_model_file)
+
+    # Pad the array as requested
+    padded_shape = (orig_model.shape[0],
+                    orig_model.shape[1] + freq_pad[0] + freq_pad[1],
+                    orig_model.shape[2] + lst_pad[0] + lst_pad[1],)
+    gain_model = np.zeros(padded_shape, dtype=orig_model.dtype) + pad_value
+
+    # Put gain model into padded array
+    gain_model[:,
+               freq_pad[0]:orig_model.shape[1]+freq_pad[0],
+               lst_pad[0]:orig_model.shape[2]+lst_pad[0]] = orig_model[:,:,:]
+    return gain_model
+
+
 def extract_vis_from_sim(ants, antpairs, sim_vis):
     """
     Extract only the desired set of visibilities from a vis_cpu simulation, in
@@ -86,12 +128,21 @@ def extract_vis_from_sim(ants, antpairs, sim_vis):
             Array of complex visibilities with shape (Nbls, Nfreqs, Ntimes).
     """
     Nfreqs, Ntimes, _, _ = sim_vis.shape
+
     # Allocate computed visibilities to only the requested baselines (saves memory)
     vis = np.zeros((len(antpairs), Nfreqs, Ntimes), dtype=sim_vis.dtype)
     for i, bl in enumerate(antpairs):
-        idx1 = np.where(ants == bl[0])[0][0]
-        idx2 = np.where(ants == bl[1])[0][0]
-        vis[i,:,:] = sim_vis[:,:,idx1,idx2]
+        ant1, ant2 = bl
+        
+        # Ensure not conjugated
+        if ant1 > ant2:
+            ant1 = bl[1]
+            ant2 = bl[0]
+
+        # Extract data for this antenna pair
+        idx1 = np.where(ants == ant1)[0][0]
+        idx2 = np.where(ants == ant2)[0][0]
+        vis[i,:,:] = sim_vis[:,:,idx1,idx2].conj()
     return vis
 
 
@@ -124,9 +175,12 @@ def extract_vis_from_uvdata(uvd, exclude_autos=True, lst_pad=[0,0], freq_pad=[0,
     ants = []
     antpairs = []
     vis = []
+    uvd.conjugate_bls(convention='ant1<ant2') # conjugate baselines
     for antpair, bl_data in uvd.antpairpol_iter(squeeze='full'):
         ant1 = antpair[0]
         ant2 = antpair[1]
+        Nfreqs = bl_data.shape[1]
+        Ntimes = bl_data.shape[0]
         
         # Add antpair to the list
         if ant1 == ant2 and exclude_autos:
@@ -134,11 +188,11 @@ def extract_vis_from_uvdata(uvd, exclude_autos=True, lst_pad=[0,0], freq_pad=[0,
         antpairs.append((ant1, ant2))
         
         # Add data for this bl to array (with zero-padding if necessary)
-        dat = np.zeros((freq_pad[0] + bl_data.shape[0] + freq_pad[1],
-                        lst_pad[0] + bl_data.shape[1] + lst_pad[1]), 
+        dat = np.zeros((freq_pad[0] + Nfreqs + freq_pad[1],
+                        lst_pad[0] + Ntimes + lst_pad[1]), 
                        dtype=bl_data.dtype)
-        dat[freq_pad[0]:bl_data.shape[0]+freq_pad[0], 
-            lst_pad[0]:bl_data.shape[1]+lst_pad[0]] = bl_data[:,:]
+        dat[freq_pad[0]:Nfreqs+freq_pad[0], 
+            lst_pad[0]:Ntimes+lst_pad[0]] = bl_data[:,:].T
         vis.append(dat)
 
         # Add antenna to list if not there already

@@ -210,9 +210,12 @@ def vis_sim_per_source(
         # (topocentric) cosines, with (tx, ty, tz) = (e, n, u) components
         # relative to the center of the array
         tx, ty, tz = crd_top = np.dot(eq2top, crd_eq)
+        
+        # Simulate even if sources are below the horizon, since we need a 
+        # visibility per source regardless
         above_horizon = tz > 0
-        tx = tx[above_horizon]
-        ty = ty[above_horizon]
+        #tx = tx[above_horizon]
+        #ty = ty[above_horizon]
         nsrcs_up = len(tx)
 
         A_s = np.zeros((nax, nfeed, nbeam, nsrcs_up), dtype=complex_dtype)
@@ -246,7 +249,8 @@ def vis_sim_per_source(
             raise ValueError("Beam interpolation resulted in an invalid value")
 
         # Calculate delays, where tau = (b * s) / c
-        np.dot(antpos, crd_top[:, above_horizon], out=tau)
+        #np.dot(antpos, crd_top[:, above_horizon], out=tau)
+        np.dot(antpos, crd_top[:,:], out=tau)
         tau /= c.value
 
         # Component of complex phase factor for one antenna
@@ -255,7 +259,9 @@ def vis_sim_per_source(
         np.exp(1.0j * (ang_freq * tau), out=v)
 
         # Complex voltages.
-        v *= Isqrt[above_horizon]
+        #v *= Isqrt[above_horizon]
+        v *= Isqrt[:]
+        v[:,~above_horizon] *= 0. # zero-out sources below the horizon
 
         # Compute visibilities using product of complex voltages (upper triangle).
         # Input arrays have shape (Nax, Nfeed, [Nants], Nsrcs
