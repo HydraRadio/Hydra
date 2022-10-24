@@ -70,6 +70,14 @@ parser.add_argument("--gain-ref-file", type=str, action="store",
 parser.add_argument("--source-catalogue", type=str, action="store",
                     default="./output", required=False, dest="source_catalogue",
                     help="Point source catalogue.")
+parser.add_argument('--freq-pad', type=int, action="store", default=(0,0),
+                    required=False, nargs='+', dest="freq_pad",
+                    help="No. of channels of padding to add in frequency, "
+                         "e.g. '--freq-pad 2 2'.")
+parser.add_argument('--lst-pad', type=int, action="store", default=(0,0),
+                    required=False, nargs='+', dest="lst_pad",
+                    help="No. of samples of padding to add in LST, "
+                         "e.g. '--lst-pad 2 2'.")
 parser.add_argument("--output-dir", type=str, action="store",
                     default="./output", required=False, dest="output_dir",
                     help="Output directory.")
@@ -84,6 +92,8 @@ CALCULATE_STATS = args.calculate_stats
 OUTPUT_DIAGNOSTICS = args.output_diagnostics
 SAVE_TIMING_INFO = args.save_timing_info
 PLOTTING = args.plotting
+
+hera_latitude = -30.7215 * np.pi / 180.0
 
 # Print what's switched on
 print("    Gain sampler:       ", SAMPLE_GAINS)
@@ -100,6 +110,11 @@ if not SAMPLE_GAINS and not SAMPLE_VIS and not SAMPLE_PTSRC_AMPS and not SAMPLE_
 Niters = args.Niters
 beam_nmax = args.beam_nmax
 sigma_noise = args.sigma_noise
+data_file = args.data_file
+gain_ref_file = args.gain_ref_file
+source_catalogue = args.source_catalogue
+freq_pad = args.lst_pad
+lst_pad = args.lst_pad
 
 # Check that output directory exists
 output_dir = args.output_dir
@@ -147,14 +162,20 @@ ants = np.array(list(ant_pos.keys()))
 Nants = len(ants)
 
 # Extract data and active baselines
-data, antpairs, _ = hydra.extract_vis_from_uvdata(uvd, exclude_autos=True)
+data, antpairs, _ = hydra.extract_vis_from_uvdata(uvd, 
+                                                  exclude_autos=True, 
+                                                  lst_pad=lst_pad, 
+                                                  freq_pad=freq_pad)
 ants1, ants2 = list(zip(*antpairs))
 Nfreqs = data.shape[1]
 Ntimes = data.shape[2]
 
 # Times and frequencies
-times = np.unique(uvd.lst_array) # rad # FIXME: ordering not guaranteed
-freqs = np.unique(uvd.freq_array) / 1e6 # MHz
+# (FIXME: Time ordering not guaranteed)
+times = hydra.vis_utils.extend_coords_with_padding(np.unique(uvd.lst_array),
+                                                   pad=lst_pad) # rad
+freqs = hydra.vis_utils.extend_coords_with_padding(np.unique(uvd.freq_array)/1e6,
+                                                   pad=freq_pad) # MHz
 
 # Load point source catalogue (ra/dec in degrees)
 src_ra, src_dec, src_flux, src_beta = np.loadtxt(source_catalogue).T
@@ -198,17 +219,33 @@ if PLOTTING:
 # (2) Set up Gibbs sampler
 #-------------------------------------------------------------------------------
 
+# Run simulation to construct initial model 
+t0 = time.time()
+_sim_vis = hydra.vis_simulator.simulate_vis(
+        ants=ant_pos,
+        fluxes=fluxes,
+        ra=src_ra,
+        dec=src_dec,
+        freqs=freqs*1e6, # MHz -> Hz
+        lsts=times,
+        beams=beams,
+        polarized=False,
+        precision=2,
+        latitude=hera_latitude,
+        use_feed="x",
+    )
+timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
+
+# Allocate computed visibilities to only the requested baselines (saves memory)
+model0 = hydra.extract_vis_from_sim(ants, antpairs, _sim_vis)
+del _sim_vis # save some memory
+
 # Get initial visibility model guesses (use the actual baseline model for now)
 # This SHOULD NOT include gain factors of any kind
-current_data_model = 1.*model0.copy() * window # FIXME
-# FIXME: Should use an initial simulation for this *****
+current_data_model = 1.*model0.copy() * window
 
 # Initial gain perturbation guesses
-#current_delta_gain = np.zeros(gains.shape, dtype=model0.dtype)
-# FIXME
 current_delta_gain = np.zeros_like(gains)
-# FIXME: Trying to fix the amplitude to the correct value
-#current_delta_gain[:,0,0] += fft.fft2(delta_g[0])[0,0] # FIXME FIXME
 
 # Initial point source amplitude factor
 current_ptsrc_a = np.ones(ra.size)
@@ -218,8 +255,8 @@ current_ptsrc_a = np.ones(ra.size)
 # if other components of the visibility model are being sampled
 t0 = time.time()
 vis_proj_operator0 = hydra.ptsrc_sampler.calc_proj_operator(
-                                ra=ra,
-                                dec=dec,
+                                ra=src_ra,
+                                dec=src_dec,
                                 fluxes=fluxes,
                                 ant_pos=ant_pos,
                                 antpairs=antpairs,
@@ -248,7 +285,7 @@ gain_pspec_sqrt[0,0] = 1e-2 # FIXME: Try to fix the zero point?
 #exit()
 
 amp_prior_std = 0.1 * np.ones(Nptsrc)
-amp_prior_std[19] = 1e-3 # FIXME
+#amp_prior_std[19] = 1e-3 # FIXME
 vis_pspec_sqrt = 0.01 * np.ones((1, Nfreqs, Ntimes)) # currently same for all visibilities
 vis_group_id = np.zeros(len(antpairs), dtype=int) # index 0 for all
 
@@ -257,9 +294,6 @@ A_real, A_imag = hydra.gain_sampler.proj_operator(ants, antpairs)
 gain_shape = gains.shape
 N_gain_params = 2 * gains.shape[0] * gains.shape[1] * gains.shape[2]
 N_vis_params = 2 * data.shape[0] * data.shape[1] * data.shape[2]
-
-
-# FIXME: Check that model0 == vis_proj_operator0 @ ones
 
 
 #-------------------------------------------------------------------------------
