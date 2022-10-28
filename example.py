@@ -76,6 +76,9 @@ parser.add_argument("--solver", type=str, action="store",
 parser.add_argument("--output-dir", type=str, action="store",
                     default="./output", required=False, dest="output_dir",
                     help="Output directory.")
+parser.add_argument("--multiprocess", action="store_true", dest="multiprocess",
+                    required=False,
+                    help="Whether to use multiprocessing in vis sim calls.")
 args = parser.parse_args()
 
 # Set switches
@@ -87,6 +90,7 @@ CALCULATE_STATS = args.calculate_stats
 OUTPUT_DIAGNOSTICS = args.output_diagnostics
 SAVE_TIMING_INFO = args.save_timing_info
 PLOTTING = args.plotting
+MULTIPROCESS = args.multiprocess
 
 # Print what's switched on
 print("    Gain sampler:       ", SAMPLE_GAINS)
@@ -198,6 +202,7 @@ _sim_vis = hydra.vis_simulator.simulate_vis(
         precision=2,
         latitude=hera_latitude,
         use_feed="x",
+        multiprocess=MULTIPROCESS
     )
 timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
 
@@ -289,7 +294,8 @@ vis_proj_operator0 = hydra.ptsrc_sampler.calc_proj_operator(
                                 freqs=freqs,
                                 times=times,
                                 beams=beams,
-                                latitude=hera_latitude
+                                latitude=hera_latitude,
+                                multiprocess=MULTIPROCESS
 )
 timing_info(ftime, 0, "(0) Precomp. ptsrc proj. operator", time.time() - t0)
 
@@ -694,7 +700,8 @@ for n in range(Niters):
             flux_use = get_flux_from_ptsrc_amp(amp_use, freqs, beta_ptsrc)
             Mjk = hydra.beam_sampler.construct_Mjk(Zmatr, ant_pos, flux_use, ra, dec,
                                              freqs, times, polarized=False,
-                                             latitude=hera_latitude)
+                                             latitude=hera_latitude,
+                                             multiprocess=MULTIPROCESS)
 
             # Hardcoded parameters. Make variations smooth in time/freq.
             sig_freq = 0.5 * (freqs[-1] - freqs[0])

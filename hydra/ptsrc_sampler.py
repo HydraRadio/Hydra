@@ -116,7 +116,7 @@ def construct_rhs(
 
 def calc_proj_operator(
     ra, dec, fluxes, ant_pos, antpairs, freqs, times, beams,
-    latitude=-0.5361913261514378
+    latitude=-0.5361913261514378, multiprocess=True
 ):
     """
     Calculate a visibility vector for each point source, as a function of
@@ -142,6 +142,8 @@ def calc_proj_operator(
             List of UVBeam objects, one for each antenna.
         latitude (float):
             Latitude of the observing site, in radians.
+        multiprocess (bool): Whether to use multiprocessing to speed up the
+            calculation
 
     Returns:
         vis_proj_operator (array_like):
@@ -170,6 +172,7 @@ def calc_proj_operator(
         precision=2,
         latitude=latitude,
         use_feed="x",
+        multiprocess=multiprocess
     )
 
     # Allocate computed visibilities to only available baselines (saves memory)

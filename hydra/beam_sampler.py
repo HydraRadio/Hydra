@@ -154,7 +154,7 @@ def fit_zernike_to_beam(beam, freqs, Zmatr, txs, tys):
 
     # Loop over frequencies
     for freq_ind in range(Nfreqs):
-        fit_beam_f = lstsq(Zmatr.reshape(), rhss[:, freq_ind])[0]
+        fit_beam_f = lstsq(Zmatr.reshape(Ntimes*Nsource, ncoeff), rhss[:, freq_ind])[0]
         fit_beam.append(fit_beam_tf)
 
     # Reshape coefficients array
@@ -206,7 +206,7 @@ def select_subarr(arr, ant_samp_ind, Nants):
 
 def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
                   precision=1, latitude=-30.7215 * np.pi / 180.0,
-                  use_feed="x"):
+                  use_feed="x", multiprocess=True):
     """
     Compute the matrices that act as the quadratic forms by which visibilities
     are made. Calls simulate_vis_per_source to get the Fourier operator, then
@@ -238,6 +238,8 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
         latitude (float):
             The latitude of the center of the array, in radians. The default is
             the HERA latitude = -30.7215 * pi / 180.
+        multiprocess (bool): Whether to use multiprocessing to speed up the
+            calculation
 
     Returns:
         Mjk (array_like):
@@ -252,7 +254,8 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
                                             beams=beams, polarized=polarized,
                                             precision=precision,
                                             latitude=latitude,
-                                            use_feed=use_feed)
+                                            use_feed=use_feed,
+                                            multiprocess=multiprocess)
 
     # FIXME: Huge memory requirements. Can't do this for the full-scale problem.
     Mjk = np.einsum('tsz,ftaAs,tsZ -> zftaAZ', Zmatr.conj(), sky_amp_phase, Zmatr,

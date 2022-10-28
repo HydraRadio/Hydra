@@ -210,8 +210,8 @@ def vis_sim_per_source(
         # (topocentric) cosines, with (tx, ty, tz) = (e, n, u) components
         # relative to the center of the array
         tx, ty, tz = crd_top = np.dot(eq2top, crd_eq)
-        
-        # Simulate even if sources are below the horizon, since we need a 
+
+        # Simulate even if sources are below the horizon, since we need a
         # visibility per source regardless
         above_horizon = tz > 0
         #tx = tx[above_horizon]
@@ -293,6 +293,7 @@ def simulate_vis_per_source(
     precision=1,
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
+    multiprocess=True
 ):
     """
     Run a basic simulation, returning the visibility for each source
@@ -329,6 +330,8 @@ def simulate_vis_per_source(
         latitude (float):
             The latitude of the center of the array, in radians. The default is
             the HERA latitude = -30.7215 * pi / 180.
+        multiprocess (bool): Whether to use multiprocessing to speed up the
+            calculation
 
     Returns:
         vis (array_like):
@@ -403,13 +406,18 @@ def simulate_vis_per_source(
                                   precision=precision,
                                   polarized=polarized,
                                  )
-    # Set up parallel loop
-    try:
-        Nthreads = int(os.environ['OMP_NUM_THREADS'])
-    except:
-        Nthreads = cpu_count()
-    with Pool(Nthreads) as pool:
-        vv = pool.map(_sim_fn_simulate_vis_per_source, range(freqs.size))
+    if multiprocess:
+        # Set up parallel loop
+        try:
+            Nthreads = int(os.environ['OMP_NUM_THREADS'])
+        except:
+            Nthreads = cpu_count()
+        with Pool(Nthreads) as pool:
+            vv = pool.map(_sim_fn_simulate_vis_per_source, range(freqs.size))
+    else:
+        vv = np.zeros_like(vis)
+        for i in range(len(freqs)):
+            vv[i] = _sim_fn_simulate_vis_per_source(i)
 
     # Assign returned values to array
     for i in range(freqs.size):
@@ -458,6 +466,8 @@ def simulate_vis(
         latitude (float):
             The latitude of the center of the array, in radians. The default is
             the HERA latitude = -30.7215 * pi / 180.
+        multiprocess (bool): Whether to use multiprocessing to speed up the
+            calculation
 
     Returns:
         vis (array_like):
