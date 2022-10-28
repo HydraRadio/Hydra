@@ -710,7 +710,7 @@ for n in range(Niters):
                                                           sig_time, ridge=1e-6)
             cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             # Be lazy and just use the initial guess.
-            coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, :, 0],
+            coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, 0],
                                                             'vec')
 
         t0 = time.time()
@@ -770,13 +770,13 @@ for n in range(Niters):
 
             print("Beginning solve")
             # Solve using Conjugate Gradients
-            x_soln, convergence_info = solver(beam_linear_op, bbeam, maxiter=100)
+            x_soln, convergence_info = solver(beam_linear_op, bbeam, maxiter=1000)
             print(f"Done solving, convergence_info: {convergence_info}")
             x_soln_res = np.reshape(x_soln, shape)
 
             # Has shape Nfreqs, ncoeff, ncomp
             # Want shape ncoeff, Nfreqs, ncomp
-            x_soln_swap = np.swapzxes(x_soln_res, 0, 1)
+            x_soln_swap = np.swapaxes(x_soln_res, 0, 1)
 
             # Update the coeffs between rounds
             beam_coeffs[:, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, 0] \

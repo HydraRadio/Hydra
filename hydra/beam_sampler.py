@@ -155,7 +155,7 @@ def fit_zernike_to_beam(beam, freqs, Zmatr, txs, tys):
     # Loop over frequencies
     for freq_ind in range(Nfreqs):
         fit_beam_f = lstsq(Zmatr.reshape(Ntimes*Nsource, ncoeff), rhss[:, freq_ind])[0]
-        fit_beam.append(fit_beam_tf)
+        fit_beam.append(fit_beam_f)
 
     # Reshape coefficients array
     fit_beam = np.array(fit_beam) # Has shape Nfreqs, ncoeffs
@@ -296,7 +296,7 @@ def get_zernike_to_vis(Mjk, beam_coeffs, ant_samp_ind, nants):
 
     zern_trans = np.einsum(
                            'zfa,zftaZ -> ftaZ',
-                           beam_coeffs.conj()[:, :, :, ant_inds],
+                           beam_coeffs.conj()[:, :, ant_inds],
                            Mjk[:, :, :, ant_inds, ant_samp_ind],
                            optimize=True
                            )
@@ -436,15 +436,15 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
                                )
 
 
-    freq_cho, time_cho, comp_cho = cho_tuple
+    freq_cho, comp_cho = cho_tuple
     flx0_add = np.einsum(
                          'fF,c,zFc->fzc',
                          freq_cho,
-                         time_cho,
                          comp_cho,
                          flx0,
                          optimize=True
                          )
+    b = cov_Tdag_terms + flx0_add
 
     return b
 
