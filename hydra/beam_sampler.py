@@ -444,7 +444,7 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
                          flx0,
                          optimize=True
                          )
-    b = cov_Tdag_terms + flx0_add
+    b = cov_Tdag_terms + flx0_add + np.swapaxes(mu, 0, 1)
 
     return b
 
@@ -478,7 +478,7 @@ def make_prior_cov(freqs, times, ncoeff, std, sig_freq, sig_time,
         cov_tuple (array_like):
             Tuple of tensor components of covariance matrix.
     """
-    freq_col = non_norm_gauss(std, sig_freq, freqs - freqs[0])
+    freq_col = non_norm_gauss(std**2, sig_freq, freqs - freqs[0])
     freq_col[0] += ridge
     freq_matr = toeplitz(freq_col)
     comp_matr = np.ones(2)
