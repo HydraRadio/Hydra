@@ -659,6 +659,18 @@ for n in range(Niters):
     #---------------------------------------------------------------------------
 
     if SAMPLE_BEAM:
+        def plot_beam(beam_coeffs, ant_ind, iter, tag=''):
+            # Shape ncoeffs, Nfreqs, ant -- just use a ref freq
+            coeff_use = beam_coeffs[:, 0, ant_ind]
+            # Zmatr has shape Ntimes, Nsource, ncoeff -- just grab first time
+            beam_use = (Zmatr @ coeff_use)[-1]
+            plt.figure()
+            plt.scatter(ra, dec, c=np.abs(beam_use))
+            plt.xlabel("RA (rad?)")
+            plt.ylabel("Dec (rad?)")
+            plt.colorbar()
+            plt.savefig(f"output/beam_plot_ant_{ant_ind}_iter_{iter}{tag}.pdf")
+            plt.close()
         # Have to have an initial guess and do some precompute
         if n == 0:
             # Make a copy of the data that is more convenient for the beam calcs.
@@ -694,6 +706,9 @@ for n in range(Niters):
             # Want shape ncoeff, Nfreqs, Nants
             beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
             ncoeffs = beam_coeffs.shape[0]
+
+            if PLOTTING:
+                plot_beam(beam_coeffs, 0, 0, '_best_fit')
 
 
             amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
@@ -782,6 +797,8 @@ for n in range(Niters):
             # Update the coeffs between rounds
             beam_coeffs[:, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, 0] \
                                                + 1.j * x_soln_swap[:, :, 1]
+            if PLOTTING:
+                plot_beam(beam_coeffs, ant_samp_ind, n, '')
 
         timing_info(ftime, n, "(D) Beam sampler", time.time() - t0)
         np.save(os.path.join(output_dir, "beam_%05d" % n), beam_coeffs)
