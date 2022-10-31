@@ -721,7 +721,7 @@ for n in range(Niters):
             # Hardcoded parameters. Make variations smooth in time/freq.
             sig_freq = 0.5 * (freqs[-1] - freqs[0])
             cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
-                                                          1e-10, sig_freq,
+                                                          1e-40, sig_freq,
                                                           ridge=1e-6)
             cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             # Be lazy and just use the initial guess.
@@ -768,7 +768,7 @@ for n in range(Niters):
                 plt.figure()
                 mx = np.amax(np.abs(matr))
                 plt.matshow(np.log10(np.abs(matr)) / np.log10(mx), vmax=0, vmin=-8)
-                plt.colorbar("$log_10$(|LHS|)")
+                plt.colorbar(label="$log_10$(|LHS|)")
                 plt.savefig(f"output/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
                 plt.close()
 
