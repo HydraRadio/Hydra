@@ -452,7 +452,7 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
 def non_norm_gauss(A, sig, x):
     return A * np.exp(-x**2 / (2 * sig**2))
 
-def make_prior_cov(freqs, times, ncoeff, std, sig_freq, sig_time,
+def make_prior_cov(freqs, times, ncoeff, std, sig_freq,
                    constrain_phase=False, constraint=1e-4, ridge=0):
     """
     Make a prior covariance for the beam coefficients.
@@ -468,11 +468,9 @@ def make_prior_cov(freqs, times, ncoeff, std, sig_freq, sig_time,
             Square root of the diagonal entries of the matrix.
         sig_freq (float):
             Correlation length in frequency.
-        sig_time (float):
-            Correlation length in time.
         contrain_phase (bool):
-            Whether to constrian the phase of one beam or not. Currently just
-            constrains it to have only small variations in the imaginary part.
+            Whether to constrian the phase of the beams or not. Currently just
+            constrains them to have only small variations in the imaginary part.
 
     Returns:
         cov_tuple (array_like):

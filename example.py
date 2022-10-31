@@ -668,7 +668,7 @@ for n in range(Niters):
             plt.scatter(ra, dec, c=np.abs(beam_use))
             plt.xlabel("RA (rad?)")
             plt.ylabel("Dec (rad?)")
-            plt.colorbar()
+            plt.colorbar(label="Amp(beam)")
             plt.savefig(f"output/beam_plot_ant_{ant_ind}_iter_{iter}{tag}.pdf")
             plt.close()
         # Have to have an initial guess and do some precompute
@@ -720,9 +720,9 @@ for n in range(Niters):
 
             # Hardcoded parameters. Make variations smooth in time/freq.
             sig_freq = 0.5 * (freqs[-1] - freqs[0])
-            sig_time = 0.5 * (times[-1] - times[0])
-            cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs, 1e-4, sig_freq,
-                                                          sig_time, ridge=1e-6)
+            cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
+                                                          1e-10, sig_freq,
+                                                          ridge=1e-6)
             cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             # Be lazy and just use the initial guess.
             coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, 0],
@@ -764,10 +764,11 @@ for n in range(Niters):
             axlen = np.prod(shape)
             if PLOTTING:
                 matr = cov_Tdag_Ninv_T.reshape([axlen, axlen]) + np.eye(axlen)
+                print(f"Condition number for LHS {np.linalg.cond(matr)}")
                 plt.figure()
                 mx = np.amax(np.abs(matr))
                 plt.matshow(np.log10(np.abs(matr)) / np.log10(mx), vmax=0, vmin=-8)
-                plt.colorbar()
+                plt.colorbar("$log_10$(|LHS|)")
                 plt.savefig(f"output/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
                 plt.close()
 
