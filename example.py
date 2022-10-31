@@ -767,8 +767,9 @@ for n in range(Niters):
                 print(f"Condition number for LHS {np.linalg.cond(matr)}")
                 plt.figure()
                 mx = np.amax(np.abs(matr))
-                plt.matshow(np.log10(np.abs(matr)) / np.log10(mx), vmax=0, vmin=-8)
-                plt.colorbar(label="$log_10$(|LHS|)")
+                print(f"mx: {mx}")
+                plt.matshow(np.log10(np.abs(matr) / mx), vmax=0, vmin=-8)
+                plt.colorbar(label="$log_{10}$(|LHS|)")
                 plt.savefig(f"output/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
                 plt.close()
 
