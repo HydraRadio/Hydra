@@ -319,10 +319,10 @@ def get_cov_Tdag(cov_tuple, zern_trans):
         cov_Tdag (array_like): The desired matrix product
     """
     freq_matr, comp_matr = cov_tuple
-    cov_Tdag = np.einsum('fF,C,FTazcC->fazcFTC',
+    cov_Tdag = np.einsum('fF,C,FTazcC->fazCFTc',
                          freq_matr,
                          comp_matr,
-                         zern_trans.conj(),
+                         zern_trans,
                          optimize=True)
 
     return cov_Tdag
