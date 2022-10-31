@@ -750,7 +750,8 @@ for n in range(Niters):
             if PLOTTING:
                 matr = cov_Tdag_Ninv_T.reshape([axlen, axlen]) + np.eye(axlen)
                 plt.figure()
-                plt.matshow(np.log10(np.abs(matr)), vmax=0, vmin=-8)
+                mx = np.amax(np.abs(matr))
+                plt.matshow(np.log10(np.abs(matr)) / np.log10(mx), vmax=0, vmin=-8)
                 plt.colorbar()
                 plt.savefig(f"output/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
                 plt.close()
@@ -769,10 +770,10 @@ for n in range(Niters):
                                             shape=beam_lhs_shape)
 
             print("Beginning solve")
-            # Solve using Conjugate Gradients
-            x_soln, convergence_info = solver(beam_linear_op, bbeam, maxiter=1000)
-            print(f"Done solving, convergence_info: {convergence_info}")
+            x_soln, convergence_info = solver(beam_linear_op, bbeam, maxiter=10000)
+            print(f"Done solving, Niter: {convergence_info}")
             x_soln_res = np.reshape(x_soln, shape)
+            print((np.abs(beam_linear_op(x_soln) - bbeam)**2).sum() / np.sum(np.abs(bbeam)**2))
 
             # Has shape Nfreqs, ncoeff, ncomp
             # Want shape ncoeff, Nfreqs, ncomp
