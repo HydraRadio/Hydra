@@ -390,7 +390,7 @@ def apply_operator(x, cov_Tdag_Ninv_T):
 
 
 def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
-                  cho_tuple):
+                  cho_tuple, flx=True):
     """
     Construct the right hand side of the Gaussian Constrained Realization (GCR)
     equation.
@@ -412,6 +412,8 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
             covariance matrix.
         cov_Tdag (array_like):
             Matrix product of prior covariance and zernike_to_vis conjugate transpose.
+        flx (bool):
+            Whether to use fluctuation terms. Useful for debugging.
 
     Returns:
         rhs (array_like):
@@ -421,10 +423,15 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
     flx0_shape = mu.shape
     flx1_shape = vis.shape
 
-    flx0 = (np.random.normal(size=flx0_shape)
-            + 1.j * np.random.normal(size=flx0_shape)) / np.sqrt(2)
-    flx1 = (np.random.normal(size=flx1_shape)
-            + 1.j * np.random.normal(size=flx1_shape)) / np.sqrt(2)
+    if flx:
+        flx0 = (np.random.normal(size=flx0_shape)
+                + 1.j * np.random.normal(size=flx0_shape)) / np.sqrt(2)
+        flx1 = (np.random.normal(size=flx1_shape)
+                + 1.j * np.random.normal(size=flx1_shape)) / np.sqrt(2)
+    else:
+        flx0 = np.zeros(flx0_shape)
+        flx1 = np.zeros(flx1_shape)
+
 
     Ninv_d = inv_noise_var * vis
     N_inv_sqrt_flx1 = inv_noise_var_sqrt * flx1
