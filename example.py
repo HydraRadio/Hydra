@@ -720,10 +720,17 @@ for n in range(Niters):
 
             # Hardcoded parameters. Make variations smooth in time/freq.
             sig_freq = 0.5 * (freqs[-1] - freqs[0])
+            prior_std=1e-2
             cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
-                                                          1e-40, sig_freq,
+                                                          prior_std, sig_freq,
                                                           ridge=1e-6)
             cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
+            cov_tuple_0 = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
+                                                          prior_std, sig_freq,
+                                                          ridge=1e-6,
+                                                          constrain_phase=True,
+                                                          constraint=1e-10)
+            cho_tuple_0 = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             # Be lazy and just use the initial guess.
             coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, 0],
                                                             'vec')
@@ -732,9 +739,15 @@ for n in range(Niters):
 
         # Round robin loop through the antennas
         for ant_samp_ind in range(Nants):
+            if ant_samp_ind > 0:
+                cov_tuple_use = cov_tuple
+                cho_tuple_use = cho_tuple
+            else:
+                cov_tuple_use = cov_tuple_0
+                cho_tuple_use = cho_tuple_0
             zern_trans = hydra.beam_sampler.get_zernike_to_vis(Mjk, beam_coeffs,
                                                      ant_samp_ind, Nants)
-            cov_Tdag = hydra.beam_sampler.get_cov_Tdag(cov_tuple, zern_trans)
+            cov_Tdag = hydra.beam_sampler.get_cov_Tdag(cov_tuple_use, zern_trans)
 
             inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var_beam,
                                                            ant_samp_ind, Nants)
@@ -755,7 +768,7 @@ for n in range(Niters):
                                                              inv_noise_var_sqrt_use,
                                                              coeff_mean,
                                                              cov_Tdag,
-                                                             cho_tuple)
+                                                             cho_tuple_use)
             bbeam = rhs_unflatten.flatten()
             shape = (Nfreqs, ncoeffs,  2)
             cov_Tdag_Ninv_T = hydra.beam_sampler.get_cov_Tdag_Ninv_T(inv_noise_var_use,
@@ -787,8 +800,14 @@ for n in range(Niters):
                                             shape=beam_lhs_shape)
 
             print("Beginning solve")
-            x_soln, convergence_info = solver(beam_linear_op, bbeam, maxiter=10000)
+            x_soln, convergence_info = solver(beam_linear_op, bbeam, maxiter=100)
             print(f"Done solving, Niter: {convergence_info}")
+            btest = beam_linear_op(x_soln)
+            allclose = np.allclose(btest, bbeam)
+            if not allclose:
+                max_diff = np.amax(np.abs(btest-bbeam))
+                max_val = np.amax(np.abs(bbeam))
+                assert False, f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}"
             x_soln_res = np.reshape(x_soln, shape)
             print((np.abs(beam_linear_op(x_soln) - bbeam)**2).sum() / np.sum(np.abs(bbeam)**2))
 
