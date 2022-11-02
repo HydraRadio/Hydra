@@ -258,6 +258,7 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
                                             multiprocess=multiprocess)
 
     # FIXME: Huge memory requirements. Can't do this for the full-scale problem.
+    # Also slow. Reshaping arrays does not seem to help.
     Mjk = np.einsum('tsz,ftaAs,tsZ -> zftaAZ', Zmatr.conj(), sky_amp_phase, Zmatr,
                     optimize=True)
 
