@@ -539,10 +539,10 @@ def get_chi2(Mjk, beam_coeffs, data, inv_noise_var):
                       Mjk, beam_coeffs, optimize=True)
     Nants = data.shape[-1]
     # zero out the diagonals
-    model[:, :, range(Nants), range(Nants)]
+    model[:, :, range(Nants), range(Nants)] = 0
     dmm = data - model
     chi2 = np.sum(dmm.conj() * dmm * inv_noise_var)
-    return(chi2)
+    return(dmm, chi2)
 
 
 def zernike(coeffs, x, y):
