@@ -662,17 +662,37 @@ for n in range(Niters):
 
     if SAMPLE_BEAM:
         def plot_beam(beam_coeffs, ant_ind, iter, tag=''):
-            # Shape ncoeffs, Nfreqs, ant -- just use a ref freq
-            coeff_use = beam_coeffs[:, 0, ant_ind]
+            # Shape ncoeffs, Nfreqs, Nant -- just use a ref freq
+            coeff_use = beam_coeffs[:, 0, :]
+            Nants = coeff_use.shape[-1]
             # Zmatr has shape Ntimes, Nsource, ncoeff -- just grab first time
-            beam_use = (Zmatr @ coeff_use)[-1]
-            plt.figure()
-            plt.scatter(ra, dec, c=np.abs(beam_use))
-            plt.xlabel("RA (rad?)")
-            plt.ylabel("Dec (rad?)")
-            plt.colorbar(label="Amp(beam)")
-            plt.savefig(f"output/beam_plot_ant_{ant_ind}_iter_{iter}{tag}.pdf")
-            plt.close()
+            ra_use = np.linspace(0, np.pi/2, num=100)
+            dec_use = np.linspace(-0.6,-0.4, num=100)
+            RA, DEC = np.meshgrid(ra_use, dec_use)
+            txs, tys, tzs = convert_to_tops(RA.flatten(), DEC.flatten(), times,
+                                            hera_latitude)
+            Zmatr_use = hydra.beam_sampler.construct_zernike_matrix(beam_nmax,
+                                                                np.array(txs),
+                                                                np.array(tys))
+            fig, ax = plt.subplots(figsize=(16, 9), nrows=Nants, ncols=Nants)
+            for ant_ind1 in range(Nants):
+                beam_use1 = Zmatr_use @ (coeff_use[:, ant_ind1])
+                for ant_ind2 in range(Nants):
+                    beam_use2 = Zmatr_use @ (coeff_use[:, ant_ind2])
+                    beam_cross = (beam_use1 * beam_use2.conj())[-1]
+                    if ant_ind1 >= ant_ind2:
+                        ax[ant_ind1, ant_ind2].scatter(RA.flatten(), DEC.flatten(),
+                                                       c=np.abs(beam_cross),
+                                                       vmin=0, vmax=1)
+                    else:
+                        ax[ant_ind1, ant_ind2].scatter(RA.flatten(), DEC.flatten(),
+                                                       c=np.angle(beam_cross),
+                                                       vmin=-np.pi, vmax=np.pi,
+                                                       cmap='twilight')
+
+            fig.savefig(f"output/beam_plot_ant_{ant_ind}_iter_{iter}{tag}.png")
+            plt.close(fig)
+            return
         # Have to have an initial guess and do some precompute
         if n == 0:
             # Make a copy of the data that is more convenient for the beam calcs.
@@ -716,7 +736,7 @@ for n in range(Niters):
             amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
             flux_use = get_flux_from_ptsrc_amp(amp_use, freqs, beta_ptsrc)
             Mjk = hydra.beam_sampler.construct_Mjk(Zmatr, ant_pos, flux_use, ra, dec,
-                                             freqs, times, polarized=False,
+                                             freqs*1e6, times, polarized=False,
                                              latitude=hera_latitude,
                                              multiprocess=MULTIPROCESS)
 
@@ -731,11 +751,14 @@ for n in range(Niters):
                                                           prior_std, sig_freq,
                                                           ridge=1e-6,
                                                           constrain_phase=True,
-                                                          constraint=1e-10)
+                                                          constraint=1e-4)
             cho_tuple_0 = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             # Be lazy and just use the initial guess.
             coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, 0],
                                                             'vec')
+            dmm, chi2 = hydra.beam_sampler.get_chi2(Mjk, beam_coeffs, data_beam,
+                                               inv_noise_var_beam)
+            print(f"Beam chi-square before sampling: {chi2}")
 
         t0 = time.time()
 
@@ -782,7 +805,6 @@ for n in range(Niters):
                 print(f"Condition number for LHS {np.linalg.cond(matr)}")
                 plt.figure()
                 mx = np.amax(np.abs(matr))
-                print(f"mx: {mx}")
                 plt.matshow(np.log10(np.abs(matr) / mx), vmax=0, vmin=-8)
                 plt.colorbar(label="$log_{10}$(|LHS|)")
                 plt.savefig(f"output/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
@@ -802,7 +824,10 @@ for n in range(Niters):
                                             shape=beam_lhs_shape)
 
             print("Beginning solve")
-            x_soln, convergence_info = solver(beam_linear_op, bbeam, maxiter=100)
+            #x_soln, convergence_info = solver(beam_linear_op, bbeam,
+                                              #maxiter=None)
+            x_soln = np.linalg.solve(matr, bbeam)
+            convergence_info=0
             print(f"Done solving, Niter: {convergence_info}")
             btest = beam_linear_op(x_soln)
             allclose = np.allclose(btest, bbeam)
@@ -813,7 +838,6 @@ for n in range(Niters):
                 max_val = bbeam[wh_max_diff]
                 print(f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}")
             x_soln_res = np.reshape(x_soln, shape)
-            print((np.abs(beam_linear_op(x_soln) - bbeam)**2).sum() / np.sum(np.abs(bbeam)**2))
 
             # Has shape Nfreqs, ncoeff, ncomp
             # Want shape ncoeff, Nfreqs, ncomp
@@ -822,9 +846,13 @@ for n in range(Niters):
             # Update the coeffs between rounds
             beam_coeffs[:, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, 0] \
                                                + 1.j * x_soln_swap[:, :, 1]
-            if PLOTTING:
-                plot_beam(beam_coeffs, ant_samp_ind, n, '')
+            dmm, chi2 = hydra.beam_sampler.get_chi2(Mjk, beam_coeffs, data_beam,
+                                               inv_noise_var_beam)
+            print(f"Beam chi-square after sampling, iteration {n}: {chi2}")
 
+
+        if PLOTTING:
+            plot_beam(beam_coeffs, ant_samp_ind, n, '')
         timing_info(ftime, n, "(D) Beam sampler", time.time() - t0)
         np.save(os.path.join(output_dir, "beam_%05d" % n), beam_coeffs)
 
