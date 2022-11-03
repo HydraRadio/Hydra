@@ -75,8 +75,8 @@ def reshape_data_arr(arr, Nfreqs, Ntimes, Nants):
     arr_beam = np.zeros([Nfreqs, Ntimes, Nants, Nants], dtype=arr_trans.dtype)
     for freq_ind in range(Nfreqs):
         for time_ind in range(Ntimes):
-                tril_inds = np.tril_indices(Nants, k=-1)
-                arr_beam[freq_ind, time_ind, tril_inds[0], tril_inds[1]] = arr_trans[freq_ind, time_ind]
+                triu_inds = np.triu_indices(Nants, k=1)
+                arr_beam[freq_ind, time_ind, triu_inds[0], triu_inds[1]] = arr_trans[freq_ind, time_ind]
 
     return arr_beam
 
