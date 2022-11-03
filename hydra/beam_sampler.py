@@ -425,10 +425,9 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
     flx1_shape = vis.shape
 
     if flx:
-        flx0 = (np.random.normal(size=flx0_shape)
-                + 1.j * np.random.normal(size=flx0_shape)) / np.sqrt(2)
-        flx1 = (np.random.normal(size=flx1_shape)
-                + 1.j * np.random.normal(size=flx1_shape)) / np.sqrt(2)
+        flx0 = np.random.normal(size=flx0_shape) / np.sqrt(2)
+        flx1 = np.random.normal(size=flx1_shape) / np.sqrt(2)
+
     else:
         flx0 = np.zeros(flx0_shape)
         flx1 = np.zeros(flx1_shape)
@@ -490,6 +489,7 @@ def make_prior_cov(freqs, times, ncoeff, std, sig_freq,
     comp_matr = np.ones(2)
     if constrain_phase: # Make the imaginary variance small compared to the real one
         comp_matr[1] = constraint
+
 
     cov_tuple = (freq_matr, comp_matr)
 
