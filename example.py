@@ -6,7 +6,7 @@ import hydra
 
 import numpy.fft as fft
 import scipy.linalg
-from scipy.sparse.linalg import cg, gmres, LinearOperator
+from scipy.sparse.linalg import cg, gmres, LinearOperator, bicgstab
 from scipy.signal import blackmanharris
 from scipy.sparse import coo_matrix
 import pyuvsim
@@ -126,6 +126,8 @@ if args.solver_name == 'cg':
     solver = cg
 elif args.solver_name == 'gmres':
     solver = gmres
+elif args.solver_name == 'bicgstab':
+    solver = bicgstab
 else:
     raise ValueError("Solver '%s' not recognised." % args.solver_name)
 print("    Solver:  %s" % args.solver_name)
@@ -805,9 +807,11 @@ for n in range(Niters):
             btest = beam_linear_op(x_soln)
             allclose = np.allclose(btest, bbeam)
             if not allclose:
-                max_diff = np.amax(np.abs(btest-bbeam))
-                max_val = np.amax(np.abs(bbeam))
-                assert False, f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}"
+                abs_diff = np.abs(btest-bbeam)
+                wh_max_diff = np.argmax(abs_diff)
+                max_diff = abs_diff[wh_max_diff]
+                max_val = bbeam[wh_max_diff]
+                print(f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}")
             x_soln_res = np.reshape(x_soln, shape)
             print((np.abs(beam_linear_op(x_soln) - bbeam)**2).sum() / np.sum(np.abs(bbeam)**2))
 
