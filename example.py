@@ -661,7 +661,7 @@ for n in range(Niters):
     #---------------------------------------------------------------------------
 
     if SAMPLE_BEAM:
-        def plot_beam(beam_coeffs, ant_ind, iter, tag=''):
+        def plot_beam_cross(beam_coeffs, ant_ind, iter, tag='', type='cross'):
             # Shape ncoeffs, Nfreqs, Nant -- just use a ref freq
             coeff_use = beam_coeffs[:, 0, :]
             Nants = coeff_use.shape[-1]
@@ -674,23 +674,34 @@ for n in range(Niters):
             Zmatr_use = hydra.beam_sampler.construct_zernike_matrix(beam_nmax,
                                                                 np.array(txs),
                                                                 np.array(tys))
-            fig, ax = plt.subplots(figsize=(16, 9), nrows=Nants, ncols=Nants)
-            for ant_ind1 in range(Nants):
-                beam_use1 = Zmatr_use @ (coeff_use[:, ant_ind1])
-                for ant_ind2 in range(Nants):
-                    beam_use2 = Zmatr_use @ (coeff_use[:, ant_ind2])
-                    beam_cross = (beam_use1 * beam_use2.conj())[-1]
-                    if ant_ind1 >= ant_ind2:
-                        ax[ant_ind1, ant_ind2].scatter(RA.flatten(), DEC.flatten(),
-                                                       c=np.abs(beam_cross),
-                                                       vmin=0, vmax=1)
-                    else:
-                        ax[ant_ind1, ant_ind2].scatter(RA.flatten(), DEC.flatten(),
-                                                       c=np.angle(beam_cross),
-                                                       vmin=-np.pi, vmax=np.pi,
-                                                       cmap='twilight')
+            if type == 'cross':
+                fig, ax = plt.subplots(figsize=(16, 9), nrows=Nants, ncols=Nants)
+                for ant_ind1 in range(Nants):
+                    beam_use1 = Zmatr_use @ (coeff_use[:, ant_ind1])
+                    for ant_ind2 in range(Nants):
+                        beam_use2 = Zmatr_use @ (coeff_use[:, ant_ind2])
+                        beam_cross = (beam_use1 * beam_use2.conj())[-1]
+                        if ant_ind1 >= ant_ind2:
+                            ax[ant_ind1, ant_ind2].scatter(RA.flatten(), DEC.flatten(),
+                                                           c=np.abs(beam_cross),
+                                                           vmin=0, vmax=1)
+                        else:
+                            ax[ant_ind1, ant_ind2].scatter(RA.flatten(), DEC.flatten(),
+                                                           c=np.angle(beam_cross),
+                                                           vmin=-np.pi, vmax=np.pi,
+                                                           cmap='twilight')
+            else:
+                fig, ax = plt.subplots(ncols=2)
+                beam_use = (Zmatr_use@(coeff_use[:, ant_samp_ind]))[-1]
+                ax[0].scatter(RA.flatten(), DEC.flatten(),
+                                               c=np.abs(beam_use),
+                                               vmin=0, vmax=1)
+                ax[1].scatter(RA.flatten(), DEC.flatten(),
+                                               c=np.angle(beam_use),
+                                               vmin=-np.pi, vmax=np.pi,
+                                               cmap='twilight')
 
-            fig.savefig(f"output/beam_plot_ant_{ant_ind}_iter_{iter}{tag}.png")
+            fig.savefig(f"output/beam_plot_ant_{ant_ind}_iter_{iter}_{type}_{tag}.png")
             plt.close(fig)
             return
         # Have to have an initial guess and do some precompute
@@ -730,7 +741,7 @@ for n in range(Niters):
             ncoeffs = beam_coeffs.shape[0]
 
             if PLOTTING:
-                plot_beam(beam_coeffs, 0, 0, '_best_fit')
+                plot_beam_cross(beam_coeffs, 0, 0, '_best_fit')
 
 
             amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
@@ -751,7 +762,7 @@ for n in range(Niters):
                                                           prior_std, sig_freq,
                                                           ridge=1e-6,
                                                           constrain_phase=True,
-                                                          constraint=1e-4)
+                                                          constraint=1)
             cho_tuple_0 = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             # Be lazy and just use the initial guess.
             coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, 0],
@@ -824,10 +835,10 @@ for n in range(Niters):
                                             shape=beam_lhs_shape)
 
             print("Beginning solve")
-            #x_soln, convergence_info = solver(beam_linear_op, bbeam,
-                                              #maxiter=None)
-            x_soln = np.linalg.solve(matr, bbeam)
-            convergence_info=0
+            x_soln, convergence_info = solver(beam_linear_op, bbeam,
+                                              maxiter=None)
+            #x_soln = np.linalg.solve(matr, bbeam)
+            #convergence_info=0
             print(f"Done solving, Niter: {convergence_info}")
             btest = beam_linear_op(x_soln)
             allclose = np.allclose(btest, bbeam)
@@ -849,10 +860,12 @@ for n in range(Niters):
             dmm, chi2 = hydra.beam_sampler.get_chi2(Mjk, beam_coeffs, data_beam,
                                                inv_noise_var_beam)
             print(f"Beam chi-square after sampling, iteration {n}: {chi2}")
+            if PLOTTING:
+                plot_beam_cross(beam_coeffs, ant_samp_ind, n, '',type='beam')
 
 
         if PLOTTING:
-            plot_beam(beam_coeffs, ant_samp_ind, n, '')
+            plot_beam_cross(beam_coeffs, ant_samp_ind, n, '')
         timing_info(ftime, n, "(D) Beam sampler", time.time() - t0)
         np.save(os.path.join(output_dir, "beam_%05d" % n), beam_coeffs)
 
