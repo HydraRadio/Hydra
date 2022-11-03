@@ -835,10 +835,10 @@ for n in range(Niters):
                                             shape=beam_lhs_shape)
 
             print("Beginning solve")
-            x_soln, convergence_info = solver(beam_linear_op, bbeam,
-                                              maxiter=None)
-            #x_soln = np.linalg.solve(matr, bbeam)
-            #convergence_info=0
+            #x_soln, convergence_info = solver(beam_linear_op, bbeam,
+                                              #maxiter=None)
+            x_soln = np.linalg.solve(matr, bbeam)
+            convergence_info=0
             print(f"Done solving, Niter: {convergence_info}")
             btest = beam_linear_op(x_soln)
             allclose = np.allclose(btest, bbeam)
