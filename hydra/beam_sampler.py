@@ -537,6 +537,9 @@ def get_chi2(Mjk, beam_coeffs, data, inv_noise_var):
     """
     model = np.einsum('zfa,zftaAZ,ZfA->ftaA', beam_coeffs.conj(),
                       Mjk, beam_coeffs, optimize=True)
+    Nants = data.shape[-1]
+    # zero out the diagonals
+    model[:, :, range(Nants), range(Nants)]
     dmm = data - model
     chi2 = np.sum(dmm.conj() * dmm * inv_noise_var)
     return(chi2)
