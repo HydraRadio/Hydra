@@ -811,8 +811,9 @@ for n in range(Niters):
                                                                      cov_Tdag,
                                                                      zern_trans)
             axlen = np.prod(shape)
+            matr = cov_Tdag_Ninv_T.reshape([axlen, axlen]) + np.eye(axlen)
             if PLOTTING:
-                matr = cov_Tdag_Ninv_T.reshape([axlen, axlen]) + np.eye(axlen)
+
                 print(f"Condition number for LHS {np.linalg.cond(matr)}")
                 plt.figure()
                 mx = np.amax(np.abs(matr))
