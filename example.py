@@ -692,7 +692,7 @@ for n in range(Niters):
                                                            cmap='twilight')
             else:
                 fig, ax = plt.subplots(ncols=2)
-                beam_use = (Zmatr_use@(coeff_use[:, ant_samp_ind]))[-1]
+                beam_use = (Zmatr_use@(coeff_use[:, ant_ind]))[-1]
                 ax[0].scatter(RA.flatten(), DEC.flatten(),
                                                c=np.abs(beam_use),
                                                vmin=0, vmax=1)
@@ -738,6 +738,7 @@ for n in range(Niters):
                                                                      tys), ])
             # Want shape ncoeff, Nfreqs, Nants
             beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
+            np.save(os.path.join(output_dir, "best_fit_beam"), beam_coeffs)
             ncoeffs = beam_coeffs.shape[0]
 
             if PLOTTING:
@@ -753,7 +754,7 @@ for n in range(Niters):
 
             # Hardcoded parameters. Make variations smooth in time/freq.
             sig_freq = 0.5 * (freqs[-1] - freqs[0])
-            prior_std=1e-2
+            prior_std=1e2
             cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
                                                           prior_std, sig_freq,
                                                           ridge=1e-6)
