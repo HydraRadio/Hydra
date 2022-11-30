@@ -75,8 +75,8 @@ def reshape_data_arr(arr, Nfreqs, Ntimes, Nants):
     arr_beam = np.zeros([Nfreqs, Ntimes, Nants, Nants], dtype=arr_trans.dtype)
     for freq_ind in range(Nfreqs):
         for time_ind in range(Ntimes):
-                tril_inds = np.tril_indices(Nants, k=-1)
-                arr_beam[freq_ind, time_ind, tril_inds[0], tril_inds[1]] = arr_trans[freq_ind, time_ind]
+                triu_inds = np.triu_indices(Nants, k=1)
+                arr_beam[freq_ind, time_ind, triu_inds[0], triu_inds[1]] = arr_trans[freq_ind, time_ind]
 
     return arr_beam
 
@@ -134,28 +134,32 @@ def fit_zernike_to_beam(beam, freqs, Zmatr, txs, tys):
         fit_beam (array_like):
             The best-fit Zernike coefficients for the input beam.
     """
-    Ntimes = Zmatr.shape[0]
-    ncoeff = Zmatr.shape[2]
+    Ntimes, Nsource, ncoeff = Zmatr.shape
     Nfreqs = len(freqs)
 
     # Diagonal so just iterate over times
     # There is a faster way to do this using scipy.sparse and encoding Z
     # as block-diagonal in time and frequency
     fit_beam = []
+    rhss = []
     for tind, (tx, ty) in enumerate(zip(txs, tys)):
         az, za = conversions.enu_to_az_za(enu_e=tx,
                                           enu_n=ty,
                                           orientation="uvbeam")
-        rhss = beam.interp(az, za, freqs)[0]
+        rhs = beam.interp(az, za, freqs)[0][1, 0, 0]
+        rhs = np.swapaxes(rhs, 0, 1) # Swap source/freq axis
+        rhss.append(rhs)
 
-        # Loop over frequencies
-        for freq_ind in range(Nfreqs):
-            fit_beam_tf = lstsq(Zmatr[tind], rhss[1, 0, 0, freq_ind, :])[0]
-            fit_beam.append(fit_beam_tf)
+    rhss = np.reshape(rhss, (Ntimes * Nsource, Nfreqs))
+
+    # Loop over frequencies
+    for freq_ind in range(Nfreqs):
+        fit_beam_f = lstsq(Zmatr.reshape(Ntimes*Nsource, ncoeff), rhss[:, freq_ind])[0]
+        fit_beam.append(fit_beam_f)
 
     # Reshape coefficients array
-    fit_beam = np.array(fit_beam).reshape(Ntimes, Nfreqs, ncoeff)
-    fit_beam = np.transpose(fit_beam, axes=(1, 0, 2))
+    fit_beam = np.array(fit_beam) # Has shape Nfreqs, ncoeffs
+
     return fit_beam
 
 
@@ -202,7 +206,7 @@ def select_subarr(arr, ant_samp_ind, Nants):
 
 def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
                   precision=1, latitude=-30.7215 * np.pi / 180.0,
-                  use_feed="x"):
+                  use_feed="x", multiprocess=True):
     """
     Compute the matrices that act as the quadratic forms by which visibilities
     are made. Calls simulate_vis_per_source to get the Fourier operator, then
@@ -234,6 +238,8 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
         latitude (float):
             The latitude of the center of the array, in radians. The default is
             the HERA latitude = -30.7215 * pi / 180.
+        multiprocess (bool): Whether to use multiprocessing to speed up the
+            calculation
 
     Returns:
         Mjk (array_like):
@@ -248,9 +254,11 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
                                             beams=beams, polarized=polarized,
                                             precision=precision,
                                             latitude=latitude,
-                                            use_feed=use_feed)
+                                            use_feed=use_feed,
+                                            multiprocess=multiprocess)
 
     # FIXME: Huge memory requirements. Can't do this for the full-scale problem.
+    # Also slow. Reshaping arrays does not seem to help.
     Mjk = np.einsum('tsz,ftaAs,tsZ -> zftaAZ', Zmatr.conj(), sky_amp_phase, Zmatr,
                     optimize=True)
 
@@ -271,8 +279,8 @@ def get_zernike_to_vis(Mjk, beam_coeffs, ant_samp_ind, nants):
             Has shape `(ncoeff, NFREQS, NTIMES, NANTS, NANTS, ncoeff)`.
 
         beam_coeffs (array_like, real):
-            Zernike coefficients for the beam at each freqency, time, and
-            antenna. Has shape `(ncoeff, NFREQS, NTIMES, NANTS)`.
+            Zernike coefficients for the beam at each freqency and
+            antenna. Has shape `(ncoeff, NFREQS, NANTS)`.
 
         ant_samp_ind (int):
             ID of the antenna that is being sampled.
@@ -288,8 +296,8 @@ def get_zernike_to_vis(Mjk, beam_coeffs, ant_samp_ind, nants):
     ant_inds = get_ant_inds(ant_samp_ind, nants)
 
     zern_trans = np.einsum(
-                           'zfta,zftaZ -> ftaZ',
-                           beam_coeffs.conj()[:, :, :, ant_inds],
+                           'zfa,zftaZ -> ftaZ',
+                           beam_coeffs.conj()[:, :, ant_inds],
                            Mjk[:, :, :, ant_inds, ant_samp_ind],
                            optimize=True
                            )
@@ -311,12 +319,11 @@ def get_cov_Tdag(cov_tuple, zern_trans):
     Returns:
         cov_Tdag (array_like): The desired matrix product
     """
-    freq_matr, time_matr, comp_matr = cov_tuple
-    cov_Tdag = np.einsum('fF,tT,C,FTazcC->ftazcFTC',
+    freq_matr, comp_matr = cov_tuple
+    cov_Tdag = np.einsum('fF,C,FTazcC->fazCFTc',
                          freq_matr,
-                         time_matr,
                          comp_matr,
-                         zern_trans.conj(),
+                         zern_trans,
                          optimize=True)
 
     return cov_Tdag
@@ -345,7 +352,7 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, cov_Tdag, zern_trans):
                        optimize=True
                        )
     cov_Tdag_Ninv_T = np.einsum(
-                                'ftazcFTd,FTaZdC -> ftzcFTZd',
+                                'fazcFTd,FTaZdC -> fzcFZC',
                                 cov_Tdag,
                                 Ninv_T,
                                 optimize=True
@@ -373,7 +380,7 @@ def apply_operator(x, cov_Tdag_Ninv_T):
 
 
     # Linear so we can split the LHS multiply
-    Ax1 = np.einsum('ftzcFTZC,FTZC -> ftzc',
+    Ax1 = np.einsum('fzcFZC,FZC -> fzc',
                     cov_Tdag_Ninv_T,
                     x,
                     optimize=True)
@@ -384,7 +391,7 @@ def apply_operator(x, cov_Tdag_Ninv_T):
 
 
 def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
-                  cho_tuple):
+                  cho_tuple, flx=True):
     """
     Construct the right hand side of the Gaussian Constrained Realization (GCR)
     equation.
@@ -406,6 +413,8 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
             covariance matrix.
         cov_Tdag (array_like):
             Matrix product of prior covariance and zernike_to_vis conjugate transpose.
+        flx (bool):
+            Whether to use fluctuation terms. Useful for debugging.
 
     Returns:
         rhs (array_like):
@@ -415,40 +424,42 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
     flx0_shape = mu.shape
     flx1_shape = vis.shape
 
-    flx0 = (np.random.normal(size=flx0_shape)
-            + 1.j * np.random.normal(size=flx0_shape)) / np.sqrt(2)
-    flx1 = (np.random.normal(size=flx1_shape)
-            + 1.j * np.random.normal(size=flx1_shape)) / np.sqrt(2)
+    if flx:
+        flx0 = np.random.normal(size=flx0_shape) / np.sqrt(2)
+        flx1 = np.random.normal(size=flx1_shape) / np.sqrt(2)
+
+    else:
+        flx0 = np.zeros(flx0_shape)
+        flx1 = np.zeros(flx1_shape)
+
 
     Ninv_d = inv_noise_var * vis
     N_inv_sqrt_flx1 = inv_noise_var_sqrt * flx1
     cov_Tdag_terms = np.einsum(
-                               'ftazcFTC,FTaC -> zftc',
+                               'fazcFTC,FTaC -> fzc',
                                cov_Tdag,
                                Ninv_d + N_inv_sqrt_flx1,
                                optimize=True
                                )
 
 
-    freq_cho, time_cho, comp_cho = cho_tuple
+    freq_cho, comp_cho = cho_tuple
     flx0_add = np.einsum(
-                         'fF,tT,c,zFTc->zftc',
+                         'fF,c,zFc->fzc',
                          freq_cho,
-                         time_cho,
                          comp_cho,
                          flx0,
                          optimize=True
                          )
+    b = cov_Tdag_terms + flx0_add + np.swapaxes(mu, 0, 1)
 
-    # Need to make it match LHS
-    b = np.transpose(cov_Tdag_terms + mu + flx0_add, axes=(1, 2, 0, 3))
     return b
 
 
 def non_norm_gauss(A, sig, x):
     return A * np.exp(-x**2 / (2 * sig**2))
 
-def make_prior_cov(freqs, times, ncoeff, std, sig_freq, sig_time,
+def make_prior_cov(freqs, times, ncoeff, std, sig_freq,
                    constrain_phase=False, constraint=1e-4, ridge=0):
     """
     Make a prior covariance for the beam coefficients.
@@ -464,27 +475,23 @@ def make_prior_cov(freqs, times, ncoeff, std, sig_freq, sig_time,
             Square root of the diagonal entries of the matrix.
         sig_freq (float):
             Correlation length in frequency.
-        sig_time (float):
-            Correlation length in time.
         contrain_phase (bool):
-            Whether to constrian the phase of one beam or not. Currently just
-            constrains it to have only small variations in the imaginary part.
+            Whether to constrian the phase of the beams or not. Currently just
+            constrains them to have only small variations in the imaginary part.
 
     Returns:
         cov_tuple (array_like):
             Tuple of tensor components of covariance matrix.
     """
-    freq_col = non_norm_gauss(std, sig_freq, freqs - freqs[0])
-    time_col = non_norm_gauss(std, sig_time, times - times[0])
+    freq_col = non_norm_gauss(std**2, sig_freq, freqs - freqs[0])
     freq_col[0] += ridge
-    time_col[0] += ridge
     freq_matr = toeplitz(freq_col)
-    time_matr = toeplitz(time_col)
     comp_matr = np.ones(2)
     if constrain_phase: # Make the imaginary variance small compared to the real one
         comp_matr[1] = constraint
 
-    cov_tuple = (freq_matr, time_matr, comp_matr)
+
+    cov_tuple = (freq_matr, comp_matr)
 
     return cov_tuple
 
@@ -503,22 +510,40 @@ def do_cov_cho(cov_tuple, check_op=False):
         cho_tuple (array_like):
             The factored Cholesky decomposition.
     """
-    freq_matr, time_matr, comp_matr = cov_tuple
+    freq_matr, comp_matr = cov_tuple
     freq_cho = cholesky(freq_matr, lower=True)
-    time_cho = cholesky(time_matr, lower=True)
-    comp_cho = np.sqrt(comp_matr)
+    comp_cho = np.sqrt(comp_matr) # Currently always diagonal
 
-    cho_tuple = (freq_cho, time_cho, comp_cho)
+    cho_tuple = (freq_cho, comp_cho)
     if check_op:
-        for axis, ax_name in enumerate(['time', 'freq']):
-            prod = cho_tuple[axis] @ cho_tuple[axis].T.conj()
-            allclose = np.allclose(prod, cov_tuple[axis])
-            print(f"Successful cholesky factorization of beam for {ax_name} axis?: "
-                  f"{allclose}")
-            if not allclose:
-                raise LinAlgError(f"Cholesky factorization failed for {ax_name} axis")
+        prod = freq_cho @ freq_cho.T.conj()
+        allclose = np.allclose(prod, freq_matr)
+        print(f"Successful cholesky factorization of beam for frequency covariance: "
+              f"{allclose}")
+        if not allclose:
+            raise LinAlgError(f"Cholesky factorization failed for frequency covariance")
 
     return cho_tuple
+
+def get_chi2(Mjk, beam_coeffs, data, inv_noise_var):
+    """
+    Get the chi-square for a given set of beam coefficients and data.
+
+    Parameters:
+        Mjk (array_like, complex): Quadratic form that maps beam coefficients to
+            visibilities. Has shape (Ncoeff, Nfreqs, Ntimes, Nants, Nants, Ncoeffs)
+        beam_coeffs (array_like, complex): Has shape (Ncoeff, Nfreqs, Nants)
+        data (array_like, complex): Has shape (Nfreqs, Ntimes, Nants, Nants)
+    """
+    model = np.einsum('zfa,zftaAZ,ZfA->ftaA', beam_coeffs.conj(),
+                      Mjk, beam_coeffs, optimize=True)
+    Nants = data.shape[-1]
+    # zero out the diagonals
+    model[:, :, range(Nants), range(Nants)] = 0
+    dmm = data - model
+    chi2 = np.sum(dmm.conj() * dmm * inv_noise_var)
+    return(dmm, chi2)
+
 
 def zernike(coeffs, x, y):
     """
