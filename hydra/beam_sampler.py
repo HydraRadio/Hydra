@@ -204,9 +204,11 @@ def select_subarr(arr, ant_samp_ind, Nants):
     return subarr
 
 
-def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
-                  precision=1, latitude=-30.7215 * np.pi / 180.0,
-                  use_feed="x", multiprocess=True):
+def construct_zernike_to_vis(Zmatr, ants, fluxes, ra, dec, freqs, lsts,
+                             beam_coeffs, ant_samp_ind, nants,
+                             polarized=False, precision=1,
+                             latitude=-30.7215 * np.pi / 180.0, use_feed="x",
+                             multiprocess=True, low_mem=False):
     """
     Compute the matrices that act as the quadratic forms by which visibilities
     are made. Calls simulate_vis_per_source to get the Fourier operator, then
@@ -228,6 +230,13 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
         lsts (array_like):
             Local sidereal times for the simulation, in radians. Range is
             [0, 2 pi].
+        beam_coeffs (array_like, real):
+            Zernike coefficients for the beam at each freqency and
+            antenna. Has shape `(ncoeff, NFREQS, NANTS)`.
+        ant_samp_ind (int):
+            ID of the antenna that is being sampled.
+        nants (int):
+            Number of antennas in use.
         polarized (bool):
             If True, raise a NotImplementedError. Eventually this will use
             polarized beams.
@@ -241,9 +250,11 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
         multiprocess (bool): Whether to use multiprocessing to speed up the
             calculation
 
+
     Returns:
-        Mjk (array_like):
-            Projection matrix from Zernike coefficients to visibilities.
+        zern_trans (array_like):
+            Operator that returns visibilities when supplied with
+            beam coefficients. Shape (NFREQS, NTIMES, NANTS, ncoeff)`.
     """
     if polarized:
         raise NotImplementedError("Polarized beams are not available yet.")
@@ -255,55 +266,28 @@ def construct_Mjk(Zmatr, ants, fluxes, ra, dec, freqs, lsts, polarized=False,
                                             precision=precision,
                                             latitude=latitude,
                                             use_feed=use_feed,
-                                            multiprocess=multiprocess)
-
-    # FIXME: Huge memory requirements. Can't do this for the full-scale problem.
-    # Also slow. Reshaping arrays does not seem to help.
-    Mjk = np.einsum('tsz,ftaAs,tsZ -> zftaAZ', Zmatr.conj(), sky_amp_phase, Zmatr,
-                    optimize=True)
-
-    # Doubles the autos, but we don't use them
-    # Makes it so we don't have to keep track of conjugates when sampling
-    Mjk = Mjk + np.swapaxes(Mjk.conj(), 3, 4)
-    return Mjk
+                                            multiprocess=multiprocess,
+                                            subarr_ant=ant_samp_ind)
 
 
-def get_zernike_to_vis(Mjk, beam_coeffs, ant_samp_ind, nants):
-    """
-    Get the 'T' operator that, when applied to a vector of beam coefficients,
-    produces visibilities.
+    # Want to do the contraction zfa,tsz,ftas,tsZ -> ftaZ
+    # Determined optimal contraction order with opt_einsum
+    # Implementing steps in faster way using tdot
 
-    Parameters:
-        Mjk (array_like, complex): Partial transformation operator that is
-            computed ahead of time  from the antenna positions and source model.
-            Has shape `(ncoeff, NFREQS, NTIMES, NANTS, NANTS, ncoeff)`.
-
-        beam_coeffs (array_like, real):
-            Zernike coefficients for the beam at each freqency and
-            antenna. Has shape `(ncoeff, NFREQS, NANTS)`.
-
-        ant_samp_ind (int):
-            ID of the antenna that is being sampled.
-
-        nants (int):
-            Number of antennas in use.
-
-    Returns:
-        zern_trans_real_imag (array_like):
-            A real-valued operator that returns visibilities when supplied with
-            beam coefficients. Shape (NFREQS, NTIMES, NANTS, ncoeff, 2, 2)`.
-    """
     ant_inds = get_ant_inds(ant_samp_ind, nants)
+    # 'zfa,tsz->ftas'
+    beam_res = np.swapaxes(beam_coeffs.conj()[:, :, ant_inds], 0, -1) # afz
+    # one-liner to save memory
+    # afz,tsz->afts->ftas ftas,ftas->ftas
+    sky_amp_phase *= np.tensordot(beam_res, Zmatr.conj(), axes=((-1,), (-1,))).transpose(beam_on_sky, axes=(1, 2, 0, 3))
 
-    zern_trans = np.einsum(
-                           'zfa,zftaZ -> ftaZ',
-                           beam_coeffs.conj()[:, :, ant_inds],
-                           Mjk[:, :, :, ant_inds, ant_samp_ind],
-                           optimize=True
-                           )
-    # Split into components here
-    zern_trans_real_imag = split_real_imag(zern_trans, 'op')
-    return zern_trans_real_imag
+    zern_trans = np.zeros((freqs.size, lsts.size, nants - 1, beam_res.shape[-1]),
+                          dtype=sky_amp_phase.dtype)
+    for time_ind in range(lsts.size):
+        zern_trans[:, time_ind, :, :] = np.tensordot(sky_amp_phase[:, time_ind],
+                                                     np.swapaxes(Zmatr, -1, -2)[time_ind],
+                                                     axes=((-1, ), (-1, )))
+    return zern_trans
 
 
 def get_cov_Tdag(cov_tuple, zern_trans):
