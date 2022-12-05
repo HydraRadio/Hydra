@@ -290,30 +290,7 @@ def construct_zernike_to_vis(Zmatr, ants, fluxes, ra, dec, freqs, lsts,
     return zern_trans
 
 
-def get_cov_Tdag(cov_tuple, zern_trans):
-    """
-    Construct the matrix product of the beam covariance and the transformation
-    operator from Zernike coefficients to visibilities
-
-    Parameters:
-        cov (array_like):
-            The beam prior covariance
-        zern_trans (array_like):
-            Operator that provides visibilities when handed some beam coefficients.
-    Returns:
-        cov_Tdag (array_like): The desired matrix product
-    """
-    freq_matr, comp_matr = cov_tuple
-    cov_Tdag = np.einsum('fF,C,FTazcC->fazCFTc',
-                         freq_matr,
-                         comp_matr,
-                         zern_trans,
-                         optimize=True)
-
-    return cov_Tdag
-
-
-def get_cov_Tdag_Ninv_T(inv_noise_var, cov_Tdag, zern_trans):
+def get_cov_Tdag_Ninv_T(inv_noise_var, zern_trans, cov_tuple):
     """
     Construct the LHS operator for the Gibbs sampling.
 
@@ -321,26 +298,35 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, cov_Tdag, zern_trans):
         inv_noise_var (array_like):
             Inverse variance of same shape as vis. Assumes diagonal covariance
             matrix, which is true in practice.
-        cov_Tdag (array_like):
-            Prior covariance matrix times the vis-to-zernike transform.
+        cov_tuple (tuple of array):
+            Factorized prior covariance matrix (in the sense of the outer product).
         zern_trans: (array_like): (Complex) matrix that, when applied to a
             vector of Zernike coefficients for one antenna, returns the
             visibilities associated with that antenna.
     """
+    freq_matr, comp_matr = cov_tuple
+    Nfreqs = freq_matr.shape[0]
 
     # These stay as elementwise multiply since the beam at given times/freqs
     # Should not affect the vis at other times/freqs
-    Ninv_T = np.einsum('ftac,ftaZcC -> ftaZcC',
-                       inv_noise_var,
-                       zern_trans,
-                       optimize=True
-                       )
-    cov_Tdag_Ninv_T = np.einsum(
-                                'fazcFTd,FTaZdC -> fzcFZC',
-                                cov_Tdag,
-                                Ninv_T,
-                                optimize=True
-                                )
+    # ftaZ->Zfta fta,Zfta->Zfta
+    zern_trans_use = zern_trans.transpose(axes=(3, 0, 1, 2))
+    Ninv_T = inv_noise_var * zern_trans_use
+    # zfta,ZFta->zfZF
+    # Actually just want diagonals but don't need to save memory here
+    Tdag_Ninv_T = np.tensordot(zern_trans_use.conj(), Ninv_T,
+                              axes=((-1, -2), (-1, -2)))
+    # Get the diagonals zfZF -> fzZ
+    Tdag_Ninv_T = Tdag_Ninv_T[:, range(Nfreqs), :, range(Nfreqs)]
+    # Factor of 2 because 1/2 the variance for each complex component
+    Tdag_Ninv_T = 2*split_real_imag(Tdag_Ninv_T, kind='op')
+
+    # cfF,FzZcC->fFzZcC
+    # c,fF->cfF
+    cov_matr = comp_matr[:, np.newaxis, np.newaxis] * freq_matr
+    # fcF,CzZcF->fCzZcF
+    cov_Tdag_Ninv_T = np.swapaxes(cov_matr, 0, 1)[:, np.newaxis, np.newaxis] * np.swapaxes(Tdag_Ninv_T, 0, -1)
+    cov_Tdag_Ninv_T = np.transpose(cov_Tdag_Ninv_T, axes=(0, 2, 4, 5, 3, 1))
 
 
     return cov_Tdag_Ninv_T
@@ -364,10 +350,8 @@ def apply_operator(x, cov_Tdag_Ninv_T):
 
 
     # Linear so we can split the LHS multiply
-    Ax1 = np.einsum('fzcFZC,FZC -> fzc',
-                    cov_Tdag_Ninv_T,
-                    x,
-                    optimize=True)
+    # fzcFZC,FZC -> fzc
+    Ax1 = np.tensordot(cov_Tdag_Ninv_T, x, axes=((-1, -2, -3), (-1, -2, -3)))
 
     # Second term is identity due to preconditioning
     Ax = Ax1 + x
