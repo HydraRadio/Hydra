@@ -286,16 +286,10 @@ def vis_sim_per_source(
                     optimize=True,
                 )
         else:
-            vis[:, :, t, subarr_ant:] = np.einsum(
-                "jiln,jkmn->iklmn",
-                v[:, :, subarr_ant: subarr_ant + 1, :].conj(),
-                v[:, :, subarr_ant:, :],
-                optimize=True,
-            )
-            # Stay in the upper triangle
-            vis[:, :, t, :subarr_ant] = np.einsum(
-                "jiln,jkmn->iklmn",
-                v[:, :, :subarr_ant, :].conj(),
+            # Get the ones where the antenna in question is not conjugated
+            vis[:, :, t] = np.einsum(
+                "jiln,jkmn->ikln",
+                v[:, :, :, :].conj(),
                 v[:, :, subarr_ant: subarr_ant + 1, :],
                 optimize=True,
             )
