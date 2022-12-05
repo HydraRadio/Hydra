@@ -288,7 +288,7 @@ def vis_sim_per_source(
         else:
             # Get the ones where the antenna in question is not conjugated
             vis[:, :, t] = np.einsum(
-                "jiln,jkmn->ikln",
+                "jiln,jkmn->ikln", # summing over m just sums over one antenna (squeezes an axis)
                 v[:, :, :, :].conj(),
                 v[:, :, subarr_ant: subarr_ant + 1, :],
                 optimize=True,
