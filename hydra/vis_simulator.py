@@ -105,6 +105,7 @@ def vis_sim_per_source(
     precision: int = 1,
     polarized: bool = False,
     beam_idx: Optional[np.ndarray] = None,
+    subarr_ant=None
 ):
     """
     Calculate visibility from an input intensity map and beam model. This is
@@ -153,6 +154,8 @@ def vis_sim_per_source(
             Optional length-NANT array specifying a beam index for each antenna.
             By default, either a single beam is assumed to apply to all
             antennas or each antenna gets its own beam.
+        subarr_ant (int): Used to calculate only those visibilities associated
+            with a particular antenna.
 
     Returns:
         vis (array_like):
@@ -200,7 +203,10 @@ def vis_sim_per_source(
     ang_freq = 2.0 * np.pi * freq
 
     # Zero arrays: beam pattern, visibilities, delays, complex voltages
-    vis = np.zeros((nfeed, nfeed, ntimes, nant, nant, nsrcs), dtype=complex_dtype)
+    if subarr_ant is None:
+        vis = np.zeros((nfeed, nfeed, ntimes, nant, nant, nsrcs), dtype=complex_dtype)
+    else:
+        vis = np.zeros((nfeed, nfeed, ntimes, nant, nsrcs), dtype=complex_dtype)
     crd_eq = crd_eq.astype(real_dtype)
 
     # Loop over time samples
@@ -267,13 +273,30 @@ def vis_sim_per_source(
         # Input arrays have shape (Nax, Nfeed, [Nants], Nsrcs
         v = A_s[:, :, beam_idx] * v[np.newaxis, np.newaxis, :]
 
-        for i in range(len(antpos)):
-            # We want to take an outer product over feeds/antennas, contract over
-            # E-field components, and integrate over the sky.
-            vis[:, :, t, i : i + 1, i:, :] = np.einsum(
+
+
+        if subarr_ant is None:
+            for i in range(len(antpos)):
+                # We want to take an outer product over feeds/antennas, contract over
+                # E-field components, and integrate over the sky.
+                vis[:, :, t, i : i + 1, i:, :] = np.einsum(
+                    "jiln,jkmn->iklmn",
+                    v[:, :, i : i + 1, :].conj(),
+                    v[:, :, i:, :],
+                    optimize=True,
+                )
+        else:
+            vis[:, :, t, subarr_ant:] = np.einsum(
                 "jiln,jkmn->iklmn",
-                v[:, :, i : i + 1, :].conj(),
-                v[:, :, i:, :],
+                v[:, :, subarr_ant: subarr_ant + 1, :].conj(),
+                v[:, :, subarr_ant:, :],
+                optimize=True,
+            )
+            # Stay in the upper triangle
+            vis[:, :, t, :subarr_ant] = np.einsum(
+                "jiln,jkmn->iklmn",
+                v[:, :, :subarr_ant, :].conj(),
+                v[:, :, subarr_ant: subarr_ant + 1, :],
                 optimize=True,
             )
 
@@ -293,7 +316,8 @@ def simulate_vis_per_source(
     precision=1,
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
-    multiprocess=True
+    multiprocess=True,
+    subarr_ant=None
 ):
     """
     Run a basic simulation, returning the visibility for each source
@@ -332,6 +356,8 @@ def simulate_vis_per_source(
             the HERA latitude = -30.7215 * pi / 180.
         multiprocess (bool): Whether to use multiprocessing to speed up the
             calculation
+        subarr_ant (int): Used to calculate only those visibilities associated
+            with a particular antenna.
 
     Returns:
         vis (array_like):
@@ -386,6 +412,9 @@ def simulate_vis_per_source(
             (naxes, nfeeds, freqs.size, lsts.size, nants, nants, nsrcs),
             dtype=complex_dtype,
         )
+    elif subarr_ant is not None:
+    # When polarized beams implemented, need to have similar block in  polarized case above
+        vis = np.zeros((freqs.size, lsts.size, nants, nsrcs), dtype=complex_dtype)
     else:
         vis = np.zeros(
             (freqs.size, lsts.size, nants, nants, nsrcs), dtype=complex_dtype
@@ -405,6 +434,7 @@ def simulate_vis_per_source(
                                   beam_list=beams,
                                   precision=precision,
                                   polarized=polarized,
+                                  subarr_ant=subarr_ant,
                                  )
     if multiprocess:
         # Set up parallel loop
@@ -424,7 +454,7 @@ def simulate_vis_per_source(
         if polarized:
             vis[:, :, i] = vv[i]  # v.shape: (nax, nfeed, ntimes, nant, nant, nsrcs)
         else:
-            vis[i] = vv[i]  # v.shape: (ntimes, nant, nant, nsrcs)
+            vis[i] = vv[i]  # v.shape: (ntimes, nant, nant, nsrcs) (unless subarr_ant is not None)
 
     return vis
 
@@ -501,14 +531,14 @@ def simulate_vis_per_alm(
 
     This wrapper handles the necessary coordinate conversions etc.
 
-    NOTE: The spherical harmonic modes are defined in the equatorial (RA, Dec) 
+    NOTE: The spherical harmonic modes are defined in the equatorial (RA, Dec)
     coordinate system.
 
     Parameters:
         lmax (int):
             Maximum ell value to simulate.
         nside (int):
-            Healpix map nside used to generate the simulations. Higher values 
+            Healpix map nside used to generate the simulations. Higher values
             will give more accurate results.
         ants (dict):
             Dictionary of antenna positions. The keys are the antenna names
@@ -537,14 +567,14 @@ def simulate_vis_per_alm(
 
     Returns:
         ell, m (array_like):
-            Arrays of integer values of ell, m modes, with the same ordering as 
-            the modes in the last dimensions of `vis`. This uses the default 
+            Arrays of integer values of ell, m modes, with the same ordering as
+            the modes in the last dimensions of `vis`. This uses the default
             healpy ordering and convention (+ve m modes only).
 
         vis (array_like):
             Complex, shape (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS, NMODES)
             if ``polarized == True``, or (NFREQS, NTIMES, NANTS, NANTS, NMODES)
-            otherwise. This is the visibility response of the interferometer 
+            otherwise. This is the visibility response of the interferometer
             to each spherical harmonic (ell, m) mode.
     """
     # Make sure these are array_like
@@ -562,7 +592,7 @@ def simulate_vis_per_alm(
     # Dummy fluxes (one everywhere)
     fluxes = np.ones((npix, freqs.size))
 
-    # Run simulation using the per-source simulation function, to get 
+    # Run simulation using the per-source simulation function, to get
     # visibility contrib. from each pixel
     vis_pix = simulate_vis_per_source(ants=ants,
                                       fluxes=fluxes,
@@ -582,27 +612,27 @@ def simulate_vis_per_alm(
     shape[-1] = 2*ell.size # replace last dim. with Nmodes (real + imag.)
     vis = np.zeros(shape, dtype=np.complex128)
 
-    # Loop over (ell, m) modes, weighting the precomputed visibility sim 
+    # Loop over (ell, m) modes, weighting the precomputed visibility sim
     # by the value of each spherical harmonic mode in each pixel
     alm = np.zeros(ell.size, dtype=np.complex128)
     for n in range(ell.size):
-        
+
         # Start with zero vector for all modes
         alm *= 0
 
         # Loop over real, imaginary values for this mode only
         for j, val in enumerate([1., 1.j]):
-            
-            # Make healpix map for this mode only    
+
+            # Make healpix map for this mode only
             alm[n] = val
-            skymap = hp.alm2map(alm, nside=nside) * pix_area 
+            skymap = hp.alm2map(alm, nside=nside) * pix_area
             # multiply by pixel area to get 'integrated' quantity
 
             # Multiply visibility for each pixel by the pixel value for this mode
             if polarized:
                 # vis_pix: (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS, NSRCS)
                 vis[:,:,:,:,:,:,n + j*ell.size] = np.sum(vis_pix * skymap, axis=-1)
-                # Last dim. of vis is in blocks of real (first ell.size modes) and 
+                # Last dim. of vis is in blocks of real (first ell.size modes) and
                 # imaginary (last ell.size modes)
             else:
                 # vis_pix: (NFREQS, NTIMES, NANTS, NANTS, NSRCS)
