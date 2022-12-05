@@ -204,9 +204,10 @@ def vis_sim_per_source(
 
     # Zero arrays: beam pattern, visibilities, delays, complex voltages
     if subarr_ant is None:
-        vis = np.zeros((nfeed, nfeed, ntimes, nant, nant, nsrcs), dtype=complex_dtype)
+        vis_shape = (nfeed, nfeed, ntimes, nant, nant, nsrcs)
     else:
-        vis = np.zeros((nfeed, nfeed, ntimes, nant, nsrcs), dtype=complex_dtype)
+        vis_shape = (nfeed, nfeed, ntimes, nant, nsrcs)
+    vis = np.zeros(vis_shape, dtype=complex_dtype)
     crd_eq = crd_eq.astype(real_dtype)
 
     # Loop over time samples
@@ -402,17 +403,13 @@ def simulate_vis_per_source(
 
     # Initialise output array
     if polarized:
-        vis = np.zeros(
-            (naxes, nfeeds, freqs.size, lsts.size, nants, nants, nsrcs),
-            dtype=complex_dtype,
-        )
+        vis_shape = (naxes, nfeeds, freqs.size, lsts.size, nants, nants, nsrcs)
     elif subarr_ant is not None:
     # When polarized beams implemented, need to have similar block in  polarized case above
-        vis = np.zeros((freqs.size, lsts.size, nants, nsrcs), dtype=complex_dtype)
+        vis_shape = (freqs.size, lsts.size, nants, nsrcs)
     else:
-        vis = np.zeros(
-            (freqs.size, lsts.size, nants, nants, nsrcs), dtype=complex_dtype
-        )
+        vis_shape = (freqs.size, lsts.size, nants, nants, nsrcs)
+    vis = np.zeros(vis_shape, dtype=complex_dtype)
 
     # Parallel loop over frequencies that calls vis_cpu for UVBeam
     # The `global` declaration is needed so that multiprocessing can handle
