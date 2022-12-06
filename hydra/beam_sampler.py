@@ -277,9 +277,12 @@ def construct_zernike_to_vis(Zmatr, ants, fluxes, ra, dec, freqs, lsts,
     ant_inds = get_ant_inds(ant_samp_ind, nants)
     # 'zfa,tsz->ftas'
     beam_res = np.swapaxes(beam_coeffs.conj()[:, :, ant_inds], 0, -1) # afz
-    # one-liner to save memory
+
     # afz,tsz->afts->ftas ftas,ftas->ftas
-    sky_amp_phase *= np.tensordot(beam_res, Zmatr.conj(), axes=((-1,), (-1,))).transpose(beam_on_sky, axes=(1, 2, 0, 3))
+    beam_on_sky = np.tensordot(beam_res, Zmatr.conj(),
+                                axes=((-1,), (-1,))).transpose(axes=(1, 2, 0, 3))
+    # reassign to save memory
+    sky_amp_phase *= beam_on_sky
 
     zern_trans = np.zeros((freqs.size, lsts.size, nants - 1, beam_res.shape[-1]),
                           dtype=sky_amp_phase.dtype)
