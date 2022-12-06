@@ -753,7 +753,7 @@ for n in range(Niters):
             prior_std=1e-2
             cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
                                                           prior_std, sig_freq,
-                                                          ridge=1e-6, constraint=1)
+                                                          ridge=1e-6)
             cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             cov_tuple_0 = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
                                                           prior_std, sig_freq,
