@@ -782,35 +782,32 @@ for n in range(Niters):
             else:
                 cov_tuple_use = cov_tuple_0
                 cho_tuple_use = cho_tuple_0
-            zern_trans = hydra.beam_sampler.get_zernike_to_vis(Mjk, beam_coeffs,
-                                                     ant_samp_ind, Nants)
-            cov_Tdag = hydra.beam_sampler.get_cov_Tdag(cov_tuple_use, zern_trans)
+            zern_trans = hydra.beam_sampler.get_zernike_to_vis(Zmatr, ant_pos,
+                                                               flux_use, ra, dec,
+                                                               freqs*1e6, times,
+                                                               beam_coeffs,
+                                                               ant_samp_ind,
+                                                               polarized=False,
+                                                               latitude=hera_latitude,
+                                                               multiprocess=MULTIPROCESS)
+
 
             inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var_beam,
                                                            ant_samp_ind, Nants)
             data_use = hydra.beam_sampler.select_subarr(data_beam, ant_samp_ind, Nants)
 
-            # Have to split real/imag - circ. Gauss so just factor of 2, no off-diags :)
-            inv_noise_var_use = np.repeat(inv_noise_var_use[:, :, :, np.newaxis],
-                                          2, axis=3) * 0.5
-            inv_noise_var_sqrt_use = np.sqrt(inv_noise_var_use)
-
-
-            # This one is actually complex so we use a special fn. in hydra.beam_sampler
-            data_use = hydra.beam_sampler.split_real_imag(data_use, 'vec')
-
             # Construct RHS vector
             rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
                                                              inv_noise_var_use,
-                                                             inv_noise_var_sqrt_use,
                                                              coeff_mean,
-                                                             cov_Tdag,
+                                                             zern_trans,
+                                                             cov_tuple_use,
                                                              cho_tuple_use)
             bbeam = rhs_unflatten.flatten()
             shape = (Nfreqs, ncoeffs,  2)
             cov_Tdag_Ninv_T = hydra.beam_sampler.get_cov_Tdag_Ninv_T(inv_noise_var_use,
-                                                                     cov_Tdag,
-                                                                     zern_trans)
+                                                                     zern_trans,
+                                                                     cov_tuple_use)
             axlen = np.prod(shape)
             matr = cov_Tdag_Ninv_T.reshape([axlen, axlen]) + np.eye(axlen)
             if PLOTTING:

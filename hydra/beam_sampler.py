@@ -204,8 +204,8 @@ def select_subarr(arr, ant_samp_ind, Nants):
     return subarr
 
 
-def construct_zernike_to_vis(Zmatr, ants, fluxes, ra, dec, freqs, lsts,
-                             beam_coeffs, ant_samp_ind, nants,
+def get_zernike_to_vis(Zmatr, ants, fluxes, ra, dec, freqs, lsts,
+                             beam_coeffs, ant_samp_ind,
                              polarized=False, precision=1,
                              latitude=-30.7215 * np.pi / 180.0, use_feed="x",
                              multiprocess=True, low_mem=False):
