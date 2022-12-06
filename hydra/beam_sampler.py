@@ -375,7 +375,7 @@ def get_std_norm(shape):
 
     return std_norm
 
-def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, zern_trans,
+def construct_rhs(vis, inv_noise_var, mu, zern_trans,
                   cov_tuple, cho_tuple, flx=True):
     """
     Construct the right hand side of the Gaussian Constrained Realization (GCR)
@@ -383,17 +383,15 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, zern_trans,
 
     Parameters:
         vis (array_like):
-            Subset of visiblities, split into real/imag components, belonging to
+            Subset of visiblities belonging to
             the antenna for which the GCR is being set up. Has shape
-            `(NFREQS, NTIMES, NANTS - 1, 2)`.
+            `(NFREQS, NTIMES, NANTS - 1)`.
         inv_noise_var (array_like):
             Inverse variance of same shape as `vis`. Assumes diagonal
             covariance matrix, which is true in practice.
-        inv_noise_var_sqrt (array_like):
-            Inverse variance of same shape as vis. Assumes diagonal covariance
-            matrix, which is true in practice.
         mu (array_like):
             Prior mean for the Zernike coefficients (pre-calculated).
+        cov_tuple (tuple of arr): tensor-factored covariance matrix.
         cho_tuple (tuple of arr): tensor-factored, cholesky decomposed prior
             covariance matrix.
         zern_trans (array_like):
@@ -421,7 +419,7 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, zern_trans,
     zern_trans_use = zern_trans.transpose(axes=(3, 0, 1, 2))
 
     Ninv_d = inv_noise_var * vis
-    Ninv_sqrt_flx1 = inv_noise_var_sqrt * flx1
+    Ninv_sqrt_flx1 = np.sqrt(inv_noise_var) * flx1
 
     # Weird factors of sqrt(2) etc since we will split these in a sec
     Tdag_terms = np.sum(zern_trans_use.conj() * (2 * Ninv_d + np.sqrt(2) * Ninv_sqrt_flx1)
@@ -436,9 +434,9 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, zern_trans,
     flx0_add = np.tensordot(freq_cho, (comp_cho * Tdag_terms),
                                   axes=((-1,), (1,)))
 
-    b = cov_Tdag_terms + flx0_add + np.swapaxes(mu, 0, 1)
+    rhs = cov_Tdag_terms + flx0_add + np.swapaxes(mu, 0, 1)
 
-    return b
+    return rhs
 
 
 def non_norm_gauss(A, sig, x):
