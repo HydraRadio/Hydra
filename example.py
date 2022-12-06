@@ -701,7 +701,7 @@ for n in range(Niters):
                                                vmin=-np.pi, vmax=np.pi,
                                                cmap='twilight')
 
-            fig.savefig(f"output/beam_plot_ant_{ant_ind}_iter_{iter}_{type}_{tag}.png")
+            fig.savefig(f"{output_dir}/beam_plot_ant_{ant_ind}_iter_{iter}_{type}_{tag}.png")
             plt.close(fig)
             return
         # Have to have an initial guess and do some precompute
@@ -747,17 +747,13 @@ for n in range(Niters):
 
             amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
             flux_use = get_flux_from_ptsrc_amp(amp_use, freqs, beta_ptsrc)
-            Mjk = hydra.beam_sampler.construct_Mjk(Zmatr, ant_pos, flux_use, ra, dec,
-                                             freqs*1e6, times, polarized=False,
-                                             latitude=hera_latitude,
-                                             multiprocess=MULTIPROCESS)
 
             # Hardcoded parameters. Make variations smooth in time/freq.
             sig_freq = 0.5 * (freqs[-1] - freqs[0])
-            prior_std=1e2
+            prior_std=1e-100
             cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
                                                           prior_std, sig_freq,
-                                                          ridge=1e-6)
+                                                          ridge=1e-6, constraint=1)
             cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             cov_tuple_0 = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
                                                           prior_std, sig_freq,
@@ -768,9 +764,6 @@ for n in range(Niters):
             # Be lazy and just use the initial guess.
             coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, 0],
                                                             'vec')
-            dmm, chi2 = hydra.beam_sampler.get_chi2(Mjk, beam_coeffs, data_beam,
-                                               inv_noise_var_beam)
-            print(f"Beam chi-square before sampling: {chi2}")
 
         t0 = time.time()
 
@@ -817,7 +810,7 @@ for n in range(Niters):
                 mx = np.amax(np.abs(matr))
                 plt.matshow(np.log10(np.abs(matr) / mx), vmax=0, vmin=-8)
                 plt.colorbar(label="$log_{10}$(|LHS|)")
-                plt.savefig(f"output/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
+                plt.savefig(f"{output_dir}/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
                 plt.close()
 
 
@@ -856,9 +849,6 @@ for n in range(Niters):
             # Update the coeffs between rounds
             beam_coeffs[:, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, 0] \
                                                + 1.j * x_soln_swap[:, :, 1]
-            dmm, chi2 = hydra.beam_sampler.get_chi2(Mjk, beam_coeffs, data_beam,
-                                               inv_noise_var_beam)
-            print(f"Beam chi-square after sampling, iteration {n}: {chi2}")
             if PLOTTING:
                 plot_beam_cross(beam_coeffs, ant_samp_ind, n, '',type='beam')
 

@@ -258,6 +258,8 @@ def get_zernike_to_vis(Zmatr, ants, fluxes, ra, dec, freqs, lsts,
     """
     if polarized:
         raise NotImplementedError("Polarized beams are not available yet.")
+    nants = len(ants)
+    ant_inds = get_ant_inds(ant_samp_ind, nants)
 
     # Use uniform beams so that we just get the Fourier operator.
     beams = [AnalyticBeam("uniform") for ant_ind in range(len(ants))]
@@ -268,19 +270,18 @@ def get_zernike_to_vis(Zmatr, ants, fluxes, ra, dec, freqs, lsts,
                                             use_feed=use_feed,
                                             multiprocess=multiprocess,
                                             subarr_ant=ant_samp_ind)
+    sky_amp_phase = sky_amp_phase[:, :, ant_inds]
 
 
     # Want to do the contraction zfa,tsz,ftas,tsZ -> ftaZ
     # Determined optimal contraction order with opt_einsum
     # Implementing steps in faster way using tdot
-
-    ant_inds = get_ant_inds(ant_samp_ind, nants)
     # 'zfa,tsz->ftas'
     beam_res = np.swapaxes(beam_coeffs.conj()[:, :, ant_inds], 0, -1) # afz
 
     # afz,tsz->afts->ftas ftas,ftas->ftas
     beam_on_sky = np.tensordot(beam_res, Zmatr.conj(),
-                                axes=((-1,), (-1,))).transpose(axes=(1, 2, 0, 3))
+                                axes=((-1,), (-1,))).transpose((1, 2, 0, 3))
     # reassign to save memory
     sky_amp_phase *= beam_on_sky
 
@@ -313,7 +314,7 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, zern_trans, cov_tuple):
     # These stay as elementwise multiply since the beam at given times/freqs
     # Should not affect the vis at other times/freqs
     # ftaZ->Zfta fta,Zfta->Zfta
-    zern_trans_use = zern_trans.transpose(axes=(3, 0, 1, 2))
+    zern_trans_use = zern_trans.transpose((3, 0, 1, 2))
 
     Ninv_T = inv_noise_var * zern_trans_use
     # zfta,ZFta->zfZF
@@ -329,7 +330,7 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, zern_trans, cov_tuple):
     # c,fF->cfF
     cov_matr = comp_matr[:, np.newaxis, np.newaxis] * freq_matr
     # fcF,CzZcF->fCzZcF
-    cov_Tdag_Ninv_T = np.swapaxes(cov_matr, 0, 1)[:, np.newaxis, np.newaxis] * np.swapaxes(Tdag_Ninv_T, 0, -1)
+    cov_Tdag_Ninv_T = np.swapaxes(cov_matr, 0, 1)[:, np.newaxis, np.newaxis, np.newaxis] * np.swapaxes(Tdag_Ninv_T, 0, -1)
     cov_Tdag_Ninv_T = np.transpose(cov_Tdag_Ninv_T, axes=(0, 2, 4, 5, 3, 1))
 
 
@@ -416,17 +417,17 @@ def construct_rhs(vis, inv_noise_var, mu, zern_trans,
         flx1 = np.zeros(flx1_shape)
 
     # ftaZ->Zfta
-    zern_trans_use = zern_trans.transpose(axes=(3, 0, 1, 2))
+    zern_trans_use = zern_trans.transpose((3, 0, 1, 2))
 
     Ninv_d = inv_noise_var * vis
     Ninv_sqrt_flx1 = np.sqrt(inv_noise_var) * flx1
 
     # Weird factors of sqrt(2) etc since we will split these in a sec
-    Tdag_terms = np.sum(zern_trans_use.conj() * (2 * Ninv_d + np.sqrt(2) * Ninv_sqrt_flx1)
+    Tdag_terms = np.sum(zern_trans_use.conj() * (2 * Ninv_d + np.sqrt(2) * Ninv_sqrt_flx1),
                         axis=(2,3))
     Tdag_terms = split_real_imag(Tdag_terms, kind='vec')
 
-    comp_matr, freq_matr = cov_tuple
+    freq_matr, comp_matr = cov_tuple
     # c,zfc->zfc Ff,zfc->Fzc
     cov_Tdag_terms = np.tensordot(freq_matr, (comp_matr * Tdag_terms),
                                   axes=((-1,), (1,)))
