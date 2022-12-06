@@ -431,11 +431,16 @@ def construct_rhs(vis, inv_noise_var, mu, zern_trans,
     # c,zfc->zfc Ff,zfc->Fzc
     cov_Tdag_terms = np.tensordot(freq_matr, (comp_matr * Tdag_terms),
                                   axes=((-1,), (1,)))
+
     freq_cho, comp_cho = cho_tuple
-    flx0_add = np.tensordot(freq_cho, (comp_cho * Tdag_terms),
+    flx0 = split_real_imag(flx0, kind='vec')
+    mu_real_imag = split_real_imag(mu, kind='vec')
+
+    flx0_add = np.tensordot(freq_cho, (comp_cho * flx0),
                                   axes=((-1,), (1,)))
 
-    rhs = cov_Tdag_terms + flx0_add + np.swapaxes(mu, 0, 1)
+
+    rhs = cov_Tdag_terms + flx0_add + np.swapaxes(mu_real_imag, 0, 1)
 
     return rhs
 
