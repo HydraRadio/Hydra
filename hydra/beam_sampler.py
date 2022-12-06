@@ -311,6 +311,7 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, zern_trans, cov_tuple):
     # Should not affect the vis at other times/freqs
     # ftaZ->Zfta fta,Zfta->Zfta
     zern_trans_use = zern_trans.transpose(axes=(3, 0, 1, 2))
+
     Ninv_T = inv_noise_var * zern_trans_use
     # zfta,ZFta->zfZF
     # Actually just want diagonals but don't need to save memory here
@@ -357,17 +358,30 @@ def apply_operator(x, cov_Tdag_Ninv_T):
     Ax = Ax1 + x
     return Ax
 
+def get_std_norm(shape):
+    """
+    Get an array of complex standard normal samples.
 
-def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
-                  cho_tuple, flx=True):
+    Parameters:
+        shape (array_like): Shape of desired array.
+
+    Returns:
+        std_norm (array_like): desired complex samples.
+    """
+    std_norm = (np.random.normal(size=shape) + 1.0j * np.random.normal(size=shape)) / np.sqrt(2)
+
+    return std_norm
+
+def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, zern_trans,
+                  cov_tuple, cho_tuple, flx=True):
     """
     Construct the right hand side of the Gaussian Constrained Realization (GCR)
     equation.
 
     Parameters:
-        vis (array_like, real):
-            Subset of visiblities belonging to the antenna for which the GCR is
-            being set up. Split into real and imaginary components. Has shape
+        vis (array_like):
+            Subset of visiblities, split into real/imag components, belonging to
+            the antenna for which the GCR is being set up. Has shape
             `(NFREQS, NTIMES, NANTS - 1, 2)`.
         inv_noise_var (array_like):
             Inverse variance of same shape as `vis`. Assumes diagonal
@@ -376,11 +390,12 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
             Inverse variance of same shape as vis. Assumes diagonal covariance
             matrix, which is true in practice.
         mu (array_like):
-            (Complex) prior mean for the Zernike coefficients (pre-calculated).
+            Prior mean for the Zernike coefficients (pre-calculated).
         cho_tuple (tuple of arr): tensor-factored, cholesky decomposed prior
             covariance matrix.
-        cov_Tdag (array_like):
-            Matrix product of prior covariance and zernike_to_vis conjugate transpose.
+        zern_trans (array_like):
+            Operator that maps beam coefficients from one antenna into its
+            subset of visibilities.
         flx (bool):
             Whether to use fluctuation terms. Useful for debugging.
 
@@ -393,32 +408,31 @@ def construct_rhs(vis, inv_noise_var, inv_noise_var_sqrt, mu, cov_Tdag,
     flx1_shape = vis.shape
 
     if flx:
-        flx0 = np.random.normal(size=flx0_shape) / np.sqrt(2)
-        flx1 = np.random.normal(size=flx1_shape) / np.sqrt(2)
-
+        flx0 = get_std_norm(flx0_shape)
+        flx1 = get_std_norm(flx1_shape)
     else:
         flx0 = np.zeros(flx0_shape)
         flx1 = np.zeros(flx1_shape)
 
+    # ftaZ->Zfta
+    zern_trans_use = zern_trans.transpose(axes=(3, 0, 1, 2))
 
     Ninv_d = inv_noise_var * vis
-    N_inv_sqrt_flx1 = inv_noise_var_sqrt * flx1
-    cov_Tdag_terms = np.einsum(
-                               'fazcFTC,FTaC -> fzc',
-                               cov_Tdag,
-                               Ninv_d + N_inv_sqrt_flx1,
-                               optimize=True
-                               )
+    Ninv_sqrt_flx1 = inv_noise_var_sqrt * flx1
 
+    # Weird factors of sqrt(2) etc since we will split these in a sec
+    Tdag_terms = np.sum(zern_trans_use.conj() * (2 * Ninv_d + np.sqrt(2) * Ninv_sqrt_flx1)
+                        axis=(2,3))
+    Tdag_terms = split_real_imag(Tdag_terms, kind='vec')
 
+    comp_matr, freq_matr = cov_tuple
+    # c,zfc->zfc Ff,zfc->Fzc
+    cov_Tdag_terms = np.tensordot(freq_matr, (comp_matr * Tdag_terms),
+                                  axes=((-1,), (1,)))
     freq_cho, comp_cho = cho_tuple
-    flx0_add = np.einsum(
-                         'fF,c,zFc->fzc',
-                         freq_cho,
-                         comp_cho,
-                         flx0,
-                         optimize=True
-                         )
+    flx0_add = np.tensordot(freq_cho, (comp_cho * Tdag_terms),
+                                  axes=((-1,), (1,)))
+
     b = cov_Tdag_terms + flx0_add + np.swapaxes(mu, 0, 1)
 
     return b
