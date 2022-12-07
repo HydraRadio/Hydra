@@ -177,7 +177,7 @@ ants1, ants2 = list(zip(*antpairs))
 
 # Generate random point source locations
 # RA goes from [0, 2 pi] and Dec from [-pi, +pi].
-ra = np.random.uniform(low=0.0, high=1.8, size=Nptsrc)
+ra = np.random.uniform(low=0.0, high=1.0, size=Nptsrc)
 dec = np.random.uniform(low=-0.6, high=-0.4, size=Nptsrc) # close to HERA stripe
 
 # Generate fluxes
@@ -750,7 +750,7 @@ for n in range(Niters):
 
             # Hardcoded parameters. Make variations smooth in time/freq.
             sig_freq = 0.5 * (freqs[-1] - freqs[0])
-            prior_std=1e-2
+            prior_std=1e-1
             cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
                                                           prior_std, sig_freq,
                                                           ridge=1e-6)
@@ -822,8 +822,8 @@ for n in range(Niters):
             beam_lhs_shape = (axlen, axlen)
 
             # Build linear operator object
-            beam_linear_op = LinearOperator(matvec=beam_lhs_operator,
-                                            shape=beam_lhs_shape)
+            #beam_linear_op = LinearOperator(matvec=beam_lhs_operator,
+                                            #shape=beam_lhs_shape)
 
             print("Beginning solve")
             #x_soln, convergence_info = solver(beam_linear_op, bbeam,
@@ -831,14 +831,17 @@ for n in range(Niters):
             x_soln = np.linalg.solve(matr, bbeam)
             convergence_info=0
             print(f"Done solving, Niter: {convergence_info}")
-            btest = beam_linear_op(x_soln)
-            allclose = np.allclose(btest, bbeam)
-            if not allclose:
-                abs_diff = np.abs(btest-bbeam)
-                wh_max_diff = np.argmax(abs_diff)
-                max_diff = abs_diff[wh_max_diff]
-                max_val = bbeam[wh_max_diff]
-                print(f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}")
+
+            test_close = False
+            if test_close:
+                btest = beam_linear_op(x_soln)
+                allclose = np.allclose(btest, bbeam)
+                if not allclose:
+                    abs_diff = np.abs(btest-bbeam)
+                    wh_max_diff = np.argmax(abs_diff)
+                    max_diff = abs_diff[wh_max_diff]
+                    max_val = bbeam[wh_max_diff]
+                    print(f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}")
             x_soln_res = np.reshape(x_soln, shape)
 
             # Has shape Nfreqs, ncoeff, ncomp
