@@ -146,7 +146,7 @@ def fit_zernike_to_beam(beam, freqs, Zmatr, txs, tys):
         az, za = conversions.enu_to_az_za(enu_e=tx,
                                           enu_n=ty,
                                           orientation="uvbeam")
-        rhs = beam.interp(az, za, freqs)[0][1, 0, 0]
+        rhs = beam.interp(az_array=az, za_array=za, freq_array=freqs)[0][1, 0, 0]
         rhs = np.swapaxes(rhs, 0, 1) # Swap source/freq axis
         rhss.append(rhs)
 
