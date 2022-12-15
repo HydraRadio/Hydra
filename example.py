@@ -79,6 +79,9 @@ parser.add_argument("--output-dir", type=str, action="store",
 parser.add_argument("--multiprocess", action="store_true", dest="multiprocess",
                     required=False,
                     help="Whether to use multiprocessing in vis sim calls.")
+parser.add_argument("--beam_prior_std", type=float, action="store", default=1,
+                    required=False, dest="beam_prior_std",
+                    help="Standard deviation of beam coefficient prior, in units of Zernike coefficient")
 args = parser.parse_args()
 
 # Set switches
@@ -750,13 +753,12 @@ for n in range(Niters):
 
             # Hardcoded parameters. Make variations smooth in time/freq.
             sig_freq = 0.5 * (freqs[-1] - freqs[0])
-            prior_std=1e-1
             cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
-                                                          prior_std, sig_freq,
+                                                          args.beam_prior_std, sig_freq,
                                                           ridge=1e-6)
             cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             cov_tuple_0 = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
-                                                          prior_std, sig_freq,
+                                                          args.beam_prior_std, sig_freq,
                                                           ridge=1e-6,
                                                           constrain_phase=True,
                                                           constraint=1)
