@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.linalg import lstsq, toeplitz, cholesky, inv, LinAlgError
-from scipy.special import comb, hyp2f1
+from scipy.special import comb, hyp2f1, jn_zeros, jn
 
 from pyuvsim import AnalyticBeam
 from pyuvsim.analyticbeam import diameter_to_sigma
@@ -82,34 +82,56 @@ def reshape_data_arr(arr, Nfreqs, Ntimes, Nants):
     return arr_beam
 
 
-def construct_zernike_matrix(nmax, txs, tys):
+def get_bess_matr(nmodes, mmodes, txs, tys, tzs, proj='area'):
     """
-    Make the matrix that transforms from the Zernike basis to direction cosines.
+    Make the matrix that transforms from the sparse Fourier-Bessel basis to
+    source positions to direction cosines.
 
     Parameters:
-        nmax (int):
-            Maximum radial degree to use for the Zernike polynomial basis.
-            Can range from 0 to 10.
+        nmodes (array_like):
+            Radial modes to use for the Bessel basis. Should correspond to mmodes
+            argument.
+        mmodes (array_like):
+            Which azimuthal modes to use for the Fourier-Bessel basis
         txs (array_like):
             East-West direction cosine.
         tys (array_like):
             North-South direction cosine.
+        tzs (array_like):
+            Up-Down direction cosine.
+        proj (array_like):
+            Which projection to use. 'area' produces an area-preserving
+            projection, while 'ortho' uses the orthographic projection.
 
     Returns:
-        Zmatr (array_like):
-            Zernike transformation matrix.
+        bess_matr (array_like):
+            Fourier-Bessel transformation matrix.
     """
-    # Just get the polynomials at the specified ls and ms
-    Zdict = zernike(np.ones(66), np.array(txs), np.array(tys))
+    if proj == 'area':
+        rho = np.sqrt(1 - tzs)
+    elif proj == 'ortho':
+        rho = np.sqrt(txs**2 + tys**2)
+    else:
+        raise ValueError("proj keyword must be 'area' or 'ortho'.")
+    phi = np.arctan2(tys, txs)
 
-    # Analytic formula  from inspecting zernike function
-    ncoeff = (nmax + 1) * (nmax + 2) // 2
+    unique_n, ninv = np.unique(nmodes, return_inverse=True)
+    nmax = np.amax(unique_n)
+    bzeros = jn_zeros(0, nmax)
+    # Shape Ntimes, Nptsrc, nmax
+    bess_modes = jn(bzeros[np.newaxis, np.newaxis, :] * rho[:, :, np.newaxis], 0)
+    # Shape Ntimes, Nptsrc, len(nmodes)
+    bess_vals = bess_modes[:, :, ninv]
 
-    # The order of this reshape depends on what order the convert_to_tops spits
-    # out the answer in.
-    Zmatr = np.array(list(Zdict.values())[:ncoeff])
-    Zmatr = np.transpose(Zmatr, axes=(1, 2, 0))
-    return Zmatr
+    unique_m, minv = np.unique(mmodes, return_inverse=True)
+    # Shape Ntimes, Nptsrc, len(unique_m)
+    az_modes = np.exp(1.j * unique_m[np.newaxis, np.newaxis, :] * phi[:, :, np.newaxis])
+    # Shape Ntimes, Nptsrc, len(mmodes)
+    az_vals = az_modes[:, :, minv]
+
+    bess_matr = bess_vals * az_vals
+
+    return bess_matr
 
 
 def fit_zernike_to_beam(beam, freqs, Zmatr, txs, tys):
