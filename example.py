@@ -79,7 +79,7 @@ parser.add_argument("--output-dir", type=str, action="store",
 parser.add_argument("--multiprocess", action="store_true", dest="multiprocess",
                     required=False,
                     help="Whether to use multiprocessing in vis sim calls.")
-parser.add_argument("--beam_prior_std", type=float, action="store", default=1,
+parser.add_argument("--beam-prior-std", type=float, action="store", default=1,
                     required=False, dest="beam_prior_std",
                     help="Standard deviation of beam coefficient prior, in units of Zernike coefficient")
 args = parser.parse_args()
@@ -823,16 +823,9 @@ for n in range(Niters):
             # What the shape would be if the matrix were represented densely
             beam_lhs_shape = (axlen, axlen)
 
-            # Build linear operator object
-            #beam_linear_op = LinearOperator(matvec=beam_lhs_operator,
-                                            #shape=beam_lhs_shape)
-
-            print("Beginning solve")
-            #x_soln, convergence_info = solver(beam_linear_op, bbeam,
-                                              #maxiter=None)
+            print("Beginning solve for beam")
             x_soln = np.linalg.solve(matr, bbeam)
-            convergence_info=0
-            print(f"Done solving, Niter: {convergence_info}")
+            print(f"Done solving for beam")
 
             test_close = False
             if test_close:
@@ -843,7 +836,7 @@ for n in range(Niters):
                     wh_max_diff = np.argmax(abs_diff)
                     max_diff = abs_diff[wh_max_diff]
                     max_val = bbeam[wh_max_diff]
-                    print(f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}")
+                    raise AssertionError(f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}")
             x_soln_res = np.reshape(x_soln, shape)
 
             # Has shape Nfreqs, ncoeff, ncomp
