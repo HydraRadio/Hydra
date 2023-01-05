@@ -568,25 +568,6 @@ def do_cov_cho(cov_tuple, check_op=False):
 
     return cho_tuple
 
-def get_chi2(Mjk, beam_coeffs, data, inv_noise_var):
-    """
-    Get the chi-square for a given set of beam coefficients and data.
-
-    Parameters:
-        Mjk (array_like, complex): Quadratic form that maps beam coefficients to
-            visibilities. Has shape (Ncoeff, Nfreqs, Ntimes, Nants, Nants, Ncoeffs)
-        beam_coeffs (array_like, complex): Has shape (Ncoeff, Nfreqs, Nants)
-        data (array_like, complex): Has shape (Nfreqs, Ntimes, Nants, Nants)
-    """
-    model = np.einsum('zfa,zftaAZ,ZfA->ftaA', beam_coeffs.conj(),
-                      Mjk, beam_coeffs, optimize=True)
-    Nants = data.shape[-1]
-    # zero out the diagonals
-    model[:, :, range(Nants), range(Nants)] = 0
-    dmm = data - model
-    chi2 = np.sum(dmm.conj() * dmm * inv_noise_var)
-    return(dmm, chi2)
-
 
 def get_zernike_rad(r, n, m):
     """
