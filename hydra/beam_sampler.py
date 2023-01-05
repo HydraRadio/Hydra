@@ -304,7 +304,10 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, zern_trans, cov_tuple):
             Inverse variance of same shape as vis. Assumes diagonal covariance
             matrix, which is true in practice.
         cov_tuple (tuple of array):
-            Factorized prior covariance matrix (in the sense of the outer product).
+            Factorized prior covariance matrix in the sense of the tensor product.
+            In other words each element is a prior covariance over a given axis
+            of the beam coefficients (mode, frequency, complex component), and
+            the total covariance is the tensor product of these matrices.
         zern_trans: (array_like): (Complex) matrix that, when applied to a
             vector of Zernike coefficients for one antenna, returns the
             visibilities associated with that antenna.
@@ -573,7 +576,7 @@ def get_zernike_azim(theta, m):
     if m >= 0:
         azim = np.cos(m * theta)
     elif m < 0:
-        azim = np.sin(abs(m) * theta)
+        azim = np.sin(np.abs(m) * theta)
     return(azim)
 
 
@@ -581,16 +584,17 @@ def get_zernike_matrix(nmax, theta, r):
     ncoeff = (nmax + 1) * (nmax + 2) // 2
     zern_matr = np.zeros((ncoeff,) + theta.shape)
 
-    # Precompute these
+    # Precompute trig functions so that
+    # we are not recomputing them over and over for new radial modes
     azim = np.zeros((2 * nmax + 1,) + theta.shape)
     for m in range(-nmax, nmax + 1):
         azim[m] = get_zernike_azim(theta, m)
 
-
+    # iterate over all modes and assign product of radial/azimuthal basis function
     ind = 0
     for n in range(nmax + 1):
         for m in range(-n, n + 1, 2):
-            rad = get_zernike_rad(r, n, abs(m))
+            rad = get_zernike_rad(r, n, np.abs(m))
             zern_matr[ind] = rad * azim[m]
             ind += 1
 
