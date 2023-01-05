@@ -79,6 +79,9 @@ parser.add_argument("--output-dir", type=str, action="store",
 parser.add_argument("--multiprocess", action="store_true", dest="multiprocess",
                     required=False,
                     help="Whether to use multiprocessing in vis sim calls.")
+parser.add_argument("--beam-prior-std", type=float, action="store", default=1,
+                    required=False, dest="beam_prior_std",
+                    help="Standard deviation of beam coefficient prior, in units of Zernike coefficient")
 args = parser.parse_args()
 
 # Set switches
@@ -177,7 +180,7 @@ ants1, ants2 = list(zip(*antpairs))
 
 # Generate random point source locations
 # RA goes from [0, 2 pi] and Dec from [-pi, +pi].
-ra = np.random.uniform(low=0.0, high=1.8, size=Nptsrc)
+ra = np.random.uniform(low=0.0, high=1.0, size=Nptsrc)
 dec = np.random.uniform(low=-0.6, high=-0.4, size=Nptsrc) # close to HERA stripe
 
 # Generate fluxes
@@ -701,7 +704,7 @@ for n in range(Niters):
                                                vmin=-np.pi, vmax=np.pi,
                                                cmap='twilight')
 
-            fig.savefig(f"output/beam_plot_ant_{ant_ind}_iter_{iter}_{type}_{tag}.png")
+            fig.savefig(f"{output_dir}/beam_plot_ant_{ant_ind}_iter_{iter}_{type}_{tag}.png")
             plt.close(fig)
             return
         # Have to have an initial guess and do some precompute
@@ -747,30 +750,21 @@ for n in range(Niters):
 
             amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
             flux_use = get_flux_from_ptsrc_amp(amp_use, freqs, beta_ptsrc)
-            Mjk = hydra.beam_sampler.construct_Mjk(Zmatr, ant_pos, flux_use, ra, dec,
-                                             freqs*1e6, times, polarized=False,
-                                             latitude=hera_latitude,
-                                             multiprocess=MULTIPROCESS)
 
             # Hardcoded parameters. Make variations smooth in time/freq.
             sig_freq = 0.5 * (freqs[-1] - freqs[0])
-            prior_std=1e2
             cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
-                                                          prior_std, sig_freq,
+                                                          args.beam_prior_std, sig_freq,
                                                           ridge=1e-6)
             cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             cov_tuple_0 = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
-                                                          prior_std, sig_freq,
+                                                          args.beam_prior_std, sig_freq,
                                                           ridge=1e-6,
                                                           constrain_phase=True,
                                                           constraint=1)
             cho_tuple_0 = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             # Be lazy and just use the initial guess.
-            coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, 0],
-                                                            'vec')
-            dmm, chi2 = hydra.beam_sampler.get_chi2(Mjk, beam_coeffs, data_beam,
-                                               inv_noise_var_beam)
-            print(f"Beam chi-square before sampling: {chi2}")
+            coeff_mean = beam_coeffs[:, :, 0]
 
         t0 = time.time()
 
@@ -782,35 +776,32 @@ for n in range(Niters):
             else:
                 cov_tuple_use = cov_tuple_0
                 cho_tuple_use = cho_tuple_0
-            zern_trans = hydra.beam_sampler.get_zernike_to_vis(Mjk, beam_coeffs,
-                                                     ant_samp_ind, Nants)
-            cov_Tdag = hydra.beam_sampler.get_cov_Tdag(cov_tuple_use, zern_trans)
+            zern_trans = hydra.beam_sampler.get_zernike_to_vis(Zmatr, ant_pos,
+                                                               flux_use, ra, dec,
+                                                               freqs*1e6, times,
+                                                               beam_coeffs,
+                                                               ant_samp_ind,
+                                                               polarized=False,
+                                                               latitude=hera_latitude,
+                                                               multiprocess=MULTIPROCESS)
+
 
             inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var_beam,
                                                            ant_samp_ind, Nants)
             data_use = hydra.beam_sampler.select_subarr(data_beam, ant_samp_ind, Nants)
 
-            # Have to split real/imag - circ. Gauss so just factor of 2, no off-diags :)
-            inv_noise_var_use = np.repeat(inv_noise_var_use[:, :, :, np.newaxis],
-                                          2, axis=3) * 0.5
-            inv_noise_var_sqrt_use = np.sqrt(inv_noise_var_use)
-
-
-            # This one is actually complex so we use a special fn. in hydra.beam_sampler
-            data_use = hydra.beam_sampler.split_real_imag(data_use, 'vec')
-
             # Construct RHS vector
             rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
                                                              inv_noise_var_use,
-                                                             inv_noise_var_sqrt_use,
                                                              coeff_mean,
-                                                             cov_Tdag,
+                                                             zern_trans,
+                                                             cov_tuple_use,
                                                              cho_tuple_use)
             bbeam = rhs_unflatten.flatten()
             shape = (Nfreqs, ncoeffs,  2)
             cov_Tdag_Ninv_T = hydra.beam_sampler.get_cov_Tdag_Ninv_T(inv_noise_var_use,
-                                                                     cov_Tdag,
-                                                                     zern_trans)
+                                                                     zern_trans,
+                                                                     cov_tuple_use)
             axlen = np.prod(shape)
             matr = cov_Tdag_Ninv_T.reshape([axlen, axlen]) + np.eye(axlen)
             if PLOTTING:
@@ -820,7 +811,7 @@ for n in range(Niters):
                 mx = np.amax(np.abs(matr))
                 plt.matshow(np.log10(np.abs(matr) / mx), vmax=0, vmin=-8)
                 plt.colorbar(label="$log_{10}$(|LHS|)")
-                plt.savefig(f"output/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
+                plt.savefig(f"{output_dir}/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
                 plt.close()
 
 
@@ -832,24 +823,20 @@ for n in range(Niters):
             # What the shape would be if the matrix were represented densely
             beam_lhs_shape = (axlen, axlen)
 
-            # Build linear operator object
-            beam_linear_op = LinearOperator(matvec=beam_lhs_operator,
-                                            shape=beam_lhs_shape)
-
-            print("Beginning solve")
-            #x_soln, convergence_info = solver(beam_linear_op, bbeam,
-                                              #maxiter=None)
+            print("Beginning solve for beam")
             x_soln = np.linalg.solve(matr, bbeam)
-            convergence_info=0
-            print(f"Done solving, Niter: {convergence_info}")
-            btest = beam_linear_op(x_soln)
-            allclose = np.allclose(btest, bbeam)
-            if not allclose:
-                abs_diff = np.abs(btest-bbeam)
-                wh_max_diff = np.argmax(abs_diff)
-                max_diff = abs_diff[wh_max_diff]
-                max_val = bbeam[wh_max_diff]
-                print(f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}")
+            print(f"Done solving for beam")
+
+            test_close = False
+            if test_close:
+                btest = beam_linear_op(x_soln)
+                allclose = np.allclose(btest, bbeam)
+                if not allclose:
+                    abs_diff = np.abs(btest-bbeam)
+                    wh_max_diff = np.argmax(abs_diff)
+                    max_diff = abs_diff[wh_max_diff]
+                    max_val = bbeam[wh_max_diff]
+                    raise AssertionError(f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}")
             x_soln_res = np.reshape(x_soln, shape)
 
             # Has shape Nfreqs, ncoeff, ncomp
@@ -859,9 +846,6 @@ for n in range(Niters):
             # Update the coeffs between rounds
             beam_coeffs[:, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, 0] \
                                                + 1.j * x_soln_swap[:, :, 1]
-            dmm, chi2 = hydra.beam_sampler.get_chi2(Mjk, beam_coeffs, data_beam,
-                                               inv_noise_var_beam)
-            print(f"Beam chi-square after sampling, iteration {n}: {chi2}")
             if PLOTTING:
                 plot_beam_cross(beam_coeffs, ant_samp_ind, n, '',type='beam')
 
