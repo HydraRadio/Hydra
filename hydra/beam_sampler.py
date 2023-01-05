@@ -82,7 +82,7 @@ def reshape_data_arr(arr, Nfreqs, Ntimes, Nants):
     return arr_beam
 
 
-def get_bess_matr(nmodes, mmodes, txs, tys, tzs, proj='area'):
+def get_bess_matr(nmodes, mmodes, txs, tys, tzs, proj='area', return_rho_phi=False):
     """
     Make the matrix that transforms from the sparse Fourier-Bessel basis to
     source positions to direction cosines.
@@ -102,10 +102,16 @@ def get_bess_matr(nmodes, mmodes, txs, tys, tzs, proj='area'):
         proj (array_like):
             Which projection to use. 'area' produces an area-preserving
             projection, while 'ortho' uses the orthographic projection.
+        return_rho_phi (bool):
+            Whether to return the projected disc coordinates or not.
 
     Returns:
         bess_matr (array_like):
             Fourier-Bessel transformation matrix.
+        rho (array_like):
+            Radial coordinate on disc projection.
+        phi (array_like):
+            Azimuthal coordinate on disc projection.
     """
     if proj == 'area':
         rho = np.sqrt(1 - tzs)
@@ -131,54 +137,74 @@ def get_bess_matr(nmodes, mmodes, txs, tys, tzs, proj='area'):
 
     bess_matr = bess_vals * az_vals
 
-    return bess_matr
+    if return_rho_phi:
+        return_package = (bess_matr, rho, phi)
+    else:
+        return_package = bess_matr
+
+    return return_package
 
 
-def fit_zernike_to_beam(beam, freqs, Zmatr, txs, tys):
+def fit_bess_to_beam(beam, freqs, nmodes, mmodes, txs, tys, tzs, proj='area',
+                     rho_diff=1e-4):
     """
-    Get the best fit Zernike coefficients for a beam based on its value at a
-    a set of source positions at certain sidereal times, from a fixed latitude,
-    at a set of frequencies. A least-squares algorithm is used to perform the
+    Get the best fit Fourier-Bessel coefficients for a beam based on its value at a
+    a set direction cosines. A least-squares algorithm is used to perform the
     fits.
 
     Parameters:
         beam (pyuvsim.Beam):
             The beam being fitted.
-        nmax (int):
-            Maximum radial mode of the Zernike fit.
-        lsts (array_like):
-            Sidereal times of the observation.
-        latitude (float):
-            Latitude of observing, in radians.
         freqs (array_like):
-            Frequencies of obseration.
+            Frequencies for the beam, in Hz.
+        nmodes (array_like):
+            Radial modes to use for the Bessel basis. Should correspond to mmodes
+            argument.
+        mmodes (array_like):
+            Which azimuthal modes to use for the Fourier-Bessel basis
+        txs (array_like):
+            East-West direction cosine.
+        tys (array_like):
+            North-South direction cosine.
+        tzs (array_like):
+            Up-Down direction cosine.
+        proj (array_like):
+            Which projection to use. 'area' produces an area-preserving
+            projection, while 'ortho' uses the orthographic projection.
+        rho_diff (float):
+            offset for radial coordinate to compute area element on disc. Used
+            so that the central pixel (where the beam is largest in amplitude)
+            does not contribute 0 to the beam volume.
+
 
     Returns:
         fit_beam (array_like):
             The best-fit Zernike coefficients for the input beam.
     """
-    Ntimes, Nsource, ncoeff = Zmatr.shape
-    Nfreqs = len(freqs)
 
-    # Diagonal so just iterate over times
-    # There is a faster way to do this using scipy.sparse and encoding Z
-    # as block-diagonal in time and frequency
+    bess_matr, rho, phi = get_bess_matr(nmodes, mmodes, txs, tys, tzs, proj=proj,
+                                        return_rho_phi=True)
+    rho_un = np.unique(rho)
+    phi_un = np.unique(phi)
+
+    drho = rho[1] - rho[0]
+    dphi = phi_un[1] - phi_un[0]
+    dA = (rho + rho_diff * drho) * drho * dphi
+
+    az, za = conversions.enu_to_az_za(enu_e=txs,  enu_n=tys,
+                                      orientation="uvbeam")
+    rhs = beam.interp(az_array=az, za_array=za, freq_array=freqs)[0][1, 0, 0]
+
     fit_beam = []
-    rhss = []
-    for tind, (tx, ty) in enumerate(zip(txs, tys)):
-        az, za = conversions.enu_to_az_za(enu_e=tx,
-                                          enu_n=ty,
-                                          orientation="uvbeam")
-        rhs = beam.interp(az_array=az, za_array=za, freq_array=freqs)[0][1, 0, 0]
-        rhs = np.swapaxes(rhs, 0, 1) # Swap source/freq axis
-        rhss.append(rhs)
-
-    rhss = np.reshape(rhss, (Ntimes * Nsource, Nfreqs))
-
     # Loop over frequencies
     for freq_ind in range(Nfreqs):
-        fit_beam_f = lstsq(Zmatr.reshape(Ntimes*Nsource, ncoeff), rhss[:, freq_ind])[0]
-        fit_beam.append(fit_beam_f)
+        bess_res = bess_matr.reshape(phi.size, bess_matr[0, 0].size)
+        BTdA = bess_res.T.conj() * dA.flatten()
+        lhs_op = BTdA @ Bres
+        rhs_vec = BTdA @ (rhs[freq_use]).reshape(phi.size)
+        soln = solve(lhs_op, rhs_vec, assume_a='her')
+        beam_soln = (Bres @ soln).reshape(phi.shape)
+        fit_beam.append(beam_soln)
 
     # Reshape coefficients array
     fit_beam = np.array(fit_beam) # Has shape Nfreqs, ncoeffs
@@ -227,17 +253,19 @@ def select_subarr(arr, ant_samp_ind, Nants):
     return subarr
 
 
-def get_zernike_to_vis(Zmatr, ants, fluxes, ra, dec, freqs, lsts,
-                             beam_coeffs, ant_samp_ind,
-                             polarized=False, precision=1,
-                             latitude=-30.7215 * np.pi / 180.0, use_feed="x",
-                             multiprocess=True, low_mem=False):
+def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
+                    beam_coeffs, ant_samp_ind, polarized=False, precision=1,
+                    latitude=-30.7215 * np.pi / 180.0, use_feed="x",
+                    multiprocess=True, low_mem=False):
     """
     Compute the matrices that act as the quadratic forms by which visibilities
     are made. Calls simulate_vis_per_source to get the Fourier operator, then
     transforms to the Zernike basis.
 
     Parameters:
+        bess_matr (array_like, complex):
+            Matrix that transforms from Fourier-Bessel coefficients to beam
+            value at source position
         ants (dict):
             Dictionary of antenna positions. The keys are the antenna names
             (integers) and the values are the Cartesian x,y,z positions of the
@@ -275,7 +303,7 @@ def get_zernike_to_vis(Zmatr, ants, fluxes, ra, dec, freqs, lsts,
 
 
     Returns:
-        zern_trans (array_like):
+        bess_trans (array_like):
             Operator that returns visibilities when supplied with
             beam coefficients. Shape (NFREQS, NTIMES, NANTS, ncoeff)`.
     """
@@ -303,21 +331,21 @@ def get_zernike_to_vis(Zmatr, ants, fluxes, ra, dec, freqs, lsts,
     beam_res = np.swapaxes(beam_coeffs.conj()[:, :, ant_inds], 0, -1) # afz
 
     # afz,tsz->afts->ftas ftas,ftas->ftas
-    beam_on_sky = np.tensordot(beam_res, Zmatr.conj(),
+    beam_on_sky = np.tensordot(beam_res, bess_matr.conj(),
                                 axes=((-1,), (-1,))).transpose((1, 2, 0, 3))
     # reassign to save memory
     sky_amp_phase *= beam_on_sky
 
-    zern_trans = np.zeros((freqs.size, lsts.size, nants - 1, beam_res.shape[-1]),
+    bess_trans = np.zeros((freqs.size, lsts.size, nants - 1, beam_res.shape[-1]),
                           dtype=sky_amp_phase.dtype)
     for time_ind in range(lsts.size):
-        zern_trans[:, time_ind, :, :] = np.tensordot(sky_amp_phase[:, time_ind],
-                                                     np.swapaxes(Zmatr, -1, -2)[time_ind],
+        bess_trans[:, time_ind, :, :] = np.tensordot(sky_amp_phase[:, time_ind],
+                                                     np.swapaxes(bess_matr, -1, -2)[time_ind],
                                                      axes=((-1, ), (-1, )))
-    return zern_trans
+    return bess_trans
 
 
-def get_cov_Tdag_Ninv_T(inv_noise_var, zern_trans, cov_tuple):
+def get_cov_Tdag_Ninv_T(inv_noise_var, bess_trans, cov_tuple):
     """
     Construct the LHS operator for the Gibbs sampling.
 
@@ -330,7 +358,7 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, zern_trans, cov_tuple):
             In other words each element is a prior covariance over a given axis
             of the beam coefficients (mode, frequency, complex component), and
             the total covariance is the tensor product of these matrices.
-        zern_trans: (array_like): (Complex) matrix that, when applied to a
+        bess_trans: (array_like): (Complex) matrix that, when applied to a
             vector of Zernike coefficients for one antenna, returns the
             visibilities associated with that antenna.
     """
@@ -340,12 +368,12 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, zern_trans, cov_tuple):
     # These stay as elementwise multiply since the beam at given times/freqs
     # Should not affect the vis at other times/freqs
     # ftaZ->Zfta fta,Zfta->Zfta
-    zern_trans_use = zern_trans.transpose((3, 0, 1, 2))
+    bess_trans_use = bess_trans.transpose((3, 0, 1, 2))
 
-    Ninv_T = inv_noise_var * zern_trans_use
+    Ninv_T = inv_noise_var * bess_trans_use
     # zfta,ZFta->zfZF
     # Actually just want diagonals but don't need to save memory here
-    Tdag_Ninv_T = np.tensordot(zern_trans_use.conj(), Ninv_T,
+    Tdag_Ninv_T = np.tensordot(bess_trans_use.conj(), Ninv_T,
                               axes=((-1, -2), (-1, -2)))
     # Get the diagonals zfZF -> fzZ
     Tdag_Ninv_T = Tdag_Ninv_T[:, range(Nfreqs), :, range(Nfreqs)]
@@ -369,7 +397,7 @@ def apply_operator(x, cov_Tdag_Ninv_T):
 
     Parameters:
         x (array_like):
-            Complex zernike coefficients, split into real/imag.
+            Complex Fourier-Bessel coefficients, split into real/imag.
         cov_Tdag_Ninv_T (array_like):
             One summand of LHS matrix applied to x
 
@@ -402,7 +430,7 @@ def get_std_norm(shape):
 
     return std_norm
 
-def construct_rhs(vis, inv_noise_var, mu, zern_trans,
+def construct_rhs(vis, inv_noise_var, mu, bess_trans,
                   cov_tuple, cho_tuple, flx=True):
     """
     Construct the right hand side of the Gaussian Constrained Realization (GCR)
@@ -421,7 +449,7 @@ def construct_rhs(vis, inv_noise_var, mu, zern_trans,
         cov_tuple (tuple of arr): tensor-factored covariance matrix.
         cho_tuple (tuple of arr): tensor-factored, cholesky decomposed prior
             covariance matrix.
-        zern_trans (array_like):
+        bess_trans (array_like):
             Operator that maps beam coefficients from one antenna into its
             subset of visibilities.
         flx (bool):
@@ -443,13 +471,13 @@ def construct_rhs(vis, inv_noise_var, mu, zern_trans,
         flx1 = np.zeros(flx1_shape)
 
     # ftaZ->Zfta
-    zern_trans_use = zern_trans.transpose((3, 0, 1, 2))
+    bess_trans_use = bess_trans.transpose((3, 0, 1, 2))
 
     Ninv_d = inv_noise_var * vis
     Ninv_sqrt_flx1 = np.sqrt(inv_noise_var) * flx1
 
     # Weird factors of sqrt(2) etc since we will split these in a sec
-    Tdag_terms = np.sum(zern_trans_use.conj() * (2 * Ninv_d + np.sqrt(2) * Ninv_sqrt_flx1),
+    Tdag_terms = np.sum(bess_trans_use.conj() * (2 * Ninv_d + np.sqrt(2) * Ninv_sqrt_flx1),
                         axis=(2,3))
     Tdag_terms = split_real_imag(Tdag_terms, kind='vec')
 
