@@ -203,8 +203,7 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, txs, tys, tzs, proj='area',
         lhs_op = BTdA @ Bres
         rhs_vec = BTdA @ (rhs[freq_use]).reshape(phi.size)
         soln = solve(lhs_op, rhs_vec, assume_a='her')
-        beam_soln = (Bres @ soln).reshape(phi.shape)
-        fit_beam.append(beam_soln)
+        fit_beam.append(soln)
 
     # Reshape coefficients array
     fit_beam = np.array(fit_beam) # Has shape Nfreqs, ncoeffs
