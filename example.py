@@ -823,9 +823,7 @@ for n in range(Niters):
             # What the shape would be if the matrix were represented densely
             beam_lhs_shape = (axlen, axlen)
 
-            print("Beginning solve for beam")
             x_soln = np.linalg.solve(matr, bbeam)
-            print(f"Done solving for beam")
 
             test_close = False
             if test_close:
