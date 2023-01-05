@@ -68,8 +68,11 @@ parser.add_argument("--sigma-noise", type=float, action="store",
                     help="Standard deviation of the noise, in the same units "
                          "as the visibility data.")
 parser.add_argument("--beam-nmax", type=int, action="store",
-                    default=10, required=False, dest="beam_nmax",
-                    help="Maximum radial degree of the Zernike basis for the beams.")
+                    default=16, required=False, dest="beam_nmax",
+                    help="Maximum radial degree of the Fourier-Bessel basis for the beams.")
+parser.add_argument("--beam-mmax", type=int, action="store",
+                    default=0, required=False, dest="beam_mmax",
+                    help="Maximum azimuthal degree of the Fourier-Bessel basis for the beams.")
 parser.add_argument("--solver", type=str, action="store",
                     default='cg', required=False, dest="solver_name",
                     help="Which sparse matrix solver to use for linear systems ('cg' or 'gmres').")
@@ -114,6 +117,7 @@ Niters = args.Niters
 hex_array = tuple(args.hex_array)
 assert len(hex_array) == 2, "hex-array argument must have length 2."
 beam_nmax = args.beam_nmax
+beam_mmax = args.beam_mmax
 sigma_noise = args.sigma_noise
 
 hera_latitude = -30.7215 * np.pi / 180.0
@@ -668,24 +672,13 @@ for n in range(Niters):
             # Shape ncoeffs, Nfreqs, Nant -- just use a ref freq
             coeff_use = beam_coeffs[:, 0, :]
             Nants = coeff_use.shape[-1]
-            # Zmatr has shape Ntimes, Nsource, ncoeff -- just grab first time
-            ra_use = np.linspace(0, 2 * np.pi, num=100)
-            dec_use = np.linspace(-np.pi/2,np.pi/2, num=100)
-            RA, DEC = np.meshgrid(ra_use, dec_use)
-            txs, tys, tzs = convert_to_tops(RA.flatten(), DEC.flatten(), times,
-                                            hera_latitude)
-            bess_matr_use = hydra.beam_sampler.get_bess_matr(beam_nmodes,
-                                                             beam_mmodes,
-                                                             np.array(txs),
-                                                             np.array(tys),
-                                                             np.array(tzs))
             if type == 'cross':
                 fig, ax = plt.subplots(figsize=(16, 9), nrows=Nants, ncols=Nants,
                                        subplot_kw={'projection': 'polar'})
                 for ant_ind1 in range(Nants):
-                    beam_use1 = bess_matr_use @ (coeff_use[:, ant_ind1])
+                    beam_use1 = bess_matr_fit @ (coeff_use[:, ant_ind1])
                     for ant_ind2 in range(Nants):
-                        beam_use2 = bess_matr_use @ (coeff_use[:, ant_ind2])
+                        beam_use2 = bess_matr_fit @ (coeff_use[:, ant_ind2])
                         beam_cross = (beam_use1 * beam_use2.conj())[-1]
                         if ant_ind1 >= ant_ind2:
                             ax[ant_ind1, ant_ind2].pcolormesh(RA.flatten(),
@@ -701,7 +694,7 @@ for n in range(Niters):
                                                               cmap='twilight')
             else:
                 fig, ax = plt.subplots(ncols=2, subplot_kw={'projection': 'polar'})
-                beam_use = (bess_matr_use@(coeff_use[:, ant_ind]))[-1]
+                beam_use = (bess_matr_fit@(coeff_use[:, ant_ind]))[-1]
                 ax[0].pcolormesh(RA.flatten(), DEC.flatten(), np.abs(beam_use),
                                  vmin=0, vmax=1)
                 ax[1].pcolormesh(RA.flatten(), DEC.flatten(), np.angle(beam_use),
@@ -712,6 +705,9 @@ for n in range(Niters):
             return
         # Have to have an initial guess and do some precompute
         if n == 0:
+            beam_nmodes, beam_mmodes = np.mesgrid(np.arange(1, beam_nmax + 1), np.arange(-beam_mmax, beam_mmax + 1))
+            beam_nmodes = beam_nmodes.flatten()
+            beam_mmodes = beam_mmodes.flatten()
             # Make a copy of the data that is more convenient for the beam calcs.
             data_beam = hydra.beam_sampler.reshape_data_arr(data,
                                                             Nfreqs,
@@ -728,20 +724,38 @@ for n in range(Niters):
                                                                      Nants)
             inv_noise_var_beam = inv_noise_var_beam + np.swapaxes(inv_noise_var_beam, -1, -2)
 
-            txs, tys, tzs = convert_to_tops(ra, dec, times, hera_latitude)
 
-            Zmatr = hydra.beam_sampler.construct_zernike_matrix(beam_nmax,
-                                                                np.array(txs),
-                                                                np.array(tys))
+
+            ra_fit = np.linspace(0, 2 * np.pi, num=400)
+            dec_fit = np.linspace(hera_latitude-np.pi/2,hera_latitude + np.pi / 2, num=100)
+            RA, DEC = np.meshgrid(ra_fit, dec_fit)
+            txs_fit, tys_fit, tzs_fit = convert_to_tops(RA.flatten(), DEC.flatten(), times,
+                                            hera_latitude)
+            bess_matr_fit = hydra.beam_sampler.get_bess_matr(beam_nmodes,
+                                                             beam_mmodes,
+                                                             np.array(txs_fit)[0],
+                                                             np.array(tys_fit)[0],
+                                                             np.array(tzs_fit)[0])
+            beam_coeffs_fit = hydra.beam_sampler.fit_bess_to_beam(
+                                              beams[0],
+                                              1e6 * freqs,
+                                              beam_nmodes,
+                                              beam_mmodes,
+                                              bess_matr,
+                                              txs_fit,
+                                              tys_fit,
+                                              tzs_fit)
+
+            txs, tys, tzs = convert_to_tops(ra, dec, times, hera_latitude)
+            bess_matr = hydra.beam_sampler.get_bess_matr(beam_nmodes,
+                                                                    beam_mmodes,
+                                                                    np.array(txs),
+                                                                    np.array(tys),
+                                                                    np.array(tzs))
 
             # All the same, so just repeat (for now)
             beam_coeffs = np.array(Nants * \
-                                   [hydra.beam_sampler.fit_zernike_to_beam(
-                                                                     beams[0],
-                                                                     1e6 * freqs,
-                                                                     Zmatr,
-                                                                     txs,
-                                                                     tys), ])
+                                   [)
             # Want shape ncoeff, Nfreqs, Nants
             beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
             np.save(os.path.join(output_dir, "best_fit_beam"), beam_coeffs)
@@ -779,7 +793,7 @@ for n in range(Niters):
             else:
                 cov_tuple_use = cov_tuple_0
                 cho_tuple_use = cho_tuple_0
-            zern_trans = hydra.beam_sampler.get_zernike_to_vis(Zmatr, ant_pos,
+            bess_trans = hydra.beam_sampler.get_bess_to_vis(bess_matr, ant_pos,
                                                                flux_use, ra, dec,
                                                                freqs*1e6, times,
                                                                beam_coeffs,
@@ -797,13 +811,13 @@ for n in range(Niters):
             rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
                                                              inv_noise_var_use,
                                                              coeff_mean,
-                                                             zern_trans,
+                                                             bess_trans,
                                                              cov_tuple_use,
                                                              cho_tuple_use)
             bbeam = rhs_unflatten.flatten()
             shape = (Nfreqs, ncoeffs,  2)
             cov_Tdag_Ninv_T = hydra.beam_sampler.get_cov_Tdag_Ninv_T(inv_noise_var_use,
-                                                                     zern_trans,
+                                                                     bess_trans,
                                                                      cov_tuple_use)
             axlen = np.prod(shape)
             matr = cov_Tdag_Ninv_T.reshape([axlen, axlen]) + np.eye(axlen)
