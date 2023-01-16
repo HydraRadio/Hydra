@@ -64,18 +64,18 @@ def apply_gains(v, gains, ants, antpairs, inline=False):
 
 def load_gain_model(gain_model_file, lst_pad=[0,0], freq_pad=[0,0], pad_value=1.):
     """
-    Load complex gain model for each antenna into a single array, and 
-    zero-pad the edges of the array in the time and frequency dimensions 
+    Load complex gain model for each antenna into a single array, and
+    zero-pad the edges of the array in the time and frequency dimensions
     if needed.
 
     Parameters:
         gain_model_file (str):
-            Path to file containing a numpy array of shape 
-            `(Nants, Nfreqs, Ntimes)`. The antenna ordering is assumed to 
+            Path to file containing a numpy array of shape
+            `(Nants, Nfreqs, Ntimes)`. The antenna ordering is assumed to
             be correct; the ordering is not checked.
         lst_pad (list of int):
-            How many time samples to add as zero-padding to the data arrays. 
-            The list should have two entries, with the number of channels to  
+            How many time samples to add as zero-padding to the data arrays.
+            The list should have two entries, with the number of channels to
             add before and after the existing ones.
         freq_pad (list of int):
             Same as `lst_pad`, but for frequency channels.
@@ -84,8 +84,8 @@ def load_gain_model(gain_model_file, lst_pad=[0,0], freq_pad=[0,0], pad_value=1.
 
     Returns:
         gain_model (array_like):
-            Model for each antenna gain, of shape `(Nants, Nfreqs, Ntimes)`, 
-            where the frequency and time dimensions have now been zero-padded 
+            Model for each antenna gain, of shape `(Nants, Nfreqs, Ntimes)`,
+            where the frequency and time dimensions have now been zero-padded
             if requested.
     """
     # Load file
@@ -133,7 +133,7 @@ def extract_vis_from_sim(ants, antpairs, sim_vis):
     vis = np.zeros((len(antpairs), Nfreqs, Ntimes), dtype=sim_vis.dtype)
     for i, bl in enumerate(antpairs):
         ant1, ant2 = bl
-        
+
         # Ensure not conjugated
         if ant1 > ant2:
             ant1 = bl[1]
@@ -157,17 +157,17 @@ def extract_vis_from_uvdata(uvd, exclude_autos=True, lst_pad=[0,0], freq_pad=[0,
         exclude_autos (bool):
             Whether to exclude auto (zero-spacing) baselines.
         lst_pad (list of int):
-            How many time samples to add as zero-padding to the data arrays. 
-            The list should have two entries, with the number of channels to  
+            How many time samples to add as zero-padding to the data arrays.
+            The list should have two entries, with the number of channels to
             add before and after the existing ones.
         freq_pad (list of int):
-            Same as `lst_pad`, but for frequency channels. 
+            Same as `lst_pad`, but for frequency channels.
 
     Returns:
         vis (array_like):
             Array of complex visibilities with shape (Nbls, Nfreqs, Ntimes).
         antpair (list of tuple):
-            Ordered list of antenna pairs, with the same ordering as the 
+            Ordered list of antenna pairs, with the same ordering as the
             first dimension of `vis`.
         ants (list):
             List of unique antenna IDs.
@@ -181,17 +181,17 @@ def extract_vis_from_uvdata(uvd, exclude_autos=True, lst_pad=[0,0], freq_pad=[0,
         ant2 = antpair[1]
         Nfreqs = bl_data.shape[1]
         Ntimes = bl_data.shape[0]
-        
+
         # Add antpair to the list
         if ant1 == ant2 and exclude_autos:
             continue # exclude autos
         antpairs.append((ant1, ant2))
-        
+
         # Add data for this bl to array (with zero-padding if necessary)
         dat = np.zeros((freq_pad[0] + Nfreqs + freq_pad[1],
-                        lst_pad[0] + Ntimes + lst_pad[1]), 
+                        lst_pad[0] + Ntimes + lst_pad[1]),
                        dtype=bl_data.dtype)
-        dat[freq_pad[0]:Nfreqs+freq_pad[0], 
+        dat[freq_pad[0]:Nfreqs+freq_pad[0],
             lst_pad[0]:Ntimes+lst_pad[0]] = bl_data[:,:].T
         vis.append(dat)
 
@@ -206,17 +206,17 @@ def extract_vis_from_uvdata(uvd, exclude_autos=True, lst_pad=[0,0], freq_pad=[0,
 
 def extend_coords_with_padding(arr, pad=[0,0]):
     """
-    Take an array with (e.g.) frequencies or times and extend it by a number 
-    of elements of padding on either side. The values are extrapolated into 
+    Take an array with (e.g.) frequencies or times and extend it by a number
+    of elements of padding on either side. The values are extrapolated into
     the padded region.
 
     Parameters:
         arr (array_like):
             Array of coordinates. Expected to be monotonic and equally-spaced.
         pad (list):
-            How many array elements of padding to add on either side of the 
-            array. For example, if `arr` has size `10` and `pad=[2,3]`, the 
-            new array will have `15` elements, with `2` added to the start 
+            How many array elements of padding to add on either side of the
+            array. For example, if `arr` has size `10` and `pad=[2,3]`, the
+            new array will have `15` elements, with `2` added to the start
             and `3` added to the end.
 
     Returns:
@@ -340,12 +340,12 @@ def convert_to_tops(ra, dec, lsts, latitude, precision=1):
         tys.append(ty)
         tzs.append(tz)
 
-    return(txs, tys, tzs)
+    return(np.array(txs), np.array(tys), np.array(tzs))
 
 
 def get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc, curv_ptsrc=None, ref_freq=100.):
     """
-    Calculate flux as a function of frequency for each point source, assuming 
+    Calculate flux as a function of frequency for each point source, assuming
     a power-law spectrum.
 
     Parameters:
@@ -368,13 +368,13 @@ def get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc, curv_ptsrc=None, ref_
     if isinstance(beta_ptsrc, float):
         beta_ptsrc = beta_ptsrc * np.ones_like(ptsrc_amps)
     assert ptsrc_amps.size == beta_ptsrc.size
-    
+
     if curv_ptsrc is not None and isinstance(curv_ptsrc, float):
         curv_ptsrc = curv_ptsrc * np.ones_like(ptsrc_amps)
     if curv_ptsrc is None:
         curv_ptsrc = np.zeros_like(ptsrc_amps)
     assert ptsrc_amps.size == curv_ptsrc.size
-    
+
     # Make SEDs
     spec_idx = beta_ptsrc[:,np.newaxis] + curv_ptsrc[:,np.newaxis] \
                                           * np.log(freqs / ref_freq)[np.newaxis,:]
@@ -384,21 +384,21 @@ def get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc, curv_ptsrc=None, ref_
 
 def antenna_dict_from_uvd(uvd):
     """
-    Construct an antenna dictionary (keys are antenna IDs, values are ENU 
+    Construct an antenna dictionary (keys are antenna IDs, values are ENU
     x/y/z coords of the antennas) from a UVData object.
 
     Parameters:
         uvd (UVData object):
-            UVData object that contains necessary metadata about antenna 
+            UVData object that contains necessary metadata about antenna
             and telescope position.
 
     Returns:
         ants (dict):
-            Dictionary containing antenna IDs (keys) and x/y/z positions 
+            Dictionary containing antenna IDs (keys) and x/y/z positions
             in ENU coordinates local to the array (values).
     """
     # Get ENU positions of antennas
-    enu = pyuvdata.utils.ENU_from_ECEF(uvd.antenna_positions + uvd.telescope_location, 
+    enu = pyuvdata.utils.ENU_from_ECEF(uvd.antenna_positions + uvd.telescope_location,
                                        *uvd.telescope_location_lat_lon_alt)
 
     # Get antenna IDs
