@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.linalg import lstsq, toeplitz, cholesky, inv, LinAlgError
+from scipy.linalg import lstsq, toeplitz, cholesky, inv, LinAlgError, solve
 from scipy.special import comb, hyp2f1, jn_zeros, jn
 
 from pyuvsim import AnalyticBeam
@@ -82,7 +82,7 @@ def reshape_data_arr(arr, Nfreqs, Ntimes, Nants):
     return arr_beam
 
 
-def get_bess_matr(nmodes, mmodes, txs, tys, tzs, proj='area', return_rho_phi=False):
+def get_bess_matr(nmodes, mmodes, rho, phi):
     """
     Make the matrix that transforms from the sparse Fourier-Bessel basis to
     source positions to direction cosines.
@@ -93,59 +93,40 @@ def get_bess_matr(nmodes, mmodes, txs, tys, tzs, proj='area', return_rho_phi=Fal
             argument.
         mmodes (array_like):
             Which azimuthal modes to use for the Fourier-Bessel basis
-        txs (array_like):
-            East-West direction cosine.
-        tys (array_like):
-            North-South direction cosine.
-        tzs (array_like):
-            Up-Down direction cosine.
-        proj (array_like):
-            Which projection to use. 'area' produces an area-preserving
-            projection, while 'ortho' uses the orthographic projection.
-        return_rho_phi (bool):
-            Whether to return the projected disc coordinates or not.
+        rho (array_like):
+            Radial coordinate on disc.
+        phi (array_like):
+            Azimuthal coordinate on disc (usually RA's azimuth angle)
 
     Returns:
         bess_matr (array_like):
             Fourier-Bessel transformation matrix.
-        rho (array_like):
-            Radial coordinate on disc projection.
-        phi (array_like):
-            Azimuthal coordinate on disc projection.
     """
-    if proj == 'area':
-        rho = np.sqrt(1 - tzs)
-    elif proj == 'ortho':
-        rho = np.sqrt(txs**2 + tys**2)
-    else:
-        raise ValueError("proj keyword must be 'area' or 'ortho'.")
-    phi = np.arctan2(tys, txs)
+
+
 
     unique_n, ninv = np.unique(nmodes, return_inverse=True)
     nmax = np.amax(unique_n)
     bzeros = jn_zeros(0, nmax)
+    bess_norm = jn(1, bzeros)
     # Shape Ntimes, Nptsrc, nmax
-    bess_modes = jn(bzeros[np.newaxis, np.newaxis, :] * rho[:, :, np.newaxis], 0)
+    bess_modes = jn(0, bzeros[np.newaxis, np.newaxis, :] * rho[:, :, np.newaxis])
     # Shape Ntimes, Nptsrc, len(nmodes)
-    bess_vals = bess_modes[:, :, ninv]
+    bess_vals = bess_modes[:, :, ninv] / bess_norm[ninv]
 
     unique_m, minv = np.unique(mmodes, return_inverse=True)
     # Shape Ntimes, Nptsrc, len(unique_m)
     az_modes = np.exp(1.j * unique_m[np.newaxis, np.newaxis, :] * phi[:, :, np.newaxis])
     # Shape Ntimes, Nptsrc, len(mmodes)
-    az_vals = az_modes[:, :, minv]
+    az_vals = az_modes[:, :, minv] / np.sqrt(np.pi) # making orthonormal
 
     bess_matr = bess_vals * az_vals
 
-    if return_rho_phi:
-        return_package = (bess_matr, rho, phi)
-    else:
-        return_package = bess_matr
 
-    return return_package
+    return bess_matr
 
 
-def fit_bess_to_beam(beam, freqs, nmodes, mmodes, txs, tys, tzs, proj='area',
+def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi,
                      rho_diff=1e-4):
     """
     Get the best fit Fourier-Bessel coefficients for a beam based on its value at a
@@ -162,15 +143,11 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, txs, tys, tzs, proj='area',
             argument.
         mmodes (array_like):
             Which azimuthal modes to use for the Fourier-Bessel basis
-        txs (array_like):
-            East-West direction cosine.
-        tys (array_like):
-            North-South direction cosine.
-        tzs (array_like):
-            Up-Down direction cosine.
-        proj (array_like):
-            Which projection to use. 'area' produces an area-preserving
-            projection, while 'ortho' uses the orthographic projection.
+        rho (array_like):
+            Radial coordinate on disc.
+        phi (array_like):
+            Azimuthal coordinate on disc (usually RA's azimuth angle)
+
         rho_diff (float):
             offset for radial coordinate to compute area element on disc. Used
             so that the central pixel (where the beam is largest in amplitude)
@@ -182,26 +159,28 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, txs, tys, tzs, proj='area',
             The best-fit Zernike coefficients for the input beam.
     """
 
-    bess_matr, rho, phi = get_bess_matr(nmodes, mmodes, txs, tys, tzs, proj=proj,
-                                        return_rho_phi=True)
+    bess_matr = get_bess_matr(nmodes, mmodes, rho, phi)
+    ncoeff = bess_matr.shape[-1]
     rho_un = np.unique(rho)
     phi_un = np.unique(phi)
 
-    drho = rho[1] - rho[0]
+
+    drho = rho_un[1] - rho_un[0]
     dphi = phi_un[1] - phi_un[0]
     dA = (rho + rho_diff * drho) * drho * dphi
 
-    az, za = conversions.enu_to_az_za(enu_e=txs,  enu_n=tys,
-                                      orientation="uvbeam")
-    rhs = beam.interp(az_array=az, za_array=za, freq_array=freqs)[0][1, 0, 0]
+    rhs = beam.interp(az_array=phi.flatten(),
+                      za_array=np.arccos(1 - rho**2).flatten(),
+                      freq_array=freqs)[0][1, 0, 0] # FIXME: analyticbeam gives nans and zeros for all other indices
 
     fit_beam = []
     # Loop over frequencies
+    Nfreqs = len(freqs)
+    BTdA = (bess_matr.conj() * dA[:, :, np.newaxis])
+    lhs_op = np.tensordot(BTdA, bess_matr, axes=((0, 1), (0, 1)))
+    BTdA_res = BTdA.reshape(rho.size, ncoeff)
     for freq_ind in range(Nfreqs):
-        bess_res = bess_matr.reshape(phi.size, bess_matr[0, 0].size)
-        BTdA = bess_res.T.conj() * dA.flatten()
-        lhs_op = BTdA @ Bres
-        rhs_vec = BTdA @ (rhs[freq_use]).reshape(phi.size)
+        rhs_vec = (BTdA_res * rhs[freq_ind, :, np.newaxis]).sum(axis=0)
         soln = solve(lhs_op, rhs_vec, assume_a='her')
         fit_beam.append(soln)
 

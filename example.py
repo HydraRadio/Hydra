@@ -679,25 +679,25 @@ for n in range(Niters):
                     beam_use1 = bess_matr_fit @ (coeff_use[:, ant_ind1])
                     for ant_ind2 in range(Nants):
                         beam_use2 = bess_matr_fit @ (coeff_use[:, ant_ind2])
-                        beam_cross = (beam_use1 * beam_use2.conj())[-1]
+                        beam_cross = (beam_use1 * beam_use2.conj())
                         if ant_ind1 >= ant_ind2:
-                            ax[ant_ind1, ant_ind2].pcolormesh(RA.flatten(),
-                                                              DEC.flatten(),
+                            ax[ant_ind1, ant_ind2].pcolormesh(PHI,
+                                                              RHO,
                                                               np.abs(beam_cross),
                                                               vmin=0, vmax=1)
                         else:
-                            ax[ant_ind1, ant_ind2].pcolormesh(RA.flatten(),
-                                                              DEC.flatten(),
+                            ax[ant_ind1, ant_ind2].pcolormesh(PHI,
+                                                              RHO,
                                                               np.angle(beam_cross),
                                                               vmin=-np.pi,
                                                               vmax=np.pi,
                                                               cmap='twilight')
             else:
                 fig, ax = plt.subplots(ncols=2, subplot_kw={'projection': 'polar'})
-                beam_use = (bess_matr_fit@(coeff_use[:, ant_ind]))[-1]
-                ax[0].pcolormesh(RA.flatten(), DEC.flatten(), np.abs(beam_use),
+                beam_use = (bess_matr_fit@(coeff_use[:, ant_ind]))
+                ax[0].pcolormesh(PHI, RHO, np.abs(beam_use),
                                  vmin=0, vmax=1)
-                ax[1].pcolormesh(RA.flatten(), DEC.flatten(), np.angle(beam_use),
+                ax[1].pcolormesh(PHI, RHO, np.angle(beam_use),
                                  vmin=-np.pi, vmax=np.pi, cmap='twilight')
 
             fig.savefig(f"{output_dir}/beam_plot_ant_{ant_ind}_iter_{iter}_{type}_{tag}.png")
@@ -705,7 +705,7 @@ for n in range(Niters):
             return
         # Have to have an initial guess and do some precompute
         if n == 0:
-            beam_nmodes, beam_mmodes = np.mesgrid(np.arange(1, beam_nmax + 1), np.arange(-beam_mmax, beam_mmax + 1))
+            beam_nmodes, beam_mmodes = np.meshgrid(np.arange(1, beam_nmax + 1), np.arange(-beam_mmax, beam_mmax + 1))
             beam_nmodes = beam_nmodes.flatten()
             beam_mmodes = beam_mmodes.flatten()
             # Make a copy of the data that is more convenient for the beam calcs.
@@ -725,37 +725,32 @@ for n in range(Niters):
             inv_noise_var_beam = inv_noise_var_beam + np.swapaxes(inv_noise_var_beam, -1, -2)
 
 
+            rho_fit = np.linspace(0, 1, num=100)
+            phi_fit = np.linspace(0, 2 * np.pi, num=400)
+            PHI, RHO = np.meshgrid(phi_fit, rho_fit)
 
-            ra_fit = np.linspace(0, 2 * np.pi, num=400)
-            dec_fit = np.linspace(hera_latitude-np.pi/2,hera_latitude + np.pi / 2, num=100)
-            RA, DEC = np.meshgrid(ra_fit, dec_fit)
-            txs_fit, tys_fit, tzs_fit = convert_to_tops(RA.flatten(), DEC.flatten(), times,
-                                            hera_latitude)
             bess_matr_fit = hydra.beam_sampler.get_bess_matr(beam_nmodes,
                                                              beam_mmodes,
-                                                             np.array(txs_fit)[0],
-                                                             np.array(tys_fit)[0],
-                                                             np.array(tzs_fit)[0])
+                                                             RHO, PHI)
+
             beam_coeffs_fit = hydra.beam_sampler.fit_bess_to_beam(
                                               beams[0],
                                               1e6 * freqs,
                                               beam_nmodes,
                                               beam_mmodes,
-                                              bess_matr,
-                                              txs_fit,
-                                              tys_fit,
-                                              tzs_fit)
+                                              RHO, PHI)
 
             txs, tys, tzs = convert_to_tops(ra, dec, times, hera_latitude)
+
+            # area-preserving
+            rho = np.sqrt(1 - tzs)
+            phi = np.arctan2(tys, txs)
             bess_matr = hydra.beam_sampler.get_bess_matr(beam_nmodes,
-                                                                    beam_mmodes,
-                                                                    np.array(txs),
-                                                                    np.array(tys),
-                                                                    np.array(tzs))
+                                                         beam_mmodes,
+                                                         rho, phi)
 
             # All the same, so just repeat (for now)
-            beam_coeffs = np.array(Nants * \
-                                   [)
+            beam_coeffs = np.array(Nants * [beam_coeffs_fit])
             # Want shape ncoeff, Nfreqs, Nants
             beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
             np.save(os.path.join(output_dir, "best_fit_beam"), beam_coeffs)
