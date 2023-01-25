@@ -261,7 +261,7 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
             [0, 2 pi].
         beam_coeffs (array_like, real):
             Zernike coefficients for the beam at each freqency and
-            antenna. Has shape `(ncoeff, NFREQS, NANTS)`.
+            antenna. Has shape `(ncoeff, NFREQS, NANTS, Nfeed, Naxes_vec)`.
         ant_samp_ind (int):
             ID of the antenna that is being sampled.
         nants (int):
@@ -283,11 +283,13 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
     Returns:
         bess_trans (array_like):
             Operator that returns visibilities when supplied with
-            beam coefficients. Shape (NFREQS, NTIMES, NANTS, ncoeff)`.
+            beam coefficients. Shape (NPOL, NPOL, NFREQS, NTIMES, NANTS, ncoeff)`
+            where NPOL=1 if not polarized.
     """
 
     nants = len(ants)
     ant_inds = get_ant_inds(ant_samp_ind, nants)
+    Npol = 2 if polarized else 1
 
     # Use uniform beams so that we just get the Fourier operator.
     beams = [AnalyticBeam("uniform") for ant_ind in range(len(ants))]
@@ -299,26 +301,28 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
                                             multiprocess=multiprocess,
                                             subarr_ant=ant_samp_ind)
     sky_amp_phase = sky_amp_phase[:, :, ant_inds]
-    
+    if not polarized:
+        sky_amp_phase = sky_amp_phase[np.newaxis, np.newaxis, :]
 
-    # Want to do the contraction zfa,tsz,ftas,tsZ -> ftaZ
+    # Want to do the contraction tsb,apQtfs,tsB,aqfBQ->apqftb
     # Determined optimal contraction order with opt_einsum
     # Implementing steps in faster way using tdot
-    # 'zfa,tsz->ftas'
-    beam_res = np.swapaxes(beam_coeffs.conj()[:, :, ant_inds], 0, -1) # afz
+    # aqfBQ,tsB->aqfQts->Qqftas
+    beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds] # BfaqQ -> aqfBQ
+    beam_on_sky = np.tensordot(beam_res.conj(), bess_matr.conj(),
+                               axes=((3,), (2,))).transpose((3,1,2,4,0,5))
 
-    # afz,tsz->afts->ftas ftas,ftas->ftas
-    beam_on_sky = np.tensordot(beam_res, bess_matr.conj(),
-                                axes=((-1,), (-1,))).transpose((1, 2, 0, 3))
+    # Qqftas,QPftas->qPftas
     # reassign to save memory
-    sky_amp_phase *= beam_on_sky
+    sky_amp_phase = (beam_on_sky[:, :, np.newaxis, :, :, :, :] * sky_amp_phase[:, np.newaxis, :, :, :, :, :]).sum(axis=0)
 
-    bess_trans = np.zeros((freqs.size, lsts.size, nants - 1, beam_res.shape[-1]),
+    # qPftas,tsb->qPftab
+    bess_trans = np.zeros((Npol, Npol, freqs.size, lsts.size, nants - 1, beam_res.shape[-2]),
                           dtype=sky_amp_phase.dtype)
     for time_ind in range(lsts.size):
-        bess_trans[:, time_ind, :, :] = np.tensordot(sky_amp_phase[:, time_ind],
-                                                     np.swapaxes(bess_matr, -1, -2)[time_ind],
-                                                     axes=((-1, ), (-1, )))
+        bess_trans[:,:, :, time_ind, :, :] = np.tensordot(sky_amp_phase[:, :, :, time_ind],
+                                                     bess_matr[time_ind],
+                                                     axes=((1, ), (1, )))
     return bess_trans
 
 
