@@ -285,8 +285,7 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
             Operator that returns visibilities when supplied with
             beam coefficients. Shape (NFREQS, NTIMES, NANTS, ncoeff)`.
     """
-    if polarized:
-        raise NotImplementedError("Polarized beams are not available yet.")
+
     nants = len(ants)
     ant_inds = get_ant_inds(ant_samp_ind, nants)
 
@@ -300,7 +299,7 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
                                             multiprocess=multiprocess,
                                             subarr_ant=ant_samp_ind)
     sky_amp_phase = sky_amp_phase[:, :, ant_inds]
-
+    
 
     # Want to do the contraction zfa,tsz,ftas,tsZ -> ftaZ
     # Determined optimal contraction order with opt_einsum
