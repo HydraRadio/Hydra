@@ -348,25 +348,25 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, bess_trans, cov_tuple):
 
     # These stay as elementwise multiply since the beam at given times/freqs
     # Should not affect the vis at other times/freqs
-    # ftaZ->Zfta fta,Zfta->Zfta
-    bess_trans_use = bess_trans.transpose((3, 0, 1, 2))
 
-    Ninv_T = inv_noise_var * bess_trans_use
-    # zfta,ZFta->zfZF
-    # Actually just want diagonals but don't need to save memory here
-    Tdag_Ninv_T = np.tensordot(bess_trans_use.conj(), Ninv_T,
-                              axes=((-1, -2), (-1, -2)))
-    # Get the diagonals zfZF -> fzZ
-    Tdag_Ninv_T = Tdag_Ninv_T[:, range(Nfreqs), :, range(Nfreqs)]
+    # qpfta,qPftab->qpPftab
+    Ninv_Q = inv_noise_var[:, :, np.newaxis, :, :, :, np.newaxis] * bess_trans[:, np.newaxis, :, :, :, :, :]
+
+    # qPftab,qpQFtaB->pPfQFbB
+    # Actually just want diagonals in frequency but don't need to save memory here
+    Qdag_Ninv_Q = np.tensordot(bess_trans_use.conj(), Ninv_Q,
+                              axes=((0, 3, 4), (0, 4, 5)))
+    # Get the diagonals PfbpQFB-> PfbpQB
+    Qdag_Ninv_Q = Qdag_Ninv_Q[:, range(Nfreqs), :, :, :, range(Nfreqs)]
     # Factor of 2 because 1/2 the variance for each complex component
-    Tdag_Ninv_T = 2*split_real_imag(Tdag_Ninv_T, kind='op')
+    Qdag_Ninv_Q = 2*split_real_imag(Qdag_Ninv_Q, kind='op') # PfbpQBcC
+    Qdag_Ninv_Q = Tdag_Ninv_T.transpose((0,2,3,4,5,7,6,1)) # PfbpQBcC->PbpQBCcf
 
-    # cfF,FzZcC->fFzZcC
     # c,fF->cfF
     cov_matr = comp_matr[:, np.newaxis, np.newaxis] * freq_matr
-    # fcF,CzZcF->fCzZcF
-    cov_Tdag_Ninv_T = np.swapaxes(cov_matr, 0, 1)[:, np.newaxis, np.newaxis, np.newaxis] * np.swapaxes(Tdag_Ninv_T, 0, -1)
-    cov_Tdag_Ninv_T = np.transpose(cov_Tdag_Ninv_T, axes=(0, 2, 4, 5, 3, 1))
+    # fcF,PbpQBCcF->fPbpQBCcF
+    cov_Tdag_Ninv_Q = cov_matr[:, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis] * Qdag_Ninv_Q[np.newaxis]
+
 
 
     return cov_Tdag_Ninv_T
