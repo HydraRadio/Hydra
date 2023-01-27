@@ -813,12 +813,18 @@ for n in range(Niters):
                                                              cov_tuple_use,
                                                              cho_tuple_use)
             bbeam = rhs_unflatten.flatten()
+            #print(rhs_unflatten.shape)
+
             shape = (Nfreqs, ncoeffs,  1, 1, 2)
             cov_Qdag_Ninv_Q = hydra.beam_sampler.get_cov_Qdag_Ninv_Q(inv_noise_var_use,
                                                                      bess_trans,
                                                                      cov_tuple_use)
+            #print(cov_Qdag_Ninv_Q.shape)
+
             axlen = np.prod(shape)
-            matr = cov_Qdag_Ninv_Q.reshape([axlen, axlen]) + np.eye(axlen)
+
+            # fPbpQBcCF->fbQcFBpPC
+            matr = cov_Qdag_Ninv_Q.transpose((0,2,4,6,8,5,3,1,7)).reshape([axlen, axlen]) + np.eye(axlen)
             if PLOTTING:
 
                 print(f"Condition number for LHS {np.linalg.cond(matr)}")

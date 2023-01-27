@@ -357,6 +357,7 @@ def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
     # qpfta,qPftab->qpPftab
     Ninv_Q = inv_noise_var[:, :, np.newaxis, :, :, :, np.newaxis] * bess_trans[:, np.newaxis, :, :, :, :, :]
 
+    #FIXME: Bad einsum math below (swapped P and Q)
     # qPftab,qpQFtaB->pPfQFbB
     # Actually just want diagonals in frequency but don't need to save memory here
     Qdag_Ninv_Q = np.tensordot(bess_trans.conj(), Ninv_Q,
