@@ -371,7 +371,8 @@ def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
     cov_matr = np.swapaxes(comp_matr[:, np.newaxis, np.newaxis] * freq_matr, 0, 1)
     # fcF,PbpQBCcF->fPbpQBCcF
     cov_Qdag_Ninv_Q = cov_matr[:, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis] * Qdag_Ninv_Q[np.newaxis]
-
+    #fPbpQBCcF->fPbpQBcCF
+    cov_Qdag_Ninv_Q = np.swapaxes(cov_Qdag_Ninv_Q, -2, -3)
 
 
     return cov_Qdag_Ninv_Q
@@ -395,7 +396,7 @@ def apply_operator(x, cov_Qdag_Ninv_Q):
 
     Npol = x.shape[2]
     # Linear so we can split the LHS multiply
-    # fPbpQBCcF,BFpPc->fbpQCp->pfbQC
+    # fPbpQBcCF,BFpPC->fbpQcp->pfbQc
     Ax1 = np.tensordot(cov_Qdag_Ninv_Q, x, axes=((1, 5, 7,8), (3, 0, 4, 1)))
     Ax1 = Ax1[:, :, range(Npol), :, :, range(Npol)]
 
