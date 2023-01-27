@@ -400,7 +400,7 @@ def apply_operator(x, cov_Qdag_Ninv_Q):
     Ax1 = Ax1[:, :, range(Npol), :, :, range(Npol)]
 
     # Second term is identity due to preconditioning
-    Ax = Ax1 + x
+    Ax = (Ax1 + x).transpose((1, 2, 0, 3, 4))
     return Ax
 
 def get_std_norm(shape):
@@ -467,7 +467,7 @@ def construct_rhs(vis, inv_noise_var, mu, bess_trans,
     bess_trans_use = bess_trans.transpose((5,1,0,2,3,4))
     # Weird factors of sqrt(2) etc since we will split these in a sec
     # bPqfta,pqfta->bpPf->bfpP
-    print(f"Ninv_d.shape: {Ninv_d.shape}")
+
     Qdag_terms = np.sum(bess_trans_use.conj()[:,np.newaxis] * (2 * Ninv_d + np.sqrt(2) * Ninv_sqrt_flx1).transpose((1, 0, 2, 3, 4))[:, :, np.newaxis],
                         axis=(3,5,6)).transpose((0,3,1,2))
     Qdag_terms = split_real_imag(Qdag_terms, kind='vec')
@@ -484,8 +484,7 @@ def construct_rhs(vis, inv_noise_var, mu, bess_trans,
     flx0_add = np.tensordot(freq_cho, (comp_cho * flx0),
                                   axes=((1,), (1,)))
 
-
-    rhs = cov_Qdag_terms + np.swapaxes(mu_real_imag + flx0_add, 0, 1)
+    rhs = cov_Qdag_terms + np.swapaxes(mu_real_imag, 0, 1) + flx0_add
 
     return rhs
 
