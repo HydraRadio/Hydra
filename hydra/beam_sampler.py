@@ -52,7 +52,7 @@ def split_real_imag(arr, kind):
     return new_arr
 
 
-def reshape_data_arr(arr, Nfreqs, Ntimes, Nants):
+def reshape_data_arr(arr, Nfreqs, Ntimes, Nants, Npol):
     """
     Reshape a data-shaped array into something more convenient for beam calculation.
     Makes a copy of the data twice as large as the data.
@@ -66,18 +66,22 @@ def reshape_data_arr(arr, Nfreqs, Ntimes, Nants):
             Number of times in the data.
         Nants (int):
             Number of antennas in the data.
+        Npol (int):
+            Number of polarizations per antenna (2 if polarized, 1 if not)
 
     Returns:
         arr_beam (array_like, complex):
             The reshaped array
     """
 
-    arr_trans = np.transpose(arr, (1, 2, 0))
-    arr_beam = np.zeros([Nfreqs, Ntimes, Nants, Nants], dtype=arr_trans.dtype)
-    for freq_ind in range(Nfreqs):
-        for time_ind in range(Ntimes):
-                triu_inds = np.triu_indices(Nants, k=1)
-                arr_beam[freq_ind, time_ind, triu_inds[0], triu_inds[1]] = arr_trans[freq_ind, time_ind]
+    arr_trans = np.transpose(arr, (0, 1, 3, 4, 2))
+    arr_beam = np.zeros([Npol, Npol, Nfreqs, Ntimes, Nants, Nants], dtype=arr_trans.dtype)
+    for pol_ind1 in range(Npol):
+        for pol_ind2 in range(Npol):
+            for freq_ind in range(Nfreqs):
+                for time_ind in range(Ntimes):
+                        triu_inds = np.triu_indices(Nants, k=1)
+                        arr_beam[pol_ind1, pol_ind2, freq_ind, time_ind, triu_inds[0], triu_inds[1]] = arr_trans[pol_ind1, pol_ind2, freq_ind, time_ind]
 
     return arr_beam
 
@@ -227,7 +231,7 @@ def select_subarr(arr, ant_samp_ind, Nants):
             The subarray relevant to the current Gibbs step.
     """
     ant_inds = get_ant_inds(ant_samp_ind, Nants)
-    subarr = arr[:, :, ant_inds, ant_samp_ind]
+    subarr = arr[:, :, :, :, ant_inds, ant_samp_ind]
     return subarr
 
 
@@ -319,10 +323,11 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
     # qPftas,tsb->qPftab
     bess_trans = np.zeros((Npol, Npol, freqs.size, lsts.size, nants - 1, beam_res.shape[-2]),
                           dtype=sky_amp_phase.dtype)
+
     for time_ind in range(lsts.size):
         bess_trans[:,:, :, time_ind, :, :] = np.tensordot(sky_amp_phase[:, :, :, time_ind],
                                                      bess_matr[time_ind],
-                                                     axes=((1, ), (1, )))
+                                                     axes=((-1, ), (0, )))
     return bess_trans
 
 
@@ -459,9 +464,10 @@ def construct_rhs(vis, inv_noise_var, mu, bess_trans,
 
     # qPftab,qpfta->bfpP
     # qPftab->bPqfta
-    bess_trans_use = bess_trans_use.transpose((5,1,0,2,3,4))
+    bess_trans_use = bess_trans.transpose((5,1,0,2,3,4))
     # Weird factors of sqrt(2) etc since we will split these in a sec
     # bPqfta,pqfta->bpPf->bfpP
+    print(f"Ninv_d.shape: {Ninv_d.shape}")
     Qdag_terms = np.sum(bess_trans_use.conj()[:,np.newaxis] * (2 * Ninv_d + np.sqrt(2) * Ninv_sqrt_flx1).transpose((1, 0, 2, 3, 4))[:, :, np.newaxis],
                         axis=(3,5,6)).transpose((0,3,1,2))
     Qdag_terms = split_real_imag(Qdag_terms, kind='vec')
