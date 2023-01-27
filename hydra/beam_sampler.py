@@ -359,22 +359,22 @@ def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
 
     # qPftab,qpQFtaB->pPfQFbB
     # Actually just want diagonals in frequency but don't need to save memory here
-    Qdag_Ninv_Q = np.tensordot(bess_trans_use.conj(), Ninv_Q,
+    Qdag_Ninv_Q = np.tensordot(bess_trans.conj(), Ninv_Q,
                               axes=((0, 3, 4), (0, 4, 5)))
     # Get the diagonals PfbpQFB-> fPbpQB
     Qdag_Ninv_Q = Qdag_Ninv_Q[:, range(Nfreqs), :, :, :, range(Nfreqs)]
     # Factor of 2 because 1/2 the variance for each complex component
     Qdag_Ninv_Q = 2*split_real_imag(Qdag_Ninv_Q, kind='op') # PfbpQBcC
-    Qdag_Ninv_Q = Tdag_Ninv_T.transpose((1,2,3,4,5,7,6,0)) # fPbpQBcC->PbpQBCcf
+    Qdag_Ninv_Q = Qdag_Ninv_Q.transpose((1,2,3,4,5,7,6,0)) # fPbpQBcC->PbpQBCcf
 
-    # c,fF->cfF
-    cov_matr = comp_matr[:, np.newaxis, np.newaxis] * freq_matr
+    # c,fF->cfF->fcF
+    cov_matr = np.swapaxes(comp_matr[:, np.newaxis, np.newaxis] * freq_matr, 0, 1)
     # fcF,PbpQBCcF->fPbpQBCcF
-    cov_Tdag_Ninv_Q = cov_matr[:, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis] * Qdag_Ninv_Q[np.newaxis]
+    cov_Qdag_Ninv_Q = cov_matr[:, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis] * Qdag_Ninv_Q[np.newaxis]
 
 
 
-    return cov_Tdag_Ninv_T
+    return cov_Qdag_Ninv_Q
 
 
 def apply_operator(x, cov_Qdag_Ninv_Q):

@@ -671,14 +671,15 @@ for n in range(Niters):
         def plot_beam_cross(beam_coeffs, ant_ind, iter, tag='', type='cross'):
             # Shape ncoeffs, Nfreqs, Nant -- just use a ref freq
             coeff_use = beam_coeffs[:, 0, :]
-            Nants = coeff_use.shape[-1]
+            Nants = coeff_use.shape[1]
             if type == 'cross':
                 fig, ax = plt.subplots(figsize=(16, 9), nrows=Nants, ncols=Nants,
                                        subplot_kw={'projection': 'polar'})
                 for ant_ind1 in range(Nants):
-                    beam_use1 = bess_matr_fit @ (coeff_use[:, ant_ind1])
+
+                    beam_use1 = bess_matr_fit @ coeff_use[:, ant_ind1, 0, 0]
                     for ant_ind2 in range(Nants):
-                        beam_use2 = bess_matr_fit @ (coeff_use[:, ant_ind2])
+                        beam_use2 = bess_matr_fit @ (coeff_use[:, ant_ind2, 0, 0])
                         beam_cross = (beam_use1 * beam_use2.conj())
                         if ant_ind1 >= ant_ind2:
                             ax[ant_ind1, ant_ind2].pcolormesh(PHI,
@@ -694,7 +695,7 @@ for n in range(Niters):
                                                               cmap='twilight')
             else:
                 fig, ax = plt.subplots(ncols=2, subplot_kw={'projection': 'polar'})
-                beam_use = (bess_matr_fit@(coeff_use[:, ant_ind]))
+                beam_use = (bess_matr_fit@(coeff_use[:, ant_ind, 0, 0]))
                 ax[0].pcolormesh(PHI, RHO, np.abs(beam_use),
                                  vmin=0, vmax=1)
                 ax[1].pcolormesh(PHI, RHO, np.angle(beam_use),
@@ -709,19 +710,19 @@ for n in range(Niters):
             beam_nmodes = beam_nmodes.flatten()
             beam_mmodes = beam_mmodes.flatten()
             # Make a copy of the data that is more convenient for the beam calcs.
-            data_beam = hydra.beam_sampler.reshape_data_arr(data,
+            data_beam = hydra.beam_sampler.reshape_data_arr(data[np.newaxis, np.newaxis],
                                                             Nfreqs,
                                                             Ntimes,
-                                                            Nants)
+                                                            Nants, 1)
             # Doubles the autos, but we don't use them so it doesn't matter.
             # This makes it so we do not have to keep track of whether we are sampling
             # The beam coeffs or their conjugate!
             data_beam = data_beam + np.swapaxes(data_beam, -1, -2).conj()
 
-            inv_noise_var_beam = hydra.beam_sampler.reshape_data_arr(inv_noise_var,
+            inv_noise_var_beam = hydra.beam_sampler.reshape_data_arr(inv_noise_var[np.newaxis, np.newaxis],
                                                                      Nfreqs,
                                                                      Ntimes,
-                                                                     Nants)
+                                                                     Nants, 1)
             inv_noise_var_beam = inv_noise_var_beam + np.swapaxes(inv_noise_var_beam, -1, -2)
 
 
@@ -740,6 +741,8 @@ for n in range(Niters):
                                               beam_mmodes,
                                               RHO, PHI)
 
+            beam_coeffs_fit = beam_coeffs_fit[:, :, np.newaxis, np.newaxis]
+
             txs, tys, tzs = convert_to_tops(ra, dec, times, hera_latitude)
 
             # area-preserving
@@ -751,7 +754,7 @@ for n in range(Niters):
 
             # All the same, so just repeat (for now)
             beam_coeffs = np.array(Nants * [beam_coeffs_fit])
-            # Want shape ncoeff, Nfreqs, Nants
+            # Want shape ncoeff, Nfreqs, Nants, Npol, Npol
             beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
             np.save(os.path.join(output_dir, "best_fit_beam"), beam_coeffs)
             ncoeffs = beam_coeffs.shape[0]
@@ -810,12 +813,12 @@ for n in range(Niters):
                                                              cov_tuple_use,
                                                              cho_tuple_use)
             bbeam = rhs_unflatten.flatten()
-            shape = (Nfreqs, ncoeffs,  2)
-            cov_Tdag_Ninv_T = hydra.beam_sampler.get_cov_Tdag_Ninv_T(inv_noise_var_use,
+            shape = (Nfreqs, ncoeffs,  1, 1, 2)
+            cov_Qdag_Ninv_Q = hydra.beam_sampler.get_cov_Qdag_Ninv_Q(inv_noise_var_use,
                                                                      bess_trans,
                                                                      cov_tuple_use)
             axlen = np.prod(shape)
-            matr = cov_Tdag_Ninv_T.reshape([axlen, axlen]) + np.eye(axlen)
+            matr = cov_Qdag_Ninv_Q.reshape([axlen, axlen]) + np.eye(axlen)
             if PLOTTING:
 
                 print(f"Condition number for LHS {np.linalg.cond(matr)}")
@@ -829,7 +832,7 @@ for n in range(Niters):
 
             def beam_lhs_operator(x):
                 y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),
-                                                      cov_Tdag_Ninv_T)
+                                                      cov_Qdag_Ninv_Q)
                 return(y.flatten())
 
             # What the shape would be if the matrix were represented densely
@@ -849,13 +852,15 @@ for n in range(Niters):
                     raise AssertionError(f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}")
             x_soln_res = np.reshape(x_soln, shape)
 
-            # Has shape Nfreqs, ncoeff, ncomp
-            # Want shape ncoeff, Nfreqs, ncomp
+            # Has shape Nfreqs, ncoeff, Npol, Npol, ncomp
+            # Want shape ncoeff, Nfreqs, Npol, Npol, ncomp
             x_soln_swap = np.swapaxes(x_soln_res, 0, 1)
 
             # Update the coeffs between rounds
-            beam_coeffs[:, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, 0] \
-                                               + 1.j * x_soln_swap[:, :, 1]
+            print(beam_coeffs[:, :, ant_samp_ind].shape)
+            print(x_soln_swap.shape)
+            beam_coeffs[:, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, :, :, 0] \
+                                               + 1.j * x_soln_swap[:, :, :, :, 1]
             if PLOTTING:
                 plot_beam_cross(beam_coeffs, ant_samp_ind, n, '',type='beam')
 
