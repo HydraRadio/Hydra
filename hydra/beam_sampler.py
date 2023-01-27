@@ -326,7 +326,7 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
     return bess_trans
 
 
-def get_cov_Tdag_Ninv_T(inv_noise_var, bess_trans, cov_tuple):
+def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
     """
     Construct the LHS operator for the Gibbs sampling.
 
@@ -356,11 +356,11 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, bess_trans, cov_tuple):
     # Actually just want diagonals in frequency but don't need to save memory here
     Qdag_Ninv_Q = np.tensordot(bess_trans_use.conj(), Ninv_Q,
                               axes=((0, 3, 4), (0, 4, 5)))
-    # Get the diagonals PfbpQFB-> PfbpQB
+    # Get the diagonals PfbpQFB-> fPbpQB
     Qdag_Ninv_Q = Qdag_Ninv_Q[:, range(Nfreqs), :, :, :, range(Nfreqs)]
     # Factor of 2 because 1/2 the variance for each complex component
     Qdag_Ninv_Q = 2*split_real_imag(Qdag_Ninv_Q, kind='op') # PfbpQBcC
-    Qdag_Ninv_Q = Tdag_Ninv_T.transpose((0,2,3,4,5,7,6,1)) # PfbpQBcC->PbpQBCcf
+    Qdag_Ninv_Q = Tdag_Ninv_T.transpose((1,2,3,4,5,7,6,0)) # fPbpQBcC->PbpQBCcf
 
     # c,fF->cfF
     cov_matr = comp_matr[:, np.newaxis, np.newaxis] * freq_matr
@@ -372,14 +372,14 @@ def get_cov_Tdag_Ninv_T(inv_noise_var, bess_trans, cov_tuple):
     return cov_Tdag_Ninv_T
 
 
-def apply_operator(x, cov_Tdag_Ninv_T):
+def apply_operator(x, cov_Qdag_Ninv_Q):
     """
     Apply LHS operator to vector of Zernike coefficients.
 
     Parameters:
         x (array_like):
             Complex Fourier-Bessel coefficients, split into real/imag.
-        cov_Tdag_Ninv_T (array_like):
+        cov_Qdag_Ninv_Q (array_like):
             One summand of LHS matrix applied to x
 
 
@@ -388,10 +388,11 @@ def apply_operator(x, cov_Tdag_Ninv_T):
             Result of multiplying input vector by the LHS matrix.
     """
 
-
+    Npol = x.shape[2]
     # Linear so we can split the LHS multiply
-    # fzcFZC,FZC -> fzc
-    Ax1 = np.tensordot(cov_Tdag_Ninv_T, x, axes=((-1, -2, -3), (-1, -2, -3)))
+    # fPbpQBCcF,BFpPc->fbpQCp->pfbQC
+    Ax1 = np.tensordot(cov_Qdag_Ninv_Q, x, axes=((1, 5, 7,8), (3, 0, 4, 1)))
+    Ax1 = Ax1[:, :, range(Npol), :, :, range(Npol)]
 
     # Second term is identity due to preconditioning
     Ax = Ax1 + x
@@ -451,31 +452,34 @@ def construct_rhs(vis, inv_noise_var, mu, bess_trans,
         flx0 = np.zeros(flx0_shape)
         flx1 = np.zeros(flx1_shape)
 
-    # ftaZ->Zfta
-    bess_trans_use = bess_trans.transpose((3, 0, 1, 2))
+
 
     Ninv_d = inv_noise_var * vis
     Ninv_sqrt_flx1 = np.sqrt(inv_noise_var) * flx1
 
+    # qPftab,qpfta->bfpP
+    # qPftab->bPqfta
+    bess_trans_use = bess_trans_use.transpose((5,1,0,2,3,4))
     # Weird factors of sqrt(2) etc since we will split these in a sec
-    Tdag_terms = np.sum(bess_trans_use.conj() * (2 * Ninv_d + np.sqrt(2) * Ninv_sqrt_flx1),
-                        axis=(2,3))
-    Tdag_terms = split_real_imag(Tdag_terms, kind='vec')
+    # bPqfta,pqfta->bpPf->bfpP
+    Qdag_terms = np.sum(bess_trans_use.conj()[:,np.newaxis] * (2 * Ninv_d + np.sqrt(2) * Ninv_sqrt_flx1).transpose((1, 0, 2, 3, 4))[:, :, np.newaxis],
+                        axis=(3,5,6)).transpose((0,3,1,2))
+    Qdag_terms = split_real_imag(Qdag_terms, kind='vec')
 
     freq_matr, comp_matr = cov_tuple
-    # c,zfc->zfc Ff,zfc->Fzc
-    cov_Tdag_terms = np.tensordot(freq_matr, (comp_matr * Tdag_terms),
-                                  axes=((-1,), (1,)))
+    # c,bfpPc->bfpPc Ff,bfpPc->FbpPc
+    cov_Qdag_terms = np.tensordot(freq_matr, (comp_matr * Qdag_terms),
+                                  axes=((1,), (1,)))
 
     freq_cho, comp_cho = cho_tuple
     flx0 = split_real_imag(flx0, kind='vec')
     mu_real_imag = split_real_imag(mu, kind='vec')
 
     flx0_add = np.tensordot(freq_cho, (comp_cho * flx0),
-                                  axes=((-1,), (1,)))
+                                  axes=((1,), (1,)))
 
 
-    rhs = cov_Tdag_terms + flx0_add + np.swapaxes(mu_real_imag, 0, 1)
+    rhs = cov_Qdag_terms + np.swapaxes(mu_real_imag + flx0_add, 0, 1)
 
     return rhs
 
