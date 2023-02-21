@@ -308,7 +308,7 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
     if not polarized:
         sky_amp_phase = sky_amp_phase[np.newaxis, np.newaxis, :]
 
-    # Want to do the contraction tsb,apQtfs,tsB,aqfBQ->apqftb
+    # Want to do the contraction tsb,aPQtfs,tsB,aqfBQ->aPqftb
     # Determined optimal contraction order with opt_einsum
     # Implementing steps in faster way using tdot
     # aqfBQ,tsB->aqfQts->Qqftas
@@ -318,7 +318,8 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
 
     # Qqftas,QPftas->qPftas
     # reassign to save memory
-    sky_amp_phase = (beam_on_sky[:, :, np.newaxis, :, :, :, :] * sky_amp_phase[:, np.newaxis, :, :, :, :, :]).sum(axis=0)
+    # Qqftas -> Qq_ftas; QPftas->Q_Pftas; Qq_ftas,Q_Pftas->qPftas
+    sky_amp_phase = (beam_on_sky[:, :, np.newaxis] * sky_amp_phase[:, np.newaxis]).sum(axis=0)
 
     # qPftas,tsb->qPftab
     bess_trans = np.zeros((Npol, Npol, freqs.size, lsts.size, nants - 1, beam_res.shape[-2]),
@@ -357,22 +358,21 @@ def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
     # qpfta,qPftab->qpPftab
     Ninv_Q = inv_noise_var[:, :, np.newaxis, :, :, :, np.newaxis] * bess_trans[:, np.newaxis, :, :, :, :, :]
 
-    #FIXME: Bad einsum math below (swapped P and Q)
-    # qPftab,qpQFtaB->pPfQFbB
+    # qRftab,qpPFtaB->RfbpPFB
     # Actually just want diagonals in frequency but don't need to save memory here
     Qdag_Ninv_Q = np.tensordot(bess_trans.conj(), Ninv_Q,
                               axes=((0, 3, 4), (0, 4, 5)))
-    # Get the diagonals PfbpQFB-> fPbpQB
+    # Get the diagonals RfbpPFB-> fRbpPB
     Qdag_Ninv_Q = Qdag_Ninv_Q[:, range(Nfreqs), :, :, :, range(Nfreqs)]
     # Factor of 2 because 1/2 the variance for each complex component
-    Qdag_Ninv_Q = 2*split_real_imag(Qdag_Ninv_Q, kind='op') # PfbpQBcC
-    Qdag_Ninv_Q = Qdag_Ninv_Q.transpose((1,2,3,4,5,7,6,0)) # fPbpQBcC->PbpQBCcf
+    Qdag_Ninv_Q = 2*split_real_imag(Qdag_Ninv_Q, kind='op') # fRbpPBcC
+    Qdag_Ninv_Q = Qdag_Ninv_Q.transpose((1,2,3,4,5,7,6,0)) # fRbpQBcC->RbpQBCcf
 
     # c,fF->cfF->fcF
     cov_matr = np.swapaxes(comp_matr[:, np.newaxis, np.newaxis] * freq_matr, 0, 1)
-    # fcF,PbpQBCcF->fPbpQBCcF
+    # fcF,RbpQBCcF->fRbpQBCcF
     cov_Qdag_Ninv_Q = cov_matr[:, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis] * Qdag_Ninv_Q[np.newaxis]
-    #fPbpQBCcF->fPbpQBcCF
+    #fRbpQBCcF->fRbpQBcCF
     cov_Qdag_Ninv_Q = np.swapaxes(cov_Qdag_Ninv_Q, -2, -3)
 
 
