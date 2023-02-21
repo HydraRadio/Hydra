@@ -366,13 +366,13 @@ def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
     Qdag_Ninv_Q = Qdag_Ninv_Q[:, range(Nfreqs), :, :, :, range(Nfreqs)]
     # Factor of 2 because 1/2 the variance for each complex component
     Qdag_Ninv_Q = 2*split_real_imag(Qdag_Ninv_Q, kind='op') # fRbpPBcC
-    Qdag_Ninv_Q = Qdag_Ninv_Q.transpose((1,2,3,4,5,7,6,0)) # fRbpQBcC->RbpQBCcf
+    Qdag_Ninv_Q = Qdag_Ninv_Q.transpose((1,2,3,4,5,7,6,0)) # fRbpPBcC->RbpPBCcf
 
     # c,fF->cfF->fcF
     cov_matr = np.swapaxes(comp_matr[:, np.newaxis, np.newaxis] * freq_matr, 0, 1)
-    # fcF,RbpQBCcF->fRbpQBCcF
+    # fcF,RbpPBCcf->fRbpPBCcF
     cov_Qdag_Ninv_Q = cov_matr[:, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis] * Qdag_Ninv_Q[np.newaxis]
-    #fRbpQBCcF->fRbpQBcCF
+    #fRbpPBCcF->fRbpPBcCF
     cov_Qdag_Ninv_Q = np.swapaxes(cov_Qdag_Ninv_Q, -2, -3)
 
 
@@ -397,9 +397,9 @@ def apply_operator(x, cov_Qdag_Ninv_Q):
 
     Npol = x.shape[2]
     # Linear so we can split the LHS multiply
-    # fPbpQBcCF,BFpPC->fbpQcp->pfbQc
-    Ax1 = np.tensordot(cov_Qdag_Ninv_Q, x, axes=((1, 5, 7,8), (3, 0, 4, 1)))
-    Ax1 = Ax1[:, :, range(Npol), :, :, range(Npol)]
+    # fRbpPBcCF,BFpPC->fRbpcp->pRfbc->pfbRc
+    Ax1 = np.tensordot(cov_Qdag_Ninv_Q, x, axes=((4, 5, 7,8), (3, 0, 4, 1)))
+    Ax1 = (Ax1[:, :, :, range(Npol), :, range(Npol)]).transpose((0,2,3,1,4))
 
     # Second term is identity due to preconditioning
     Ax = (Ax1 + x).transpose((1, 2, 0, 3, 4))
