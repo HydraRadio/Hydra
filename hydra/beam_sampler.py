@@ -130,7 +130,7 @@ def get_bess_matr(nmodes, mmodes, rho, phi):
     return bess_matr
 
 
-def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi,
+def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
                      rho_diff=1e-4):
     """
     Get the best fit Fourier-Bessel coefficients for a beam based on its value at a
@@ -151,6 +151,8 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi,
             Radial coordinate on disc.
         phi (array_like):
             Azimuthal coordinate on disc (usually RA's azimuth angle)
+        polarized (bool):
+            Whether or not polarized beam inference is being done
 
         rho_diff (float):
             offset for radial coordinate to compute area element on disc. Used
@@ -160,7 +162,7 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi,
 
     Returns:
         fit_beam (array_like):
-            The best-fit Zernike coefficients for the input beam.
+            The best-fit Fourier-Bessel coefficients for the input beam.
     """
 
     bess_matr = get_bess_matr(nmodes, mmodes, rho, phi)
@@ -173,23 +175,32 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi,
     dphi = phi_un[1] - phi_un[0]
     dA = (rho + rho_diff * drho) * drho * dphi
 
-    rhs = beam.interp(az_array=phi.flatten(),
-                      za_array=np.arccos(1 - rho**2).flatten(),
-                      freq_array=freqs)[0][1, 0, 0] # FIXME: analyticbeam gives nans and zeros for all other indices
+    if polarized:
+        rhs = beam.interp(az_array=phi.flatten(),
+                          za_array=np.arccos(1 - rho**2).flatten(),
+                          freq_array=freqs)[0][:, 0] # Will have shape Nfeed, Naxes_vec, Nfreq, Nrho * Nphi
+    else:
+        rhs = beam.interp(az_array=phi.flatten(),
+                          za_array=np.arccos(1 - rho**2).flatten(),
+                          freq_array=freqs)[0][1:, 0, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
+    Npol = 1 + polarized
 
-    fit_beam = []
     # Loop over frequencies
     Nfreqs = len(freqs)
+    fit_beam = np.zeros(Nfreqs, ncoeff, Npol, Npol)
+
     BTdA = (bess_matr.conj() * dA[:, :, np.newaxis])
     lhs_op = np.tensordot(BTdA, bess_matr, axes=((0, 1), (0, 1)))
     BTdA_res = BTdA.reshape(rho.size, ncoeff)
     for freq_ind in range(Nfreqs):
-        rhs_vec = (BTdA_res * rhs[freq_ind, :, np.newaxis]).sum(axis=0)
-        soln = solve(lhs_op, rhs_vec, assume_a='her')
-        fit_beam.append(soln)
+        for feed_ind in range(Npol):
+            for pol_ind in range(Npol):
+                rhs_vec = (BTdA_res * rhs[feed_ind, pol_ind, freq_ind, :, np.newaxis]).sum(axis=0)
+                soln = solve(lhs_op, rhs_vec, assume_a='her')
+                fit_beam[freq_ind, :, feed_ind, pol_ind] = soln
 
     # Reshape coefficients array
-    fit_beam = np.array(fit_beam) # Has shape Nfreqs, ncoeffs
+    fit_beam = np.array(fit_beam) # Has shape Nfreqs, ncoeffs, Npol, Npol
 
     return fit_beam
 
