@@ -85,6 +85,12 @@ parser.add_argument("--multiprocess", action="store_true", dest="multiprocess",
 parser.add_argument("--beam-prior-std", type=float, action="store", default=1,
                     required=False, dest="beam_prior_std",
                     help="Standard deviation of beam coefficient prior, in units of Zernike coefficient")
+parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 1),
+                    nargs=2, required=False, dest="ra_bounds",
+                    help="Bounds for the Right Ascension of the randomly simulated sources")
+parser.add_argument("--dec-bounds", type=float, action="store", default=(-0.6, 0.4),
+                    nargs=2, required=False, dest="dec_bounds",
+                    help="Bounds for the Declination of the randomly simulated sources")
 args = parser.parse_args()
 
 # Set switches
@@ -119,6 +125,8 @@ assert len(hex_array) == 2, "hex-array argument must have length 2."
 beam_nmax = args.beam_nmax
 beam_mmax = args.beam_mmax
 sigma_noise = args.sigma_noise
+ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
+dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
 
 hera_latitude = -30.7215 * np.pi / 180.0
 
@@ -183,9 +191,12 @@ for i in range(len(ants)):
 ants1, ants2 = list(zip(*antpairs))
 
 # Generate random point source locations
-# RA goes from [0, 2 pi] and Dec from [-pi, +pi].
-ra = np.random.uniform(low=0.0, high=1.0, size=Nptsrc)
-dec = np.random.uniform(low=-0.6, high=-0.4, size=Nptsrc) # close to HERA stripe
+# RA goes from [0, 2 pi] and Dec from [-pi / 2, +pi / 2].
+ra = np.random.uniform(low=ra_low, high=ra_high, size=Nptsrc)
+# inversion sample to get them uniform on the sphere, in case wide bounds are used
+U = np.random.uniform(low=0, high=1, size=Nptsrc)
+dsin = np.sin(dec_high) - np.sin(dec_low)
+dec = np.arcsin(U * dsin + np.sin(dec_low)) # np.arcsin returns on [-pi / 2, +pi / 2]
 
 # Generate fluxes
 beta_ptsrc = -2.7
@@ -742,7 +753,10 @@ for n in range(Niters):
                                               RHO, PHI)
 
             beam_coeffs_fit = beam_coeffs_fit[:, :, np.newaxis, np.newaxis]
-
+            print("Printing beam best fit dynamic range")
+            print(np.amax(np.abs(beam_coeffs_fit)), np.amin(np.abs(beam_coeffs_fit)))
+            print("Printing data dynamic range")
+            print(np.amax(np.abs(data_beam)), np.amin(np.abs(data_beam)))
             txs, tys, tzs = convert_to_tops(ra, dec, times, hera_latitude)
 
             # area-preserving
@@ -775,7 +789,7 @@ for n in range(Niters):
             cov_tuple_0 = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
                                                           args.beam_prior_std, sig_freq,
                                                           ridge=1e-6,
-                                                          constrain_phase=False,
+                                                          constrain_phase=True,
                                                           constraint=1)
             cho_tuple_0 = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             # Be lazy and just use the initial guess.
@@ -863,8 +877,6 @@ for n in range(Niters):
             x_soln_swap = np.swapaxes(x_soln_res, 0, 1)
 
             # Update the coeffs between rounds
-            print(beam_coeffs[:, :, ant_samp_ind].shape)
-            print(x_soln_swap.shape)
             beam_coeffs[:, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, :, :, 0] \
                                                + 1.j * x_soln_swap[:, :, :, :, 1]
             if PLOTTING:
