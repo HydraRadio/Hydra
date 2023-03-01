@@ -187,7 +187,7 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
 
     # Loop over frequencies
     Nfreqs = len(freqs)
-    fit_beam = np.zeros(Nfreqs, ncoeff, Npol, Npol)
+    fit_beam = np.zeros((Nfreqs, ncoeff, Npol, Npol))
 
     BTdA = (bess_matr.conj() * dA[:, :, np.newaxis])
     lhs_op = np.tensordot(BTdA, bess_matr, axes=((0, 1), (0, 1)))

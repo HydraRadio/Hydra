@@ -752,7 +752,7 @@ for n in range(Niters):
                                               beam_mmodes,
                                               RHO, PHI)
 
-            beam_coeffs_fit = beam_coeffs_fit[:, :, np.newaxis, np.newaxis]
+            beam_coeffs_fit = beam_coeffs_fit
             print("Printing beam best fit dynamic range")
             print(np.amax(np.abs(beam_coeffs_fit)), np.amin(np.abs(beam_coeffs_fit)))
             print("Printing data dynamic range")
