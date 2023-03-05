@@ -10,7 +10,7 @@ from typing import Optional, Sequence
 from vis_cpu import conversions
 import healpy as hp
 from multiprocessing import Pool, cpu_count
-import os
+import os, warnings
 
 def run_checks(
     antpos: np.ndarray,
