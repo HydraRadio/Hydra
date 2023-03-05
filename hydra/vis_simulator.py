@@ -371,6 +371,12 @@ def simulate_vis_per_source(
         freqs.size,
     ), "The `fluxes` array must have shape (NSRCS, NFREQS)."
 
+    # Check RA and Dec ranges
+    if np.any(ra < 0.) or np.any(ra > 2.*np.pi):
+        warnings.warn("One or more ra values is outside the allowed range (0, 2 pi)", RuntimeWarning)
+    if np.any(dec < -np.pi) or np.any(dec > np.pi):
+        warnings.warn("One or more dec values is outside the allowed range (-pi, +pi)", RuntimeWarning)
+
     # Determine precision
     if precision == 1:
         complex_dtype = np.complex64
@@ -579,6 +585,8 @@ def simulate_vis_per_alm(
     npix = hp.nside2npix(nside)
     pix_area = 4.*np.pi / npix # steradians per pixel
     dec, ra = hp.pix2ang(nside=nside, ipix=np.arange(npix), lonlat=False)
+    # RA must be in range [0, 2 pi] and Dec in range [-pi, +pi]
+    dec = dec - 0.5*np.pi # shift Dec coords
 
     # Dummy fluxes (one everywhere)
     fluxes = np.ones((npix, freqs.size))
