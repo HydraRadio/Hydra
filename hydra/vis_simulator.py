@@ -520,7 +520,8 @@ def simulate_vis_per_alm(
     precision=2,
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
-    multiprocess=True
+    multiprocess=True,
+    amplitude=1.
 ):
     """
     Run a basic simulation, returning the visibility for each spherical harmonic mode
@@ -560,7 +561,10 @@ def simulate_vis_per_alm(
             The latitude of the center of the array, in radians. The default is
             the HERA latitude = -30.7215 * pi / 180.
         multiprocess (bool): Whether to use multiprocessing to speed up the
-            calculation
+            calculation.
+        amplitude (float):
+            The amplitude to use for the spherical harmonic modes when running
+            the simulation.
 
     Returns:
         ell, m (array_like):
@@ -573,6 +577,12 @@ def simulate_vis_per_alm(
             if ``polarized == True``, or (NFREQS, NTIMES, NANTS, NANTS, NMODES)
             otherwise. This is the visibility response of the interferometer
             to each spherical harmonic (ell, m) mode.
+
+            The final dimension has size `NMODES == 2*ell.size`. The first half
+            of this dimensions (i.e. of length `ell.size`) corresponds to real
+            spherical harmonic coefficients, with the same ordering as the `ell`
+            and `m` arrays. The second set is for imaginary SH coefficients, again
+            with the same ordering.
     """
     # Make sure these are array_like
     freqs = np.atleast_1d(freqs)
@@ -624,8 +634,9 @@ def simulate_vis_per_alm(
 
             # Make healpix map for this mode only
             alm[n] = val
-            skymap = hp.alm2map(alm, nside=nside) * pix_area
+            skymap = hp.alm2map(alm, nside=nside) * pix_area * amplitude
             # multiply by pixel area to get 'integrated' quantity
+            # (results will be in Jy units)
 
             # Multiply visibility for each pixel by the pixel value for this mode
             if polarized:
