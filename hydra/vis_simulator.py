@@ -102,7 +102,7 @@ def vis_sim_per_source(
     crd_eq: np.ndarray,
     I_sky: np.ndarray,
     beam_list: Sequence[UVBeam],
-    precision: int = 1,
+    precision: int = 2,
     polarized: bool = False,
     beam_idx: Optional[np.ndarray] = None,
     subarr_ant=None
@@ -308,7 +308,7 @@ def simulate_vis_per_source(
     lsts,
     beams,
     polarized=False,
-    precision=1,
+    precision=2,
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
     multiprocess=True,
@@ -517,7 +517,7 @@ def simulate_vis_per_alm(
     lsts,
     beams,
     polarized=False,
-    precision=1,
+    precision=2,
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
     multiprocess=True
