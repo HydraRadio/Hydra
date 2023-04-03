@@ -582,7 +582,7 @@ def plot_FB_beam(beam_coeffs, za, az, nm_tups, fn,
 
     Parameters:
         beam_coeffs (complex_array): Fourier-Bessel coefficients of a particular
-            antenna for a particular frequency at a particular time.
+            antenna for a particular frequency.
         za (array): zenith angles in radians
         az (array): azimuths in radians
         nm_tups (list of tuple): pairs of radial (n) and azimuthal (m) modes
