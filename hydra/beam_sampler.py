@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.linalg import lstsq, toeplitz, cholesky, inv, LinAlgError, solve
 from scipy.special import comb, hyp2f1, jn_zeros, jn
+import matplotlib.pyplot as plt
+from matplotlib.colors import SymLogNorm
 
 from pyuvsim import AnalyticBeam
 from pyuvsim.analyticbeam import diameter_to_sigma
@@ -570,6 +572,57 @@ def do_cov_cho(cov_tuple, check_op=False):
             raise LinAlgError(f"Cholesky factorization failed for frequency covariance")
 
     return cho_tuple
+
+
+def plot_FB_beam(beam_coeffs, za, az, nm_tups, fn,
+                 vmin=-1, vmax=1, norm=SymLogNorm, linthresh=1e-3, cmap="Spectral",
+                  **kwargs):
+    """
+    Plots a Fourier_Bessel beam at specified zenith angles and azimuths.
+
+    Parameters:
+        beam_coeffs (complex_array): Fourier-Bessel coefficients of a particular
+            antenna for a particular frequency at a particular time.
+        za (array): zenith angles in radians
+        az (array): azimuths in radians
+        nm_tups (list of tuple): pairs of radial (n) and azimuthal (m) modes
+            in the coeffs
+        fn (str): filename for the plot
+        vmin (float): Minimum value to plot
+        vmax (float): Max value to plot
+        norm (matplotlib colormap normalization): Which colormap normalization to use.
+        linthresh (float): The linear threshold for the SymLogNorm map
+        cmap (str): colormap
+        kwargs: other keyword arguments for colormap normalization
+
+    Returns:
+        None
+    """
+
+
+    rho = np.sqrt(1 - np.cos(za))
+    nmodes = [item[0] for item in nm_tups]
+    mmodes = [item[1] for item in nm_tups]
+    Rho, Az = np.meshgrid(rho, az)
+    B = get_bess_matr(nmodes, mmodes, Rho, Az)
+
+    beam = B@beam_coeffs
+
+    Za, _ = np.meshgrid(za, az)
+
+    fig, ax = plt.subplots(ncols=2, subplot_kw={'projection': 'polar'}, figsize=(16, 8))
+    cax = ax[0].pcolormesh(Az, Za, beam.real,
+                           norm=norm(vmin=vmin, vmax=vmax, linthresh=linthresh, **kwargs), cmap=cmap)
+    ax[0].set_title("Real Component")
+    ax[1].pcolormesh(Theta, ZA, beam.imag,
+                     norm=norm(vmin=vmin, vmax=vmax, linthresh=linthresh, **kwargs), cmap=cmap)
+    ax[1].set_title("Imaginary Component")
+    fig.colorbar(cax, ax=ax.ravel().tolist())
+    if save:
+        fig.savefig(fn)
+        plt.close(fig)
+
+    return
 
 
 def get_zernike_rad(r, n, m):
