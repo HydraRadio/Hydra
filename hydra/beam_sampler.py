@@ -574,20 +574,46 @@ def do_cov_cho(cov_tuple, check_op=False):
     return cho_tuple
 
 
-def plot_FB_beam(beam_coeffs, za, az, nm_tups, fn,
-                 vmin=-1, vmax=1, norm=SymLogNorm, linthresh=1e-3, cmap="Spectral",
-                  **kwargs):
+def get_beam_from_FB_coeff(beam_coeffs, za, az, nmodes, mmodes):
     """
-    Plots a Fourier_Bessel beam at specified zenith angles and azimuths.
+    Gets a beam from a list of beam coefficients at desired zenith angle and
+    azimuth.
 
     Parameters:
         beam_coeffs (complex_array): Fourier-Bessel coefficients of a particular
             antenna for a particular frequency.
         za (array): zenith angles in radians
         az (array): azimuths in radians
-        nm_tups (list of tuple): pairs of radial (n) and azimuthal (m) modes
-            in the coeffs
-        fn (str): filename for the plot
+        nmodes (array_like):
+            Radial modes to use for the Bessel basis. Should correspond to mmodes
+            argument.
+        mmodes (array_like):
+            Which azimuthal modes to use for the Fourier-Bessel basis
+
+    Returns:
+        beam (array_like): Beam evaluated at a grid of za, az
+    """
+
+
+    rho = np.sqrt(1 - np.cos(za))
+    Rho, Az = np.meshgrid(rho, az)
+    B = get_bess_matr(nmodes, mmodes, Rho, Az)
+
+    beam = B@beam_coeffs
+
+    return beam
+
+
+def plot_FB_beam(beam, za, az,
+                 vmin=-1, vmax=1, norm=SymLogNorm, linthresh=1e-3, cmap="Spectral",
+                  **kwargs):
+    """
+    Plots a Fourier_Bessel beam at specified zenith angles and azimuths.
+
+    Parameters:
+        beam (array_like): Beam evaluated at a grid of za, az
+        za (array): zenith angles in radians
+        az (array): azimuths in radians
         vmin (float): Minimum value to plot
         vmax (float): Max value to plot
         norm (matplotlib colormap normalization): Which colormap normalization to use.
@@ -599,16 +625,7 @@ def plot_FB_beam(beam_coeffs, za, az, nm_tups, fn,
         None
     """
 
-
-    rho = np.sqrt(1 - np.cos(za))
-    nmodes = [item[0] for item in nm_tups]
-    mmodes = [item[1] for item in nm_tups]
-    Rho, Az = np.meshgrid(rho, az)
-    B = get_bess_matr(nmodes, mmodes, Rho, Az)
-
-    beam = B@beam_coeffs
-
-    Za, _ = np.meshgrid(za, az)
+    Az, Za = np.meshgrid(az, za)
 
     fig, ax = plt.subplots(ncols=2, subplot_kw={'projection': 'polar'}, figsize=(16, 8))
     cax = ax[0].pcolormesh(Az, Za, beam.real,
