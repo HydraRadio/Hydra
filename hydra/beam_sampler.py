@@ -6,6 +6,7 @@ from matplotlib.colors import SymLogNorm
 
 from pyuvsim import AnalyticBeam
 from pyuvsim.analyticbeam import diameter_to_sigma
+from pyuvdata import UVBeam
 from vis_cpu import conversions
 
 from .vis_simulator import simulate_vis_per_source
@@ -166,6 +167,13 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
         fit_beam (array_like):
             The best-fit Fourier-Bessel coefficients for the input beam.
     """
+    # Check beam type to see shape for return of interp method
+    if isinstance(beam, AnalyticBeam):
+        future_array_shapes = True
+    elif isinstance(beam, UVBeam):
+        future_array_shapes = beam.future_array_shapes
+    else:
+        raise ValueError("beam object is not AnalyticBeam or UVBeam object.")
 
     bess_matr = get_bess_matr(nmodes, mmodes, rho, phi)
     ncoeff = bess_matr.shape[-1]
@@ -177,14 +185,20 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
     dphi = phi_un[1] - phi_un[0]
     dA = (rho + rho_diff * drho) * drho * dphi
 
+    # Before indexing conventions enforced
+    rhs_full = beam.interp(az_array=phi.flatten(),
+                           za_array=np.arccos(1 - rho**2).flatten(),
+                           freq_array=freqs)[0]
     if polarized:
-        rhs = beam.interp(az_array=phi.flatten(),
-                          za_array=np.arccos(1 - rho**2).flatten(),
-                          freq_array=freqs)[0][:, 0] # Will have shape Nfeed, Naxes_vec, Nfreq, Nrho * Nphi
+        if future_array_shapes:
+            rhs = rhs_full
+        else:
+            rhs = rhs_full[:, 0] # Will have shape Nfeed, Naxes_vec, Nfreq, Nrho * Nphi
     else:
-        rhs = beam.interp(az_array=phi.flatten(),
-                          za_array=np.arccos(1 - rho**2).flatten(),
-                          freq_array=freqs)[0][1:, 0, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
+        if future_array_shapes:
+            rhs = rhs_full[1:, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
+        else:
+            rhs = rhs_full[1:, 0, :1]
     Npol = 1 + polarized
 
     # Loop over frequencies
