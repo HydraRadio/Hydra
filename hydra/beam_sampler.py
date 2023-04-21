@@ -6,7 +6,7 @@ from matplotlib.colors import SymLogNorm
 
 from pyuvsim import AnalyticBeam
 from pyuvsim.analyticbeam import diameter_to_sigma
-from pyuvdata import UVBeam
+from pyuvdata import 
 from vis_cpu import conversions
 
 from .vis_simulator import simulate_vis_per_source
@@ -167,13 +167,8 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
         fit_beam (array_like):
             The best-fit Fourier-Bessel coefficients for the input beam.
     """
-    # Check beam type to see shape for return of interp method
-    if isinstance(beam, AnalyticBeam):
-        future_array_shapes = True
-    elif isinstance(beam, UVBeam):
-        future_array_shapes = beam.future_array_shapes
-    else:
-        raise ValueError("beam object is not AnalyticBeam or UVBeam object.")
+
+    spw_axis_present = utils.get_beam_interp_shape(beam)
 
     bess_matr = get_bess_matr(nmodes, mmodes, rho, phi)
     ncoeff = bess_matr.shape[-1]
@@ -190,15 +185,16 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
                            za_array=np.arccos(1 - rho**2).flatten(),
                            freq_array=freqs)[0]
     if polarized:
-        if future_array_shapes:
-            rhs = rhs_full
-        else:
+        if spw_axis_present:
             rhs = rhs_full[:, 0] # Will have shape Nfeed, Naxes_vec, Nfreq, Nrho * Nphi
-    else:
-        if future_array_shapes:
-            rhs = rhs_full[1:, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
         else:
-            rhs = rhs_full[1:, 0, :1]
+            rhs = rhs_full
+    else:
+        if spw_axis_present:
+            rhs = rhs_full[1:, 0, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
+        else:
+            rhs = rhs_full[1:, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
+
     Npol = 1 + polarized
 
     # Loop over frequencies

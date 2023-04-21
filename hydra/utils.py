@@ -2,6 +2,7 @@
 import numpy as np
 from vis_cpu import conversions
 import pyuvdata
+from pyuvsim import AnalyticBeam
 
 
 def flatten_vector(v):
@@ -412,3 +413,21 @@ def antenna_dict_from_uvd(uvd):
     for i, ant in enumerate(ant_ids):
         ants[ant] = enu[i]
     return ants
+
+
+def get_beam_interp_shape(beam):
+    """
+    Determine whether the spw axis is present.
+
+    Parameters:
+        beam (AnalyticBeam or UVBeam)
+    """
+    # Check beam type to see shape for return of interp method
+    if isinstance(beam, AnalyticBeam):
+        spw_axis_present = False
+    elif isinstance(beam, pyuvdata.UVBeam):
+        spw_axis_present = not beam.future_array_shapes
+    else:
+        raise ValueError("beam object is not AnalyticBeam or UVBeam object.")
+
+    return spw_axis_present
