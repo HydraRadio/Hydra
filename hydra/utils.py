@@ -417,14 +417,18 @@ def antenna_dict_from_uvd(uvd):
 
 def get_beam_interp_shape(beam):
     """
-    Determine whether the spw axis is present.
+    Determine whether the spw axis is present in a beam object.
 
     Parameters:
-        beam (AnalyticBeam or UVBeam)
+        beam (AnalyticBeam or UVBeam): The beam object in question. Must be an
+            instance of either AnalyticBeam or UVBeam.
+    Returns:
+        spw_axis_present (bool): Whether the spw axis is present.
     """
     # Check beam type to see shape for return of interp method
     if isinstance(beam, AnalyticBeam):
         spw_axis_present = False
+
     elif isinstance(beam, pyuvdata.UVBeam):
         spw_axis_present = not beam.future_array_shapes
     else:
