@@ -167,6 +167,8 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
             The best-fit Fourier-Bessel coefficients for the input beam.
     """
 
+    spw_axis_present = utils.get_beam_interp_shape(beam)
+
     bess_matr = get_bess_matr(nmodes, mmodes, rho, phi)
     ncoeff = bess_matr.shape[-1]
     rho_un = np.unique(rho)
@@ -177,14 +179,21 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
     dphi = phi_un[1] - phi_un[0]
     dA = (rho + rho_diff * drho) * drho * dphi
 
+    # Before indexing conventions enforced
+    rhs_full = beam.interp(az_array=phi.flatten(),
+                           za_array=np.arccos(1 - rho**2).flatten(),
+                           freq_array=freqs)[0]
     if polarized:
-        rhs = beam.interp(az_array=phi.flatten(),
-                          za_array=np.arccos(1 - rho**2).flatten(),
-                          freq_array=freqs)[0][:, 0] # Will have shape Nfeed, Naxes_vec, Nfreq, Nrho * Nphi
+        if spw_axis_present:
+            rhs = rhs_full[:, 0] # Will have shape Nfeed, Naxes_vec, Nfreq, Nrho * Nphi
+        else:
+            rhs = rhs_full
     else:
-        rhs = beam.interp(az_array=phi.flatten(),
-                          za_array=np.arccos(1 - rho**2).flatten(),
-                          freq_array=freqs)[0][1:, 0, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
+        if spw_axis_present:
+            rhs = rhs_full[1:, 0, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
+        else:
+            rhs = rhs_full[1:, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
+
     Npol = 1 + polarized
 
     # Loop over frequencies
