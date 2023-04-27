@@ -6,7 +6,6 @@ from matplotlib.colors import SymLogNorm
 
 from pyuvsim import AnalyticBeam
 from pyuvsim.analyticbeam import diameter_to_sigma
-from pyuvdata import 
 from vis_cpu import conversions
 
 from .vis_simulator import simulate_vis_per_source
