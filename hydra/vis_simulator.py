@@ -232,6 +232,7 @@ def vis_sim_per_source(
         # Primary beam pattern using direct interpolation of UVBeam object
         az, za = conversions.enu_to_az_za(enu_e=tx, enu_n=ty, orientation="uvbeam")
         for i, bm in enumerate(beam_list):
+            spw_axis_present = utils.get_beam_interp_shape(bm)
             kw = (
                 {"reuse_spline": True, "check_azza_domain": False}
                 if isinstance(bm, UVBeam)
@@ -243,11 +244,17 @@ def vis_sim_per_source(
             )[0]
 
             if polarized:
-                interp_beam = interp_beam[:, 0, :, 0, :]
+                if spw_axis_present:
+                    interp_beam = interp_beam[:, 0, :, 0, :]
+                else:
+                    interp_beam = interp_beam[:, :, 0, :]
             else:
                 # Here we have already asserted that the beam is a power beam and
                 # has only one polarization, so we just evaluate that one.
-                interp_beam = np.sqrt(interp_beam[0, 0, 0, 0, :])
+                if spw_axis_present:
+                    interp_beam = np.sqrt(interp_beam[0, 0, 0, 0, :])
+                else:
+                    interp_beam = np.sqrt(interp_beam[0, 0, 0, :])
 
             A_s[:, :, i] = interp_beam
 

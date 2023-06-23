@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.linalg import lstsq, toeplitz, cholesky, inv, LinAlgError, solve
 from scipy.special import comb, hyp2f1, jn_zeros, jn
+import matplotlib.pyplot as plt
+from matplotlib.colors import SymLogNorm
 
 from pyuvsim import AnalyticBeam
 from pyuvsim.analyticbeam import diameter_to_sigma
@@ -165,6 +167,8 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
             The best-fit Fourier-Bessel coefficients for the input beam.
     """
 
+    spw_axis_present = utils.get_beam_interp_shape(beam)
+
     bess_matr = get_bess_matr(nmodes, mmodes, rho, phi)
     ncoeff = bess_matr.shape[-1]
     rho_un = np.unique(rho)
@@ -175,14 +179,21 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
     dphi = phi_un[1] - phi_un[0]
     dA = (rho + rho_diff * drho) * drho * dphi
 
+    # Before indexing conventions enforced
+    rhs_full = beam.interp(az_array=phi.flatten(),
+                           za_array=np.arccos(1 - rho**2).flatten(),
+                           freq_array=freqs)[0]
     if polarized:
-        rhs = beam.interp(az_array=phi.flatten(),
-                          za_array=np.arccos(1 - rho**2).flatten(),
-                          freq_array=freqs)[0][:, 0] # Will have shape Nfeed, Naxes_vec, Nfreq, Nrho * Nphi
+        if spw_axis_present:
+            rhs = rhs_full[:, 0] # Will have shape Nfeed, Naxes_vec, Nfreq, Nrho * Nphi
+        else:
+            rhs = rhs_full
     else:
-        rhs = beam.interp(az_array=phi.flatten(),
-                          za_array=np.arccos(1 - rho**2).flatten(),
-                          freq_array=freqs)[0][1:, 0, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
+        if spw_axis_present:
+            rhs = rhs_full[1:, 0, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
+        else:
+            rhs = rhs_full[1:, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
+
     Npol = 1 + polarized
 
     # Loop over frequencies
@@ -570,6 +581,74 @@ def do_cov_cho(cov_tuple, check_op=False):
             raise LinAlgError(f"Cholesky factorization failed for frequency covariance")
 
     return cho_tuple
+
+
+def get_beam_from_FB_coeff(beam_coeffs, za, az, nmodes, mmodes):
+    """
+    Gets a beam from a list of beam coefficients at desired zenith angle and
+    azimuth.
+
+    Parameters:
+        beam_coeffs (complex_array): Fourier-Bessel coefficients of a particular
+            antenna for a particular frequency.
+        za (array): zenith angles in radians
+        az (array): azimuths in radians
+        nmodes (array_like):
+            Radial modes to use for the Bessel basis. Should correspond to mmodes
+            argument.
+        mmodes (array_like):
+            Which azimuthal modes to use for the Fourier-Bessel basis
+
+    Returns:
+        beam (array_like): Beam evaluated at a grid of za, az
+    """
+
+
+    rho = np.sqrt(1 - np.cos(za))
+    Rho, Az = np.meshgrid(rho, az)
+    B = get_bess_matr(nmodes, mmodes, Rho, Az)
+
+    beam = B@beam_coeffs
+
+    return beam
+
+
+def plot_FB_beam(beam, za, az,
+                 vmin=-1, vmax=1, norm=SymLogNorm, linthresh=1e-3, cmap="Spectral",
+                  **kwargs):
+    """
+    Plots a Fourier_Bessel beam at specified zenith angles and azimuths.
+
+    Parameters:
+        beam (array_like): Beam evaluated at a grid of za, az
+        za (array): zenith angles in radians
+        az (array): azimuths in radians
+        vmin (float): Minimum value to plot
+        vmax (float): Max value to plot
+        norm (matplotlib colormap normalization): Which colormap normalization to use.
+        linthresh (float): The linear threshold for the SymLogNorm map
+        cmap (str): colormap
+        kwargs: other keyword arguments for colormap normalization
+
+    Returns:
+        None
+    """
+
+    Az, Za = np.meshgrid(az, za)
+
+    fig, ax = plt.subplots(ncols=2, subplot_kw={'projection': 'polar'}, figsize=(16, 8))
+    cax = ax[0].pcolormesh(Az, Za, beam.real,
+                           norm=norm(vmin=vmin, vmax=vmax, linthresh=linthresh, **kwargs), cmap=cmap)
+    ax[0].set_title("Real Component")
+    ax[1].pcolormesh(Theta, ZA, beam.imag,
+                     norm=norm(vmin=vmin, vmax=vmax, linthresh=linthresh, **kwargs), cmap=cmap)
+    ax[1].set_title("Imaginary Component")
+    fig.colorbar(cax, ax=ax.ravel().tolist())
+    if save:
+        fig.savefig(fn)
+        plt.close(fig)
+
+    return
 
 
 def get_zernike_rad(r, n, m):
