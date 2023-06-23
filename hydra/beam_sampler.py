@@ -705,10 +705,11 @@ def get_zernike_matrix(nmax, theta, r):
 
     # iterate over all modes and assign product of radial/azimuthal basis function
     ind = 0
-    for n in range(nmax + 1):
+    for n in range(0, nmax + 1):
         for m in range(-n, n + 1, 2):
-            rad = get_zernike_rad(r, n, np.abs(m))
-            zern_matr[ind] = rad * azim[m]
+            # normalize
+            rad = get_zernike_rad(r, n, np.abs(m)) * np.sqrt(2 * n + 2)
+            zern_matr[ind] = rad * azim[m] / np.sqrt(np.pi * (1 + (m == 0)))
             ind += 1
 
     return zern_matr.transpose((1, 2, 0))
