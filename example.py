@@ -91,6 +91,39 @@ parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 1),
 parser.add_argument("--dec-bounds", type=float, action="store", default=(-0.6, 0.4),
                     nargs=2, required=False, dest="dec_bounds",
                     help="Bounds for the Declination of the randomly simulated sources")
+parser.add_argument("--lst-bounds", type=float, action="store", default=(0.2, 0.5),
+                    nargs=2, required=False, dest="lst_bounds",
+                    help="Bounds for the LST range of the simulation, in radians.")
+parser.add_argument("--freq-bounds", type=float, action="store", default=(100., 120.),
+                    nargs=2, required=False, dest="freq_bounds",
+                    help="Bounds for the frequency range of the simulation, in MHz.")
+parser.add_argument("--ptsrc-amp-prior-level", type=float, action="store", default=0.1,
+                    required=False, dest="ptsrc_amp_prior_level",
+                    help="Fractional prior on point source amplitudes")
+parser.add_argument("--vis-prior-level", type=float, action="store", default=0.1,
+                    required=False, dest="vis_prior_level",
+                    help="Prior on visibility values")
+
+parser.add_argument("--calsrc-std", type=float, action="store", default=-1.,
+                    required=False, dest="calsrc_std",
+                    help="Define a different std. dev. for the amplitude prior of a calibration source. If -1, do not use a calibration source.")
+parser.add_argument("--calsrc-radius", type=float, action="store", default=10.,
+                    required=False, dest="calsrc_radius",
+                    help="Radius around declination of the zenith in which to search for brightest source, which is then identified as the calibration source.")
+parser.add_argument("--gain-prior-type", type=str, action="store", default='flat',
+                    required=False, dest="gain_prior_type",
+                    help="Gain prior type, either 'flat' or 'gaussian'.")
+parser.add_argument("--gain-prior-level", type=float, action="store", default=0.1,
+                    required=False, dest="gain_prior_level",
+                    help="Overall amplitude of gain prior.")
+parser.add_argument("--gain-prior-scale", type=float, action="store", default=1.,
+                    required=False, dest="gain_prior_scale",
+                    help="Approx. FWHM of Gaussian gain prior in time/freq., measured in no. of channels/samples.")
+parser.add_argument("--gain-prior-zeropoint-var", type=float, action="store", default=1e-2,
+                    required=False, dest="gain_prior_zeropoint_var",
+                    help="Choose a special value for the std. dev. of the prior on the gain zeropoint mode. For flat prior only.")
+
+
 args = parser.parse_args()
 
 # Set switches
@@ -127,8 +160,29 @@ beam_mmax = args.beam_mmax
 sigma_noise = args.sigma_noise
 ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
 dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
+lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
+freq_min, freq_max = (min(args.freq_bounds), max(args.freq_bounds))
 
 hera_latitude = -30.7215 * np.pi / 180.0
+
+# Prior settings
+ptsrc_amp_prior_level = args.ptsrc_amp_prior_level
+vis_prior_level = args.vis_prior_level
+
+calsrc_radius = args.calsrc_radius 
+if args.calsrc_std < 0.:
+    calsrc = False 
+else:
+    calsrc = True
+    calsrc_std = args.calsrc_std
+
+
+gain_prior_scale = args.gain_prior_scale
+gain_prior_type = args.gain_prior_type
+assert gain_prior_type in ['flat', 'gaussian'], \
+    "gain-prior-type must be 'flat' or 'gaussian'"
+gain_prior_level = args.gain_prior_level
+gain_prior_zeropoint_var = args.gain_prior_zeropoint_var
 
 # Check that output directory exists
 output_dir = args.output_dir
@@ -167,8 +221,8 @@ ftime = os.path.join(output_dir, "timing.dat")
 #-------------------------------------------------------------------------------
 
 # Simulate some data
-times = np.linspace(0.2, 0.5, Ntimes)
-freqs = np.linspace(100., 120., Nfreqs)
+times = np.linspace(lst_min, lst_max, Ntimes)
+freqs = np.linspace(freq_min, freq_max, Nfreqs)
 
 #ant_pos = build_hex_array(hex_spec=(3,4), d=14.6)
 ant_pos = build_hex_array(hex_spec=hex_array, d=14.6)
@@ -204,6 +258,20 @@ ptsrc_amps = 10.**np.random.uniform(low=-1., high=2., size=Nptsrc)
 fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc)
 print("pstrc amps (input):", ptsrc_amps[:5])
 
+# Select what would be the calibration source (brightest, close to beam)
+calsrc_idxs = np.where(np.abs(dec - hera_latitude)*180./np.pi < calsrc_radius)[0]
+assert len(calsrc_idxs) > 0, "No sources found within %d deg of the zenith" % calsrc_radius
+calsrc_idx = calsrc_idxs[np.argmax(ptsrc_amps[calsrc_idxs])]
+calsrc_amp = ptsrc_amps[calsrc_idx]
+print("Calibration source:")
+print("  Enabled:            %s" % calsrc)
+print("  Index:              %d" % calsrc_idx)
+print("  Amplitude:          %6.3e" % calsrc_amp)
+print("  Dist. from zenith:  %6.2f deg" \
+      % np.rad2deg(np.abs(dec[calsrc_idx] - hera_latitude)))
+print("  Flux @ lowest freq: %6.3e Jy" % fluxes[calsrc_idx,0])
+print("")
+
 # Beams
 beams = [pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14.)
          for ant in ants]
@@ -229,6 +297,7 @@ timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
 # Allocate computed visibilities to only the requested baselines (saves memory)
 model0 = hydra.extract_vis_from_sim(ants, antpairs, _sim_vis)
 del _sim_vis # save some memory
+np.save(os.path.join(output_dir, "model0"), model0)
 
 # Define gains and gain perturbations
 gains = (1. + 0.j) * np.ones((Nants, Nfreqs, Ntimes), dtype=model0.dtype)
@@ -244,6 +313,9 @@ _delta_g = 5. \
                                      + ((tau[:,np.newaxis] - 0.05)/0.03)**2.)))
 delta_g = np.array([random_amp[i] * _delta_g *random_phase[i] for i in range(Nants)],
                     dtype=model0.dtype)
+
+np.save(os.path.join(output_dir, "gains0"), gains)
+np.save(os.path.join(output_dir, "delta_g0"), delta_g)
 
 # Apply a Blackman-Harris window to apodise the edges
 #window = blackmanharris(model0.shape[1], sym=True)[np.newaxis,:,np.newaxis] \
@@ -277,6 +349,8 @@ data += sigma_noise * np.sqrt(0.5) \
       * (  1.0 * np.random.randn(*data.shape) \
          + 1.j * np.random.randn(*data.shape))
 
+np.save(os.path.join(output_dir, "data0"), data)
+
 # Plot data (including noise)
 if PLOTTING:
     plt.matshow(data[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
@@ -292,8 +366,6 @@ if PLOTTING:
 current_data_model = 1.*model0.copy() * window # FIXME
 
 # Initial gain perturbation guesses
-#current_delta_gain = np.zeros(gains.shape, dtype=model0.dtype)
-# FIXME
 current_delta_gain = np.zeros_like(delta_g)
 # FIXME: Trying to fix the amplitude to the correct value
 #current_delta_gain[:,0,0] += fft.fft2(delta_g[0])[0,0] # FIXME FIXME
@@ -324,29 +396,47 @@ timing_info(ftime, 0, "(0) Precomp. ptsrc proj. operator", time.time() - t0)
 noise_var = (sigma_noise)**2. * np.ones(data.shape)
 inv_noise_var = window / noise_var
 
-gain_pspec_sqrt = 0.1 * np.ones((gains.shape[1], gains.shape[2]))
-gain_pspec_sqrt[0,0] = 1e-2 # FIXME: Try to fix the zero point?
+# Gain prior
+# Set up initial flat prior
+gain_pspec_sqrt = gain_prior_level * np.ones((gains.shape[1], gains.shape[2]))
 
-# FIXME: Gain smoothing via priors
-#ii, jj = np.meshgrid(np.arange(gains.shape[2]), np.arange(gains.shape[1]))
-#gain_pspec_sqrt *= np.exp(-0.5 * np.sqrt(ii**2. + jj**2.)/1.**2.)
+# Select prior type
+if gain_prior_type == 'gaussian2d':
+    # Gain smoothing in time and freq. directions
+    # gains.shape: (Nants, Nfreqs, Ntimes)
+    ii, jj = np.meshgrid(np.arange(gains.shape[2]), np.arange(gains.shape[1]))
+    gain_pspec_sqrt *= np.exp(-0.5 * np.sqrt(ii**2. + jj**2.)/gain_prior_scale**2.)
+elif gain_prior_type == 'gaussian_time':
+    # Gain smoothing in time direction only
+    ii, jj = np.meshgrid(np.arange(gains.shape[2]), np.arange(gains.shape[1]))
+    gain_pspec_sqrt *= np.exp(-0.5 * np.sqrt(ii**2.)/gain_prior_scale**2.)
+if gain_prior_type == 'gaussian_freq':
+    # Gain smoothing in freq. direction only
+    ii, jj = np.meshgrid(np.arange(gains.shape[2]), np.arange(gains.shape[1]))
+    gain_pspec_sqrt *= np.exp(-0.5 * np.sqrt(jj**2.)/gain_prior_scale**2.)
+else:
+    # Flat prior
+    gain_pspec_sqrt[0,0] = gain_prior_zeropoint_var # Try to fix the zero point?
 
-#plt.matshow(gain_pspec_sqrt, aspect='auto')
-#plt.colorbar()
-#plt.show()
-#exit()
+if PLOTTING:
+    plt.matshow(gain_pspec_sqrt, aspect='auto')
+    plt.colorbar()
+    plt.savefig(os.path.join(output_dir, "gain_pspec_sqrt.png"))
 
-amp_prior_std = 0.1 * np.ones(Nptsrc)
-amp_prior_std[19] = 1e-3 # FIXME
-vis_pspec_sqrt = 0.01 * np.ones((1, Nfreqs, Ntimes)) # currently same for all visibilities
+# Ptsrc priors
+amp_prior_std = ptsrc_amp_prior_level * np.ones(Nptsrc)
+if calsrc:
+    amp_prior_std[calsrc_idx] = calsrc_std
+
+# Visibility priors
+vis_pspec_sqrt = vis_prior_level * np.ones((1, Nfreqs, Ntimes)) # currently same for all visibilities
 vis_group_id = np.zeros(len(antpairs), dtype=int) # index 0 for all
 
+# Construct projection operators and store shapes 
 A_real, A_imag = hydra.gain_sampler.proj_operator(ants, antpairs)
-
 gain_shape = gains.shape
 N_gain_params = 2 * gains.shape[0] * gains.shape[1] * gains.shape[2]
 N_vis_params = 2 * data.shape[0] * data.shape[1] * data.shape[2]
-
 
 # FIXME: Check that model0 == vis_proj_operator0 @ ones
 
