@@ -21,7 +21,8 @@ def split_real_imag(arr, kind):
         arr (array_like):
             The array for which the components are to be split.
         kind (str):
-            The type of array. Either 'op' (for operator) or 'vec' (for vector).
+            The role that the array plays in the linear algebra. Either 'op'
+            (for operator) or 'vec' (for vector).
 
     Returns:
         new_arr (array_like):
@@ -56,8 +57,9 @@ def split_real_imag(arr, kind):
 
 def reshape_data_arr(arr, Nfreqs, Ntimes, Nants, Npol):
     """
-    Reshape a data-shaped array into something more convenient for beam calculation.
-    Makes a copy of the data twice as large as the data.
+    Reshape a data-shaped array into a Hermitian matrix representation that is
+    more convenient for beam sampling. Makes a copy of the data twice as large
+    as the data.
 
     Parameters:
         arr (array_like, complex):
@@ -91,7 +93,7 @@ def reshape_data_arr(arr, Nfreqs, Ntimes, Nants, Npol):
 def get_bess_matr(nmodes, mmodes, rho, phi):
     """
     Make the matrix that transforms from the sparse Fourier-Bessel basis to
-    source positions to direction cosines.
+    source positions in the cylindrical projection defined by rho and phi.
 
     Parameters:
         nmodes (array_like):
@@ -100,9 +102,9 @@ def get_bess_matr(nmodes, mmodes, rho, phi):
         mmodes (array_like):
             Which azimuthal modes to use for the Fourier-Bessel basis
         rho (array_like):
-            Radial coordinate on disc.
+            Radial coordinate on disc (usually a monotonic function of radio astronomer's zenith angle).
         phi (array_like):
-            Azimuthal coordinate on disc (usually RA's azimuth angle)
+            Azimuthal coordinate on disc (usually radio astronomer's azimuth angle)
 
     Returns:
         bess_matr (array_like):
@@ -156,11 +158,6 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
         polarized (bool):
             Whether or not polarized beam inference is being done
 
-        rho_diff (float):
-            offset for radial coordinate to compute area element on disc. Used
-            so that the central pixel (where the beam is largest in amplitude)
-            does not contribute 0 to the beam volume.
-
 
     Returns:
         fit_beam (array_like):
@@ -177,7 +174,6 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
 
     drho = rho_un[1] - rho_un[0]
     dphi = phi_un[1] - phi_un[0]
-    dA = (rho + rho_diff * drho) * drho * dphi
 
     # Before indexing conventions enforced
     rhs_full = beam.interp(az_array=phi.flatten(),
@@ -200,13 +196,13 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
     Nfreqs = len(freqs)
     fit_beam = np.zeros((Nfreqs, ncoeff, Npol, Npol))
 
-    BTdA = (bess_matr.conj() * dA[:, :, np.newaxis])
-    lhs_op = np.tensordot(BTdA, bess_matr, axes=((0, 1), (0, 1)))
-    BTdA_res = BTdA.reshape(rho.size, ncoeff)
+    BT = (bess_matr.conj())
+    lhs_op = np.tensordot(BT, bess_matr, axes=((0, 1), (0, 1)))
+    BT_res = BT.reshape(rho.size, ncoeff)
     for freq_ind in range(Nfreqs):
         for feed_ind in range(Npol):
             for pol_ind in range(Npol):
-                rhs_vec = (BTdA_res * rhs[feed_ind, pol_ind, freq_ind, :, np.newaxis]).sum(axis=0)
+                rhs_vec = (BT_res * rhs[feed_ind, pol_ind, freq_ind, :, np.newaxis]).sum(axis=0)
                 soln = solve(lhs_op, rhs_vec, assume_a='her')
                 fit_beam[freq_ind, :, feed_ind, pol_ind] = soln
 
@@ -228,10 +224,9 @@ def get_ant_inds(ant_samp_ind, nants):
             The total number of antennas in the problem.
 
     Returns:
-        ant_inds (tuple):
-            A tuple with one entry, which is itself a 1D array of indices
-            corresponding to the antennas that are being conditioned on in the
-            current Gibbs step (an output of np.where on a 1D array).
+        ant_inds (array_like):
+            Boolean array that is length nants and true everywhere but the
+            ant_samp_ind.
     """
     ant_inds = np.arange(nants) != ant_samp_ind
     return ant_inds
@@ -260,11 +255,11 @@ def select_subarr(arr, ant_samp_ind, Nants):
 def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
                     beam_coeffs, ant_samp_ind, polarized=False, precision=1,
                     latitude=-30.7215 * np.pi / 180.0, use_feed="x",
-                    multiprocess=True, low_mem=False):
+                    multiprocess=True):
     """
     Compute the matrices that act as the quadratic forms by which visibilities
     are made. Calls simulate_vis_per_source to get the Fourier operator, then
-    transforms to the Zernike basis.
+    transforms to the Fourier-Bessel basis.
 
     Parameters:
         bess_matr (array_like, complex):
@@ -290,8 +285,6 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
             antenna. Has shape `(ncoeff, NFREQS, NANTS, Nfeed, Naxes_vec)`.
         ant_samp_ind (int):
             ID of the antenna that is being sampled.
-        nants (int):
-            Number of antennas in use.
         polarized (bool):
             If True, raise a NotImplementedError. Eventually this will use
             polarized beams.
@@ -302,8 +295,8 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
         latitude (float):
             The latitude of the center of the array, in radians. The default is
             the HERA latitude = -30.7215 * pi / 180.
-        multiprocess (bool): Whether to use multiprocessing to speed up the
-            calculation
+        multiprocess (bool):
+            Whether to use multiprocessing to speed up the calculation
 
 
     Returns:
@@ -356,7 +349,7 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
 
 def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
     """
-    Construct the LHS operator for the Gibbs sampling.
+    Construct the nontrivial part of the LHS operator for the Gibbs sampling.
 
     Parameters:
         inv_noise_var (array_like):
@@ -370,6 +363,11 @@ def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
         bess_trans: (array_like): (Complex) matrix that, when applied to a
             vector of Zernike coefficients for one antenna, returns the
             visibilities associated with that antenna.
+
+    Returns:
+        cov_Qdag_Ninv_Q (array_like):
+            The prior covariance matrix multiplied by the inverse noise covariance
+            transformed to the Fourier-Bessel basis.
     """
     freq_matr, comp_matr = cov_tuple
     Nfreqs = freq_matr.shape[0]
@@ -403,7 +401,7 @@ def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
 
 def apply_operator(x, cov_Qdag_Ninv_Q):
     """
-    Apply LHS operator to vector of Zernike coefficients.
+    Apply LHS operator to vector of Fourier-Bessel coefficients.
 
     Parameters:
         x (array_like):
@@ -456,7 +454,7 @@ def construct_rhs(vis, inv_noise_var, mu, bess_trans,
             Inverse variance of same shape as `vis`. Assumes diagonal
             covariance matrix, which is true in practice.
         mu (array_like):
-            Prior mean for the Zernike coefficients (pre-calculated).
+            Prior mean for the Fourier-Bessel coefficients (pre-calculated).
         cov_tuple (tuple of arr): tensor-factored covariance matrix.
         cho_tuple (tuple of arr): tensor-factored, cholesky decomposed prior
             covariance matrix.
@@ -468,7 +466,7 @@ def construct_rhs(vis, inv_noise_var, mu, bess_trans,
 
     Returns:
         rhs (array_like):
-            RHS vector.
+            RHS vector for GCR eqn.
     """
 
     flx0_shape = mu.shape
@@ -514,7 +512,26 @@ def construct_rhs(vis, inv_noise_var, mu, bess_trans,
 
 
 def non_norm_gauss(A, sig, x):
-    return A * np.exp(-x**2 / (2 * sig**2))
+    """
+    Make a Gaussian function (not a probability density function). Used in
+    constructing freq-freq covariance functions.
+
+    Parameters:
+        A (float):
+            Amplitude of the Gaussian function
+        sig (float):
+            Width of the Gaussian function
+        x (array_like):
+            Locations to evaluate the Gaussian function.
+
+    Returns:
+        gvals (array_like):
+            Values of the Gaussian function at positions given by x
+    """
+
+    gvals = A * np.exp(-x**2 / (2 * sig**2))
+
+    return gvals
 
 def make_prior_cov(freqs, times, ncoeff, std, sig_freq,
                    constrain_phase=False, constraint=1e-4, ridge=0):
@@ -705,10 +722,11 @@ def get_zernike_matrix(nmax, theta, r):
 
     # iterate over all modes and assign product of radial/azimuthal basis function
     ind = 0
-    for n in range(nmax + 1):
+    for n in range(0, nmax + 1):
         for m in range(-n, n + 1, 2):
-            rad = get_zernike_rad(r, n, np.abs(m))
-            zern_matr[ind] = rad * azim[m]
+            # normalize
+            rad = get_zernike_rad(r, n, np.abs(m)) * np.sqrt(2 * n + 2)
+            zern_matr[ind] = rad * azim[m] / np.sqrt(np.pi * (1 + (m == 0)))
             ind += 1
 
     return zern_matr.transpose((1, 2, 0))
