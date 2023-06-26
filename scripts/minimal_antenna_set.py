@@ -113,6 +113,7 @@ uvd2 = UVData()
 uvd2.read_uvh5(fname)
 uvd2.select(antenna_nums=best)
 print("New size:", uvd2.get_baseline_nums().size)
+print("Old size:", uvd.get_baseline_nums().size)
 outfile = "%s.minimised.uvh5" % fname
 print("Saving minimised file as:", outfile)
 uvd2.write_uvh5(outfile)
