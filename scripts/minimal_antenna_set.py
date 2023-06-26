@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import numpy as np
-from mpi4py import MPI
 from pyuvdata import UVData
 import argparse, os, sys
 
@@ -79,7 +78,7 @@ def valid_set(myants, verbose=False):
 
 # Monte Carlo algorithm to look for small subsets
 np.random.seed(30)
-nthrows = 10
+nthrows = 100
 start = 2
 best = []
 best_count = count_bls(unique_ants)
