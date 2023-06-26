@@ -71,9 +71,7 @@ def valid_set(myants, verbose=False):
     
     # Concatenate and get unique groups again
     grps = np.unique( np.concatenate(grps) )
-    if np.all(grps == unique_redgrps):
-        if verbose:
-            print(grps, unique_redgrps)
+    if grps.size == unique_redgrps.size:
         return True
     else:
         return False
@@ -82,7 +80,7 @@ def valid_set(myants, verbose=False):
 # Monte Carlo algorithm to look for small subsets
 np.random.seed(30)
 nthrows = 10
-start = 15
+start = 2
 best = []
 best_count = count_bls(unique_ants)
 for n in range(nthrows):
