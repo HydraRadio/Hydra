@@ -127,7 +127,9 @@ if __name__ == '__main__':
     parser.add_argument("--gain-prior-zeropoint-var", type=float, action="store", default=1e-2,
                         required=False, dest="gain_prior_zeropoint_var",
                         help="Choose a special value for the std. dev. of the prior on the gain zeropoint mode. For flat prior only.")
-
+    parser.add_argument("--sim-gain-amp-std", type=float, action="store", default=0.05,
+                        required=False, dest="sim_gain_amp_std",
+                        help="Std. dev. of simulated gain input amplitude correction factor.")
 
     args = parser.parse_args()
 
@@ -163,6 +165,7 @@ if __name__ == '__main__':
     beam_nmax = args.beam_nmax
     beam_mmax = args.beam_mmax
     sigma_noise = args.sigma_noise
+    sim_gain_amp_std = args.sim_gain_amp_std
     ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
     dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
     lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
@@ -312,11 +315,11 @@ if __name__ == '__main__':
     tau = np.fft.fftfreq(freqs.size, d=freqs[1] - freqs[0])
 
     random_phase = np.exp(1.j*np.random.uniform(low=0., high=2.*np.pi, size=Nants))
-    random_amp = 1. + 0.05*np.random.randn(Nants)
+    random_amp = 1. + sim_gain_amp_std * np.random.randn(Nants)
     _delta_g = 5. \
              * np.fft.ifft2(np.exp(-0.5 * (((frate[np.newaxis,:]-9.)/2.)**2.
                                          + ((tau[:,np.newaxis] - 0.05)/0.03)**2.)))
-    delta_g = np.array([random_amp[i] * _delta_g *random_phase[i] for i in range(Nants)],
+    delta_g = np.array([random_amp[i] * _delta_g * random_phase[i] for i in range(Nants)],
                         dtype=model0.dtype)
 
     np.save(os.path.join(output_dir, "gains0"), gains)
