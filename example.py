@@ -20,7 +20,7 @@ import argparse
 if __name__ == '__main__':
 
     # Don't use fork! It duplicates the memory used.
-    multiprocessing.set_start_method('forkserver', force=True)
+    #multiprocessing.set_start_method('forkserver', force=True)
 
     description = "Example Gibbs sampling of the joint posterior of several analysis " \
                   "parameters in 21-cm power spectrum estimation from a simulated " \
