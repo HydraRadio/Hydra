@@ -8,6 +8,7 @@ import argparse, os, sys
 import pyuvsim
 
 sys.path.insert(0,'/home/phil/hera/Hydra/')
+#sys.path.insert(0,'/cosma/home/dp270/dc-bull2/software/Hydra/')
 import hydra
 
 # Set up argparser
@@ -101,6 +102,7 @@ if myid == 0:
 
 # Loop over blocks, one block per worker
 # Run simulation for each block of frequencies
+tstart = time.time()
 ell, m, vis = hydra.vis_simulator.simulate_vis_per_alm(
                     lmax=lmax,
                     nside=nside,
@@ -117,6 +119,7 @@ ell, m, vis = hydra.vis_simulator.simulate_vis_per_alm(
                 )
 # vis shape (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS, NMODES)
 # (NFREQS, NTIMES, NANTS, NANTS, NMODES) if pol False
+print("(Worker %03d) Run took %5.1f min" % (myid, (time.time() - tstart)/60.))
 
 # Save operator to .npy file for each chunk
 outfile = os.path.join(outdir, "response_sh_%04d" % myid)
