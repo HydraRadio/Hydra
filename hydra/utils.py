@@ -251,7 +251,7 @@ def timing_info(fname, iter, task, duration, verbose=True):
         verbose (bool):
             If True, print a timing message to stdout too.
     """
-    with open("output/timing.dat", "a") as f:
+    with open(fname, "a") as f:
         f.write("%05d %7.5f %s\n" % (iter, duration, task))
         if verbose:
             print("%s took %3.2f sec" % (task, duration))
