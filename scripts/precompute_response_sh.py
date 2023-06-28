@@ -4,7 +4,7 @@ import numpy as np
 from mpi4py import MPI
 from pyuvdata import UVData
 import healpy as hp
-import argparse, os, sys
+import argparse, os, sys, time
 import pyuvsim
 
 sys.path.insert(0,'/home/phil/hera/Hydra/')
