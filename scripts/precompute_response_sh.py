@@ -121,6 +121,11 @@ ell, m, vis = hydra.vis_simulator.simulate_vis_per_alm(
 # (NFREQS, NTIMES, NANTS, NANTS, NMODES) if pol False
 print("(Worker %03d) Run took %5.1f min" % (myid, (time.time() - tstart)/60.))
 
+# Check that output directory exists
+if not os.path.exists(outdir):
+    os.makedirs(outdir)
+print("\nOutput directory:", outdir)
+
 # Save operator to .npy file for each chunk
 outfile = os.path.join(outdir, "response_sh_%04d" % myid)
 np.save(outfile, vis)
