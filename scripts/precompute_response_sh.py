@@ -7,7 +7,7 @@ import healpy as hp
 import argparse, os, sys
 import pyuvsim
 
-#sys.path.insert(0,'/home/phil/hera/Hydra/')
+sys.path.insert(0,'/home/phil/hera/Hydra/')
 import hydra
 
 # Set up argparser
@@ -112,7 +112,7 @@ ell, m, vis = hydra.vis_simulator.simulate_vis_per_alm(
                     precision=2,
                     latitude=np.deg2rad(-30.7215),
                     use_feed="x",
-                    multiprocess=True,
+                    multiprocess=False,
                     amplitude=1.
                 )
 # vis shape (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS, NMODES)
