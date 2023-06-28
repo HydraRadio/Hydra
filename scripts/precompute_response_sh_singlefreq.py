@@ -87,7 +87,6 @@ with open(metafile, 'w') as f:
     f.write("nside:    %d\n" % nside)
     f.write("freqs:    %s\n" % freqs[freqidx])
     f.write("lsts:     %s\n" % lsts)
-    f.write("blocks:   %s\n" % blocks)
     f.write("antnums:  %s\n" % antnums)
     f.write("antpos:   %s\n" % antpos)
 
@@ -95,8 +94,7 @@ with open(metafile, 'w') as f:
 # (NFREQS, NTIMES, NANTS, NANTS, NMODES) if polarized=False
 #v = np.zeros((max_block_size, lsts.size, len(ants), len(ants), Nmodes))
 
-# Loop over blocks, one block per worker
-# Run simulation for each block of frequencies
+# Run simulation for single frequency
 tstart = time.time()
 ell, m, vis = hydra.vis_simulator.simulate_vis_per_alm(
                     lmax=lmax,
