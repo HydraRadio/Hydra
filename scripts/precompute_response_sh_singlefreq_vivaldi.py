@@ -45,7 +45,10 @@ beam_file = args.beam_file
 
 # Check that output directory exists
 if not os.path.exists(outdir):
-    os.makedirs(outdir)
+    try:
+        os.makedirs(outdir)
+    except:
+        pass
 print("\nOutput directory:", outdir)
 
 # Load template UVData object
