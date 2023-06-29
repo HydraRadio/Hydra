@@ -77,8 +77,10 @@ print("LSTs:        %5.4f -- %5.4f rad (%d times)" \
 print("(Identical Gaussian beams)")
 print("-"*50)
     
-# Load identical UVBeams
+# Load identical UVBeams and set interpolator properties
 uvb = UVBeam.from_file(beam_file)
+uvb.interpolation_function = 'healpix_simple'
+uvb.freq_interp_kind = 'linear'
 beams = [uvb for i in range(len(antnums))]
 
 # Output metadata
