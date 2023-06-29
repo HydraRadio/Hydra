@@ -35,7 +35,7 @@ print("Total data ants:", uvd.get_ants().size)
 short_bls = []
 for i in range(len(ap)):
     if bllens[i] <= max_bl_length:
-        short_bls.append(ap[i])
+        short_bls.append(ap[i][0])
 print("Short baselines:", len(short_bls))
 print(short_bls)
 
