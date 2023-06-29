@@ -18,7 +18,7 @@ args = parser.parse_args()
 fname = args.fname
 max_bl_length = args.max_bl_length
 print("Input file:", fname)
-print("Max. bl. length (m):", )
+print("Max. bl. length (m):", max_bl_length)
 
 # Load data file
 uvd = UVData()
@@ -37,6 +37,7 @@ for i in range(len(ap)):
     if bllens[i] <= max_bl_length:
         short_bls.append(ap[i])
 print("Short baselines:", len(short_bls))
+print(short_bls)
 
 # Select only short bls
 uvd.select(bls=short_bls)
