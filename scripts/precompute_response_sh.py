@@ -4,10 +4,11 @@ import numpy as np
 from mpi4py import MPI
 from pyuvdata import UVData
 import healpy as hp
-import argparse, os, sys
+import argparse, os, sys, time
 import pyuvsim
 
-#sys.path.insert(0,'/home/phil/hera/Hydra/')
+sys.path.insert(0,'/home/phil/hera/Hydra/')
+#sys.path.insert(0,'/cosma/home/dp270/dc-bull2/software/Hydra/')
 import hydra
 
 # Set up argparser
@@ -39,6 +40,15 @@ nside = args.nside
 outdir = args.outdir
 template = args.template
 
+# Check that output directory exists
+if myid == 0:
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
+    print("\nOutput directory:", outdir)
+comm.Barrier()
+if myid == 0:
+    print("(Workers finished testing outdir.)")
+
 # Load template UVData object
 if myid == 0:
     print("Template file:", template)
@@ -46,6 +56,9 @@ uvd = UVData()
 uvd.read_uvh5(template, read_data=False)
 if myid == 0:
     print("    Read uvh5 file metadata.")
+comm.Barrier()
+if myid == 0:
+    print("(Workers finished loading metadata.)")
 
 # Get freqs, lsts, ants etc.
 freqs = np.unique(uvd.freq_array)
@@ -99,8 +112,13 @@ if myid == 0:
 # (NFREQS, NTIMES, NANTS, NANTS, NMODES) if polarized=False
 #v = np.zeros((max_block_size, lsts.size, len(ants), len(ants), Nmodes))
 
+comm.Barrier()
+if myid == 0:
+    print("(Workers starting simulation.)")
+
 # Loop over blocks, one block per worker
 # Run simulation for each block of frequencies
+tstart = time.time()
 ell, m, vis = hydra.vis_simulator.simulate_vis_per_alm(
                     lmax=lmax,
                     nside=nside,
@@ -112,11 +130,16 @@ ell, m, vis = hydra.vis_simulator.simulate_vis_per_alm(
                     precision=2,
                     latitude=np.deg2rad(-30.7215),
                     use_feed="x",
-                    multiprocess=True,
+                    multiprocess=False,
                     amplitude=1.
                 )
 # vis shape (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS, NMODES)
 # (NFREQS, NTIMES, NANTS, NANTS, NMODES) if pol False
+print("(Worker %03d) Run took %5.1f min" % (myid, (time.time() - tstart)/60.))
+
+comm.Barrier()
+if myid == 0:
+    print("(Workers finished simulation.)")
 
 # Save operator to .npy file for each chunk
 outfile = os.path.join(outdir, "response_sh_%04d" % myid)
