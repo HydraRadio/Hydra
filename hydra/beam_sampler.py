@@ -134,8 +134,7 @@ def get_bess_matr(nmodes, mmodes, rho, phi):
     return bess_matr
 
 
-def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
-                     rho_diff=1e-4):
+def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False):
     """
     Get the best fit Fourier-Bessel coefficients for a beam based on its value at a
     a set direction cosines. A least-squares algorithm is used to perform the
