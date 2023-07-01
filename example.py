@@ -187,7 +187,7 @@ if __name__ == '__main__':
 
     gain_prior_scale = args.gain_prior_scale
     gain_prior_type = args.gain_prior_type
-    assert gain_prior_type in ['flat', 'gaussian'], \
+    assert gain_prior_type in ['flat', 'gaussian2d', 'gaussian_time', 'gaussian_freq'], \
         "gain-prior-type must be 'flat' or 'gaussian'"
     gain_prior_level = args.gain_prior_level
     gain_prior_zeropoint_var = args.gain_prior_zeropoint_var
@@ -265,6 +265,7 @@ if __name__ == '__main__':
     ptsrc_amps = 10.**np.random.uniform(low=-1., high=2., size=Nptsrc)
     fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc)
     print("pstrc amps (input):", ptsrc_amps[:5])
+    np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
 
     # Select what would be the calibration source (brightest, close to beam)
     calsrc_idxs = np.where(np.abs(dec - hera_latitude)*180./np.pi < calsrc_radius)[0]
@@ -412,18 +413,22 @@ if __name__ == '__main__':
     if gain_prior_type == 'gaussian2d':
         # Gain smoothing in time and freq. directions
         # gains.shape: (Nants, Nfreqs, Ntimes)
+        print("Gain prior type: gaussian2d")
         ii, jj = np.meshgrid(np.arange(gains.shape[2]), np.arange(gains.shape[1]))
         gain_pspec_sqrt *= np.exp(-0.5 * np.sqrt(ii**2. + jj**2.)/gain_prior_scale**2.)
     elif gain_prior_type == 'gaussian_time':
         # Gain smoothing in time direction only
+        print("Gain prior type: gaussian_time")
         ii, jj = np.meshgrid(np.arange(gains.shape[2]), np.arange(gains.shape[1]))
         gain_pspec_sqrt *= np.exp(-0.5 * np.sqrt(ii**2.)/gain_prior_scale**2.)
     if gain_prior_type == 'gaussian_freq':
         # Gain smoothing in freq. direction only
+        print("Gain prior type: gaussian_freq")
         ii, jj = np.meshgrid(np.arange(gains.shape[2]), np.arange(gains.shape[1]))
         gain_pspec_sqrt *= np.exp(-0.5 * np.sqrt(jj**2.)/gain_prior_scale**2.)
     else:
         # Flat prior
+        print("Gain prior type: flat")
         gain_pspec_sqrt[0,0] = gain_prior_zeropoint_var # Try to fix the zero point?
 
     if PLOTTING:
@@ -433,9 +438,10 @@ if __name__ == '__main__':
 
     # Ptsrc priors
     amp_prior_std = ptsrc_amp_prior_level * np.ones(Nptsrc)
+    print("Ptsrc amp. prior level:", ptsrc_amp_prior_level)
     if calsrc:
         amp_prior_std[calsrc_idx] = calsrc_std
-
+    
     # Visibility priors
     vis_pspec_sqrt = vis_prior_level * np.ones((1, Nfreqs, Ntimes)) # currently same for all visibilities
     vis_group_id = np.zeros(len(antpairs), dtype=int) # index 0 for all
