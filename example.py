@@ -190,8 +190,12 @@ if __name__ == '__main__':
 
     gain_prior_scale = args.gain_prior_scale
     gain_prior_type = args.gain_prior_type
-    assert gain_prior_type in ['flat', 'gaussian2d', 'gaussian_time', 'gaussian_freq'], \
-        "gain-prior-type must be 'flat' or 'gaussian'"
+    gain_prior_allowed_types = ['flat', 
+                                'gaussian2d', 
+                                'gaussian_time', 
+                                'gaussian_freq']
+    assert gain_prior_type in gain_prior_allowed_types, \
+        "gain-prior-type must be one of: %s" % gain_prior_allowed_types
     gain_prior_level = args.gain_prior_level
     gain_prior_zeropoint_var = args.gain_prior_zeropoint_var
 
