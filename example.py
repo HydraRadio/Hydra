@@ -130,6 +130,9 @@ if __name__ == '__main__':
     parser.add_argument("--sim-gain-amp-std", type=float, action="store", default=0.05,
                         required=False, dest="sim_gain_amp_std",
                         help="Std. dev. of simulated gain input amplitude correction factor.")
+    parser.add_argument("--rho-const", type=float, action="store", default=np.sqrt(1-np.cos(np.pi * 23 / 45)),
+                        required=False, dest="rho_const",
+                        help="A constant to define the radial projection for the beam spatial basis")
 
     args = parser.parse_args()
 
@@ -177,9 +180,9 @@ if __name__ == '__main__':
     ptsrc_amp_prior_level = args.ptsrc_amp_prior_level
     vis_prior_level = args.vis_prior_level
 
-    calsrc_radius = args.calsrc_radius 
+    calsrc_radius = args.calsrc_radius
     if args.calsrc_std < 0.:
-        calsrc = False 
+        calsrc = False
     else:
         calsrc = True
         calsrc_std = args.calsrc_std
@@ -446,7 +449,7 @@ if __name__ == '__main__':
     vis_pspec_sqrt = vis_prior_level * np.ones((1, Nfreqs, Ntimes)) # currently same for all visibilities
     vis_group_id = np.zeros(len(antpairs), dtype=int) # index 0 for all
 
-    # Construct projection operators and store shapes 
+    # Construct projection operators and store shapes
     A_real, A_imag = hydra.gain_sampler.proj_operator(ants, antpairs)
     gain_shape = gains.shape
     N_gain_params = 2 * gains.shape[0] * gains.shape[1] * gains.shape[2]
@@ -840,9 +843,9 @@ if __name__ == '__main__':
                                                                          Nants, 1)
                 inv_noise_var_beam = inv_noise_var_beam + np.swapaxes(inv_noise_var_beam, -1, -2)
 
-
-                rho_fit = np.linspace(0, 1, num=100)
-                phi_fit = np.linspace(0, 2 * np.pi, num=400)
+                za_fit = np.arange(91) * np.pi / 180
+                rho_fit = np.sqrt(1 - np.cos(za_fit)) / args.rho_const
+                phi_fit = np.linspace(0, 2 * np.pi, num=360)
                 PHI, RHO = np.meshgrid(phi_fit, rho_fit)
 
                 bess_matr_fit = hydra.beam_sampler.get_bess_matr(beam_nmodes,
@@ -864,7 +867,7 @@ if __name__ == '__main__':
                 txs, tys, tzs = convert_to_tops(ra, dec, times, hera_latitude)
 
                 # area-preserving
-                rho = np.sqrt(1 - tzs)
+                rho = np.sqrt(1 - tzs) / args.rho_const
                 phi = np.arctan2(tys, txs)
                 bess_matr = hydra.beam_sampler.get_bess_matr(beam_nmodes,
                                                              beam_mmodes,
