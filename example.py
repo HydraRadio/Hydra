@@ -428,7 +428,7 @@ if __name__ == '__main__':
         print("Gain prior type: gaussian_time")
         ii, jj = np.meshgrid(np.arange(gains.shape[2]), np.arange(gains.shape[1]))
         gain_pspec_sqrt *= np.exp(-0.5 * np.sqrt(ii**2.)/gain_prior_scale**2.)
-    if gain_prior_type == 'gaussian_freq':
+    elif gain_prior_type == 'gaussian_freq':
         # Gain smoothing in freq. direction only
         print("Gain prior type: gaussian_freq")
         ii, jj = np.meshgrid(np.arange(gains.shape[2]), np.arange(gains.shape[1]))
