@@ -29,10 +29,10 @@ parser.add_argument("--compress", type=str, action="store", default="none",
 args = parser.parse_args()
 
 # Extract args
-fname = arg.fname
-idx_min = arg.idx_min
-idx_max = arg.idx_max
-compress = arg.compress
+fname = args.filename
+idx_min = args.idx_min
+idx_max = args.idx_max
+compress = args.compress
 assert compress in ['none', 'select', 'average']
 
 print("Input file:", fname)
