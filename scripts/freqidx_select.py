@@ -32,6 +32,6 @@ print("Freq. range: %5.2f -- %5.2f MHz" \
       % (freqs[idx_min]/1e6, freqs[idx_max]/1e6))
 uvd.select(freq_chans=new_chans)
 
-outfile = "%s.subband.uvh5" % fname[:-5]
+outfile = "%s.subband_%d_%d.uvh5" % (fname[:-5], freqs[idx_min]/1e6, freqs[idx_max]/1e6)
 print("Saving down-selected file as:", outfile)
 uvd.write_uvh5(outfile)
