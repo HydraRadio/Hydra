@@ -11,8 +11,8 @@ print("Down-select a data file by compressing by redundancy and selecting \n"
       "a particular band by frequency indices.")
 
 fname = str(sys.argv[1])
-idx_min = float(sys.argv[2])
-idx_max = float(sys.argv[3])
+idx_min = int(sys.argv[2])
+idx_max = int(sys.argv[3])
 
 print("Input file:", fname)
 print("Freq. indices between %4d -- %4d inclusive" % (idx_min, idx_max))
