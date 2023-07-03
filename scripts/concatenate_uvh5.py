@@ -4,7 +4,7 @@ Combine uvh5 files, e.g. containing different LSTs.
 """
 import numpy as np
 from pyuvdata import UVData
-import argparse, os, sys, time
+import argparse, os, sys, time, glob
 
 # Set up argparser
 description = "Combine uvh5 files, e.g. containing different LSTs."
@@ -31,7 +31,7 @@ print("Found %d files matching template." % len(files))
 new_chans = np.arange(idx_min, idx_max)
 
 # Load the first file to get the UVData object to have the right shape
-uvd = UVData().from_file(f[0]).select(freq_chans=new_chans, inplace=True)
+uvd = UVData().from_file(files[0]).select(freq_chans=new_chans, inplace=True)
 
 # Loop over files, adding them together
 for i in range(1, len(files)):
