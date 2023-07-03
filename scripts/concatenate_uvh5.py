@@ -24,6 +24,7 @@ template = args.template
 idx_min = args.idx_min
 idx_max = args.idx_max
 files = sorted( glob.glob(template) )
+outname = args.outname
 print("Template: %s" % template)
 print("Found %d files matching template." % len(files))
 
@@ -42,4 +43,5 @@ for i in range(1, len(files)):
     uvd += _uvd
 
 # Save file
+print("Output file:", outname)
 uvd.write_uvh5(outname)
