@@ -31,12 +31,14 @@ print("Found %d files matching template." % len(files))
 new_chans = np.arange(idx_min, idx_max)
 
 # Load the first file to get the UVData object to have the right shape
-uvd = UVData().from_file(files[0]).select(freq_chans=new_chans)
+uvd = UVData().from_file(files[0])
+uvd.select(freq_chans=new_chans, inplace=True)
 
 # Loop over files, adding them together
 for i in range(1, len(files)):
     print("File:", files[i])
-    _uvd = UVData.from_file(files[i]).select(freq_chans=new_chans)
+    _uvd = UVData.from_file(files[i])
+    _uvd.select(freq_chans=new_chans, inplace=True)
     uvd += _uvd
 
 # Save file
