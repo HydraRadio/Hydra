@@ -18,13 +18,13 @@ import hydra
 description = "Down-select a data file by compressing by redundancy and selecting a particular band by frequency indices."
 parser = argparse.ArgumentParser(description=description)
 parser.add_argument("filename", type=str, action="store", 
-                    required=True, dest="fname",
+                    required=True,
                     help="Path to input UVData file.")
-parser.add_argument("idx-min", type=int, action="store",
-                    required=True, dest="idx_min",
+parser.add_argument("idx_min", type=int, action="store",
+                    required=True,
                     help="Index of lower bound of frequency range.")
-parser.add_argument("idx-max", type=int, action="store",
-                    required=True, dest="idx_max",
+parser.add_argument("idx_max", type=int, action="store",
+                    required=True, 
                     help="Index of upper bound of frequency range.")
 parser.add_argument("--compress", type=str, action="store", default="none", 
                     required=False, dest="compress",
