@@ -234,7 +234,7 @@ if __name__ == '__main__':
         calsrc_std = args.calsrc_std
 
     # Gain sim settings
-    sim_gain_amp = args.sim_gain_amp
+    sim_gain_amp = args.sim_gain_amp_std
     sim_gain_sigma_frate = args.sim_gain_sigma_frate
     sim_gain_sigma_delay = args.sim_gain_sigma_delay
     sim_gain_frate0 = args.sim_gain_frate0
