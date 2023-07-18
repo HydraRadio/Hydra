@@ -132,10 +132,10 @@ if __name__ == '__main__':
     parser.add_argument("--gain-prior-zeropoint-std", type=float, action="store", default=None,
                         required=False, dest="gain_prior_zeropoint_std",
                         help="If specified, fix the std. dev. of the (0,0) mode to some value.")
-    parser.add_argument("--gain-prior-frate0", type=float, action="store", default=None,
+    parser.add_argument("--gain-prior-frate0", type=float, action="store", default=0.,
                         required=False, dest="gain_prior_frate0",
                         help="The central fringe rate of the Gaussian taper (mHz).")
-    parser.add_argument("--gain-prior-delay0", type=float, action="store", default=None,
+    parser.add_argument("--gain-prior-delay0", type=float, action="store", default=0.,
                         required=False, dest="gain_prior_delay0",
                         help="The central delay of the Gaussian taper (ns).")
                         
@@ -149,10 +149,10 @@ if __name__ == '__main__':
     parser.add_argument("--sim-gain-sigma-delay", type=float, action="store", default=None,
                         required=False, dest="sim_gain_sigma_delay",
                         help="Width of a Gaussian in delay, in units of ns.")
-    parser.add_argument("--sim-gain-frate0", type=float, action="store", default=None,
+    parser.add_argument("--sim-gain-frate0", type=float, action="store", default=0.,
                         required=False, dest="sim_gain_frate0",
                         help="The central fringe rate of the Gaussian taper (mHz).")
-    parser.add_argument("--sim-gain-delay0", type=float, action="store", default=None,
+    parser.add_argument("--sim-gain-delay0", type=float, action="store", default=0.,
                         required=False, dest="sim_gain_delay0",
                         help="The central delay of the Gaussian taper (ns).")
     
