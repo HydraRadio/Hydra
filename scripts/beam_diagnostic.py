@@ -1,26 +1,27 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, SymLogNorm
 
 import argparse
 import glob
+import sys
 
 from hydra.beam_sampler import get_bess_matr
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--chdir", required=True, type=str, nargs=1,
+parser.add_argument("--chdir", required=True, type=str,
                     help="The directory where the beam chain is stored")
-parser.add_argument("--burn-in", required=False, type=int, nargs=1, dest="burn_in",
+parser.add_argument("--burn-in", required=False, type=int, dest="burn_in",
                     default=5000, help="Number of samples to discard in chain")
-parser.add_argument("--outdir", required=True, type=str, nargs=1,
+parser.add_argument("--outdir", required=True, type=str,
                     help="Where to store the outputs")
-parser.add_argument("--nmodes-path", required=True, type=str, nargs=1,
+parser.add_argument("--nmodes-path", required=True, type=str,
                     dest="nmodes_path", help="Path to array of nmodes")
-parser.add_argument("--mmodes-path", required=True, type=str, nargs=1,
+parser.add_argument("--mmodes-path", required=True, type=str,
                     dest="mmodes_path", help="Path to array of mmodes")
-parser.add_argument("--rho-const", required=False, type=float, nargs=1,
+parser.add_argument("--rho-const", required=False, type=float,
                     dest="rho_const", default=np.sqrt(1-np.cos(np.pi * 23 / 45)))
-parser.add_argument("--ref-freq-ind", required=False, type=int, nargs=1,
+parser.add_argument("--ref-freq-ind", required=False, type=int,
                     dest="ref_freq_ind", default=0,
                     help="The reference frequency for the beam plot")
 args = parser.parse_args()
@@ -32,13 +33,6 @@ def plot_cmatr(fig, ax, cmatr):
     im = ax.matshow(cmatr.reshape(siz, siz))
     fig.colorbar(im, ax=ax)
 
-    for arrax in range(-1, -len(shape), -1):
-        cadence = np.prod(shape[-1:-(arrax + 1):-1])
-        ax.axvline(x=[cadence * cind for cind in range(shape[arrax])],
-                   color="white", linewidth=-2 * arrax)
-        ax.axhline(y=[cadence * cind for cind in range(shape[arrax])],
-                   color="white", linewidth=-2 * arrax)
-
     return
 
 fl = glob.glob(f"{args.chdir}/beam_*.npy")
@@ -49,14 +43,16 @@ for fn in fl[args.burn_in:]:
 chain = np.array(chain)
 
 # Plot some traces
+Nants = chain.shape[3]
+Npols = chain.shape[-1]
+
 for bas_ind in range(Npols):
     for feed_ind in range(Npols):
-        chfig, chax = plt.subplots(figsize=(14, 8), nrows=2, ncols=Nants,
-                                   subplot_kw={"projection": "polar"})
+        chfig, chax = plt.subplots(figsize=(14, 8), nrows=2, ncols=Nants)
         for ant_idx in range(Nants):
             chain_use = chain[:, :, args.ref_freq_ind, ant_idx, bas_ind, feed_ind]
-            chax[ant_idx].plot(chain_use.real)
-            chax[ant_idx].plot(chain_use.imag)
+            chax[0, ant_idx].plot(chain_use.real)
+            chax[1, ant_idx].plot(chain_use.imag)
         chfig.tight_layout()
         chfig.savefig(f"{args.outdir}/beam_chain_plot_bas_{bas_ind}_feed_{feed_ind}.png")
         plt.close(chfig)
@@ -66,17 +62,18 @@ chain_split = np.concatenate([chain.real[:, np.newaxis], chain.imag[:, np.newaxi
 Niters = chain.shape[0]
 mean = np.mean(chain_split, axis=0)
 mfig, meax = plt.subplots(figsize=(4, 4))
-maex.plot(mean[0].reshape(mean.size // 2), label="Real Component")
+meax.plot(mean[0].reshape(mean.size // 2), label="Real Component")
 meax.plot(mean[1].reshape(mean.size // 2), label="Imaginary Component")
 meax.legend()
 mfig.savefig(f"{args.outdir}/beam_post_mean.pdf")
 plt.close(mfig)
 
 cov = np.tensordot(chain_split - mean, (chain_split - mean), axes=((0,), (0,))) / (Niters - 1)
-vars = np.diag(cov.reshape(mean.size, mean.size)).reshape(mean.shape)
-corr_norm = np.sqrt(np.outer(corr_norm, corr_norm))
+varis = np.diag(cov.reshape(mean.size, mean.size)).reshape(mean.shape)
 
-corr = cov / corr
+corr_norm = np.sqrt(np.tensordot(varis, varis, axes=0))
+
+corr = cov / corr_norm
 
 cfig, cax = plt.subplots(figsize=(8, 4), ncols=2)
 plot_cmatr(cfig, cax[0], cov)
@@ -97,8 +94,6 @@ bess_matr = get_bess_matr(nmodes, mmodes, Rho, Az)
 
 # Shape ncoeff, Nfreqs, Nants, Npols, Npols -> Naz, Nrho, Nfreqs, Nants, Npols, Npols
 mean_beam = np.tensordot(bess_matr, mean_comp, axes=1)
-Nants = mean_comp.shape[2]
-Npols = mean_comp.shape[-1]
 
 # Plot beams
 for bas_ind in range(Npols):
@@ -112,21 +107,28 @@ for bas_ind in range(Npols):
                 beam_use1 = mean_beam[:, :, args.ref_freq_ind, ant_ind1, bas_ind, feed_ind]
                 beam_use2 = mean_beam[:, :, args.ref_freq_ind, ant_ind2, bas_ind, feed_ind]
 
-                bcax[ant_ind1, ant_ind2].pcolormesh(Az, Za, np.abs(beam_use1 * beam_use2.conj()),
-                                                    norm=LogNorm())
+                imvir = bcax[ant_ind1, ant_ind2].pcolormesh(Az, Za, np.abs(beam_use1 * beam_use2.conj()),
+                                                            norm=LogNorm())
+                bcax[ant_ind1, ant_ind2].set_xticklabels([])
                 if ant_ind1 != ant_ind2:
-                    bcax[ant_ind2, ant_ind1].pcolormesh(Az, ZA, np.angle(beam_use1 * beam_use2.conj()),
-                                                        cmap="twilight")
+                    imtwi = bcax[ant_ind2, ant_ind1].pcolormesh(Az, Za, np.angle(beam_use1 * beam_use2.conj()),
+                                                                cmap="twilight")   
+                    bcax[ant_ind2, ant_ind1].set_xticklabels([])
                 else:
                     bax[0, ant_ind1].pcolormesh(Az, Za, beam_use1.real,
                                                 norm=SymLogNorm(linthresh=1e-3),
                                                 cmap="coolwarm")
-                    bax[1, ant_ind1].pcolormesh(Az, Za, beam_use1.imag,
-                                                norm=SymLogNorm(linthresh=1e-3),
-                                                cmap="coolwarm")
+                    imcw = bax[1, ant_ind1].pcolormesh(Az, Za, beam_use1.imag,
+                                                       norm=SymLogNorm(linthresh=1e-3),
+                                                       cmap="coolwarm")
+                    bax[0, ant_ind1].set_xticklabels([])
+                    bax[1, ant_ind1].set_xticklabels([])
 
         bcfig.tight_layout()
         bfig.tight_layout()
+        bcfig.colorbar(imvir, ax=bcax.ravel().tolist())
+        bcfig.colorbar(imtwi, ax=bcax.ravel().tolist())
+        bfig.colorbar(imcw, ax=bax.ravel().tolist())
         bcfig.savefig(f"{args.outdir}/beam_cross_by_ants_bas_{bas_ind}_feed_{feed_ind}.png")
         bfig.savefig(f"{args.outdir}/beam_by_ants_bas_{bas_ind}_feed_{feed_ind}.png")
         plt.close(bcfig)
