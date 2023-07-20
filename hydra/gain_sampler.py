@@ -165,7 +165,8 @@ def apply_sqrt_pspec(sqrt_pspec, x):
         return sqrt_pspec[np.newaxis, :, :] * x
 
 
-def apply_operator(x, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis):
+def apply_operator(x, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis, 
+                   reduced_idxs=None):
     r"""
     Apply LHS operator to a vector of Fourier coefficients.
 
@@ -218,7 +219,9 @@ def apply_operator(x, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis):
     # Do inverse FT and multiply by S^1/2 again
     for k in range(y.shape[0]):
         y[k, :, :] = fft.fft2(y[k, :, :])
+
     return x + apply_sqrt_pspec(pspec_sqrt, y)
+        
 
 
 def construct_rhs(
@@ -251,6 +254,8 @@ def construct_rhs(
         realisation (bool):
             Whether to include Gaussian random realisation terms (True) or just
             the Wiener filter terms (False).
+        
+        
     """
     # fft: data -> fourier
     # ifft: fourier -> data
