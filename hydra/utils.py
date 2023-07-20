@@ -435,3 +435,60 @@ def get_beam_interp_shape(beam):
         raise ValueError("beam object is not AnalyticBeam or UVBeam object.")
 
     return spw_axis_present
+    
+
+def gain_prior_pspec_sqrt(lsts, freqs, 
+                          gain_prior_amp, 
+                          gain_prior_sigma_frate=None, 
+                          gain_prior_sigma_delay=None, 
+                          gain_prior_zeropoint_std=None,
+                          frate0=0., delay0=0.):
+    """
+    Construct a gain prior power spectrum, which can be uniform or have a 
+    Gaussian taper in the delay and/or fringe rate directions.
+    
+    Parameters:
+        lsts (array_like):
+            LST grid (same as for the data), in radians.
+        freqs (array_like):
+            Frequency grid (same as for the data), in MHz.
+        gain_prior_amp (float):
+            Amplitude of the prior power spectrum.
+        gain_prior_sigma_frate (float):
+            Width of a Gaussian prior in fringe rate, in units of mHz. If 
+            `None`, the prior will be uniform in fringe rate.
+        gain_prior_sigma_delay (float):
+            Width of a Gaussian prior in delay, in units of ns. If `None`, the 
+            prior will be uniform in delay.
+        gain_prior_zeropoint_std (float):
+            If not `None`, fix the std. dev. of the (0,0) mode to some value.
+        frate0 (float):
+            The central fringe rate of the Gaussian taper (mHz).
+        delay0 (float):
+            The central delay of the Gaussian taper (ns).
+    
+    Returns:
+        gain_pspec_sqrt (array_like):
+            Square-root of the gain prior power spectrum, in delay-fringe rate 
+            space (FFT ordering). Shape (Nfreqs, Ntimes).
+    """
+    times = 24.*60.*60. * lsts / (2.*np.pi) # seconds
+    frate = 1e3 * np.fft.fftfreq(times.size, d=times[1] - times[0]) # mHz
+    delay = 1e3 * np.fft.fftfreq(freqs.size, d=freqs[1] - freqs[0]) # ns
+    
+    # Start with flat prior and then multiply by 
+    # Ordering is usual FFT ordering
+    gain_pspec_sqrt = gain_prior_amp * np.ones((freqs.size, times.size))
+    if gain_prior_sigma_frate is not None:
+        xt = (frate[np.newaxis,:] - frate0) / gain_prior_sigma_frate
+        gain_pspec_sqrt *= np.exp(-0.5 * xt**2.)
+    if gain_prior_sigma_delay is not None:
+        xf = (delay[:,np.newaxis] - delay0) / gain_prior_sigma_delay
+        gain_pspec_sqrt *= np.exp(-0.5 * xf**2.)
+    
+    # Zero-point prior
+    if gain_prior_zeropoint_std is not None:
+        gain_pspec_sqrt[delay==0., frate == 0.] = gain_prior_zeropoint_std
+    
+    return gain_pspec_sqrt
+

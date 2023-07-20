@@ -13,7 +13,8 @@ import pyuvsim
 import time, os, resource
 import multiprocessing
 from hydra.utils import flatten_vector, reconstruct_vector, timing_info, \
-                            build_hex_array, get_flux_from_ptsrc_amp, convert_to_tops
+                            build_hex_array, get_flux_from_ptsrc_amp, \
+                            convert_to_tops, gain_prior_pspec_sqrt
 
 import argparse
 
@@ -29,6 +30,8 @@ if __name__ == '__main__':
     parser.add_argument("--seed", type=int, action="store", default=0,
                         required=False, dest="seed",
                         help="Set the random seed.")
+    
+    # Samplers
     parser.add_argument("--gains", action="store_true",
                         required=False, dest="sample_gains",
                         help="Sample gains.")
@@ -41,6 +44,8 @@ if __name__ == '__main__':
     parser.add_argument("--beam", action="store_true",
                         required=False, dest="sample_beam",
                         help="Sample beams.")
+    
+    # Output options
     parser.add_argument("--stats", action="store_true",
                         required=False, dest="calculate_stats",
                         help="Calculate statistics about the sampling results.")
@@ -52,6 +57,8 @@ if __name__ == '__main__':
     parser.add_argument("--plotting", action="store_true",
                         required=False, dest="plotting",
                         help="Output plots.")
+    
+    # Array and data shape options
     parser.add_argument('--hex-array', type=int, action="store", default=(3,4),
                         required=False, nargs='+', dest="hex_array",
                         help="Hex array layout, specified as the no. of antennas "
@@ -68,16 +75,13 @@ if __name__ == '__main__':
     parser.add_argument("--Niters", type=int, action="store", default=100,
                         required=False, dest="Niters",
                         help="Number of joint samples to gather.")
+    
+    # Noise level
     parser.add_argument("--sigma-noise", type=float, action="store",
                         default=0.05, required=False, dest="sigma_noise",
                         help="Standard deviation of the noise, in the same units "
                              "as the visibility data.")
-    parser.add_argument("--beam-nmax", type=int, action="store",
-                        default=16, required=False, dest="beam_nmax",
-                        help="Maximum radial degree of the Fourier-Bessel basis for the beams.")
-    parser.add_argument("--beam-mmax", type=int, action="store",
-                        default=0, required=False, dest="beam_mmax",
-                        help="Maximum azimuthal degree of the Fourier-Bessel basis for the beams.")
+    
     parser.add_argument("--solver", type=str, action="store",
                         default='cg', required=False, dest="solver_name",
                         help="Which sparse matrix solver to use for linear systems ('cg' or 'gmres').")
@@ -87,9 +91,8 @@ if __name__ == '__main__':
     parser.add_argument("--multiprocess", action="store_true", dest="multiprocess",
                         required=False,
                         help="Whether to use multiprocessing in vis sim calls.")
-    parser.add_argument("--beam-prior-std", type=float, action="store", default=1,
-                        required=False, dest="beam_prior_std",
-                        help="Standard deviation of beam coefficient prior, in units of Zernike coefficient")
+    
+    # Point source sim params
     parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 1),
                         nargs=2, required=False, dest="ra_bounds",
                         help="Bounds for the Right Ascension of the randomly simulated sources")
@@ -115,25 +118,59 @@ if __name__ == '__main__':
     parser.add_argument("--calsrc-radius", type=float, action="store", default=10.,
                         required=False, dest="calsrc_radius",
                         help="Radius around declination of the zenith in which to search for brightest source, which is then identified as the calibration source.")
-    parser.add_argument("--gain-prior-type", type=str, action="store", default='flat',
-                        required=False, dest="gain_prior_type",
-                        help="Gain prior type, either 'flat' or 'gaussian'.")
-    parser.add_argument("--gain-prior-level", type=float, action="store", default=0.1,
-                        required=False, dest="gain_prior_level",
+                        
+    # Gain prior
+    parser.add_argument("--gain-prior-amp", type=float, action="store", default=0.1,
+                        required=False, dest="gain_prior_amp",
                         help="Overall amplitude of gain prior.")
-    parser.add_argument("--gain-prior-scale", type=float, action="store", default=1.,
-                        required=False, dest="gain_prior_scale",
-                        help="Approx. FWHM of Gaussian gain prior in time/freq., measured in no. of channels/samples.")
-    parser.add_argument("--gain-prior-zeropoint-var", type=float, action="store", default=1e-2,
-                        required=False, dest="gain_prior_zeropoint_var",
-                        help="Choose a special value for the std. dev. of the prior on the gain zeropoint mode. For flat prior only.")
+    parser.add_argument("--gain-prior-sigma-frate", type=float, action="store", default=None,
+                        required=False, dest="gain_prior_sigma_frate",
+                        help="Width of a Gaussian prior in fringe rate, in units of mHz.")
+    parser.add_argument("--gain-prior-sigma-delay", type=float, action="store", default=None,
+                        required=False, dest="gain_prior_sigma_delay",
+                        help="Width of a Gaussian prior in delay, in units of ns.")
+    parser.add_argument("--gain-prior-zeropoint-std", type=float, action="store", default=None,
+                        required=False, dest="gain_prior_zeropoint_std",
+                        help="If specified, fix the std. dev. of the (0,0) mode to some value.")
+    parser.add_argument("--gain-prior-frate0", type=float, action="store", default=0.,
+                        required=False, dest="gain_prior_frate0",
+                        help="The central fringe rate of the Gaussian taper (mHz).")
+    parser.add_argument("--gain-prior-delay0", type=float, action="store", default=0.,
+                        required=False, dest="gain_prior_delay0",
+                        help="The central delay of the Gaussian taper (ns).")
+                        
+    # Gain simulation
     parser.add_argument("--sim-gain-amp-std", type=float, action="store", default=0.05,
                         required=False, dest="sim_gain_amp_std",
-                        help="Std. dev. of simulated gain input amplitude correction factor.")
-    parser.add_argument("--rho-const", type=float, action="store", default=np.sqrt(1-np.cos(np.pi * 23 / 45)),
+                        help="Std. dev. of amplitude of simulated gain.")
+    parser.add_argument("--sim-gain-sigma-frate", type=float, action="store", default=None,
+                        required=False, dest="sim_gain_sigma_frate",
+                        help="Width of a Gaussian in fringe rate, in units of mHz.")
+    parser.add_argument("--sim-gain-sigma-delay", type=float, action="store", default=None,
+                        required=False, dest="sim_gain_sigma_delay",
+                        help="Width of a Gaussian in delay, in units of ns.")
+    parser.add_argument("--sim-gain-frate0", type=float, action="store", default=0.,
+                        required=False, dest="sim_gain_frate0",
+                        help="The central fringe rate of the Gaussian taper (mHz).")
+    parser.add_argument("--sim-gain-delay0", type=float, action="store", default=0.,
+                        required=False, dest="sim_gain_delay0",
+                        help="The central delay of the Gaussian taper (ns).")
+    
+    # Beam parameters
+    parser.add_argument("--beam-prior-std", type=float, action="store", default=1,
+                        required=False, dest="beam_prior_std",
+                        help="Standard deviation of beam coefficient prior, in units of Zernike coefficient")
+    parser.add_argument("--beam-nmax", type=int, action="store",
+                        default=16, required=False, dest="beam_nmax",
+                        help="Maximum radial degree of the Fourier-Bessel basis for the beams.")
+    parser.add_argument("--beam-mmax", type=int, action="store",
+                        default=0, required=False, dest="beam_mmax",
+                        help="Maximum azimuthal degree of the Fourier-Bessel basis for the beams.")
+    parser.add_argument("--rho-const", type=float, action="store", 
+                        default=np.sqrt(1-np.cos(np.pi * 23 / 45)),
                         required=False, dest="rho_const",
                         help="A constant to define the radial projection for the beam spatial basis")
-
+    
     args = parser.parse_args()
 
     # Set switches
@@ -165,18 +202,27 @@ if __name__ == '__main__':
     Niters = args.Niters
     hex_array = tuple(args.hex_array)
     assert len(hex_array) == 2, "hex-array argument must have length 2."
+    
+    # Beam simulation parameters
     beam_nmax = args.beam_nmax
     beam_mmax = args.beam_mmax
+    
+    # Noise specification
     sigma_noise = args.sigma_noise
+    
+    # Gain simulation parameters
     sim_gain_amp_std = args.sim_gain_amp_std
+    
+    # Source position and LST/frequency ranges
     ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
     dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
     lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
     freq_min, freq_max = (min(args.freq_bounds), max(args.freq_bounds))
+    
+    # Array latitude
+    hera_latitude = np.deg2rad(-30.7215)
 
-    hera_latitude = -30.7215 * np.pi / 180.0
-
-    # Prior settings
+    # Ptsrc and vis prior settings
     ptsrc_amp_prior_level = args.ptsrc_amp_prior_level
     vis_prior_level = args.vis_prior_level
 
@@ -187,17 +233,35 @@ if __name__ == '__main__':
         calsrc = True
         calsrc_std = args.calsrc_std
 
-
-    gain_prior_scale = args.gain_prior_scale
-    gain_prior_type = args.gain_prior_type
-    gain_prior_allowed_types = ['flat', 
-                                'gaussian2d', 
-                                'gaussian_time', 
-                                'gaussian_freq']
-    assert gain_prior_type in gain_prior_allowed_types, \
-        "gain-prior-type must be one of: %s" % gain_prior_allowed_types
-    gain_prior_level = args.gain_prior_level
-    gain_prior_zeropoint_var = args.gain_prior_zeropoint_var
+    # Gain sim settings
+    sim_gain_amp = args.sim_gain_amp_std
+    sim_gain_sigma_frate = args.sim_gain_sigma_frate
+    sim_gain_sigma_delay = args.sim_gain_sigma_delay
+    sim_gain_frate0 = args.sim_gain_frate0
+    sim_gain_delay0 = args.sim_gain_delay0
+    print("    Gain sim:")
+    print("        amp:          ", sim_gain_amp)
+    print("        sigma_frate:  ", sim_gain_sigma_frate)
+    print("        sigma_delay:  ", sim_gain_sigma_delay)
+    print("        frate0:       ", sim_gain_frate0)
+    print("        delay0:       ", sim_gain_delay0)
+    
+    # Gain prior settings
+    gain_prior_amp = args.gain_prior_amp
+    gain_prior_sigma_frate = args.gain_prior_sigma_frate
+    gain_prior_sigma_delay = args.gain_prior_sigma_delay
+    gain_prior_zeropoint_std = args.gain_prior_zeropoint_std
+    gain_prior_frate0 = args.gain_prior_frate0
+    gain_prior_delay0 = args.gain_prior_delay0
+    print("    Gain prior:")
+    print("        amp:          ", gain_prior_amp)
+    print("        sigma_frate:  ", gain_prior_sigma_frate)
+    print("        sigma_delay:  ", gain_prior_sigma_delay)
+    print("        zeropoint_std:", gain_prior_zeropoint_std)
+    print("        frate0:       ", gain_prior_frate0)
+    print("        delay0:       ", gain_prior_delay0)
+    
+    print("")
 
     # Check that output directory exists
     output_dir = args.output_dir
@@ -239,7 +303,6 @@ if __name__ == '__main__':
     times = np.linspace(lst_min, lst_max, Ntimes)
     freqs = np.linspace(freq_min, freq_max, Nfreqs)
 
-    #ant_pos = build_hex_array(hex_spec=(3,4), d=14.6)
     ant_pos = build_hex_array(hex_spec=hex_array, d=14.6)
     ants = np.array(list(ant_pos.keys()))
     Nants = len(ants)
@@ -252,9 +315,6 @@ if __name__ == '__main__':
             if i != j:
                 # Exclude autos
                 antpairs.append((i,j))
-    #ant_pos = {ant: [14.7*(ant % 5) + 0.5*14.7*(ant // 5),
-    #                 14.7*(ant // 5),
-    #                 0.] for ant in ants} # hexagon-like packing
 
 
     ants1, ants2 = list(zip(*antpairs))
@@ -273,6 +333,7 @@ if __name__ == '__main__':
     fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc)
     print("pstrc amps (input):", ptsrc_amps[:5])
     np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
+    np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
 
     # Select what would be the calibration source (brightest, close to beam)
     calsrc_idxs = np.where(np.abs(dec - hera_latitude)*180./np.pi < calsrc_radius)[0]
@@ -321,13 +382,20 @@ if __name__ == '__main__':
     # Generate gain fluctuations from FFT basis
     frate = np.fft.fftfreq(times.size, d=times[1] - times[0])
     tau = np.fft.fftfreq(freqs.size, d=freqs[1] - freqs[0])
-
-    random_phase = np.exp(1.j*np.random.uniform(low=0., high=2.*np.pi, size=Nants))
-    random_amp = 1. + sim_gain_amp_std * np.random.randn(Nants)
-    _delta_g = 5. \
-             * np.fft.ifft2(np.exp(-0.5 * (((frate[np.newaxis,:]-9.)/2.)**2.
-                                         + ((tau[:,np.newaxis] - 0.05)/0.03)**2.)))
-    delta_g = np.array([random_amp[i] * _delta_g * random_phase[i] for i in range(Nants)],
+    delta_g_sqrt_pspec = gain_prior_pspec_sqrt(
+                                lsts=times, 
+                                freqs=freqs, 
+                                gain_prior_amp=sim_gain_amp_std, 
+                                gain_prior_sigma_frate=sim_gain_sigma_frate, 
+                                gain_prior_sigma_delay=sim_gain_sigma_delay, 
+                                gain_prior_zeropoint_std=None,
+                                frate0=sim_gain_frate0, 
+                                delay0=sim_gain_delay0 )
+    
+    # Make Gaussian realisation of gain fluctuation power spectrum, different for each antenna
+    delta_g = np.array([np.fft.ifft2(delta_g_sqrt_pspec 
+                                     * np.random.randn(*delta_g_sqrt_pspec.shape)) 
+                        for i in range(Nants)],
                         dtype=model0.dtype)
 
     np.save(os.path.join(output_dir, "gains0"), gains)
@@ -339,7 +407,7 @@ if __name__ == '__main__':
     window = 1. # no window for now
 
     # Apply gains to model
-    data = model0.copy() * window # FIXME
+    data = model0.copy() * window
     hydra.apply_gains(data, gains * (1. + delta_g), ants, antpairs, inline=True)
 
     # Plot input (simulated) gain perturbation for ant 0
@@ -383,8 +451,6 @@ if __name__ == '__main__':
 
     # Initial gain perturbation guesses
     current_delta_gain = np.zeros_like(delta_g)
-    # FIXME: Trying to fix the amplitude to the correct value
-    #current_delta_gain[:,0,0] += fft.fft2(delta_g[0])[0,0] # FIXME FIXME
 
     # Initial point source amplitude factor
     current_ptsrc_a = np.ones(ra.size)
@@ -413,30 +479,15 @@ if __name__ == '__main__':
     inv_noise_var = window / noise_var
 
     # Gain prior
-    # Set up initial flat prior
-    gain_pspec_sqrt = gain_prior_level * np.ones((gains.shape[1], gains.shape[2]))
-
-    # Select prior type
-    if gain_prior_type == 'gaussian2d':
-        # Gain smoothing in time and freq. directions
-        # gains.shape: (Nants, Nfreqs, Ntimes)
-        print("Gain prior type: gaussian2d")
-        ii, jj = np.meshgrid(np.arange(gains.shape[2]), np.arange(gains.shape[1]))
-        gain_pspec_sqrt *= np.exp(-0.5 * np.sqrt(ii**2. + jj**2.)/gain_prior_scale**2.)
-    elif gain_prior_type == 'gaussian_time':
-        # Gain smoothing in time direction only
-        print("Gain prior type: gaussian_time")
-        ii, jj = np.meshgrid(np.arange(gains.shape[2]), np.arange(gains.shape[1]))
-        gain_pspec_sqrt *= np.exp(-0.5 * np.sqrt(ii**2.)/gain_prior_scale**2.)
-    elif gain_prior_type == 'gaussian_freq':
-        # Gain smoothing in freq. direction only
-        print("Gain prior type: gaussian_freq")
-        ii, jj = np.meshgrid(np.arange(gains.shape[2]), np.arange(gains.shape[1]))
-        gain_pspec_sqrt *= np.exp(-0.5 * np.sqrt(jj**2.)/gain_prior_scale**2.)
-    else:
-        # Flat prior
-        print("Gain prior type: flat")
-        gain_pspec_sqrt[0,0] = gain_prior_zeropoint_var # Try to fix the zero point?
+    gain_pspec_sqrt = gain_prior_pspec_sqrt(
+                                lsts=times, 
+                                freqs=freqs, 
+                                gain_prior_amp=gain_prior_amp, 
+                                gain_prior_sigma_frate=gain_prior_sigma_frate, 
+                                gain_prior_sigma_delay=gain_prior_sigma_delay, 
+                                gain_prior_zeropoint_std=gain_prior_zeropoint_std,
+                                frate0=gain_prior_frate0, 
+                                delay0=gain_prior_delay0 )
 
     if PLOTTING:
         plt.matshow(gain_pspec_sqrt, aspect='auto')
