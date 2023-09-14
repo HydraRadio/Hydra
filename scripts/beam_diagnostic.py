@@ -19,7 +19,9 @@ parser.add_argument("--nmodes-path", required=True, type=str,
                     dest="nmodes_path", help="Path to array of nmodes")
 parser.add_argument("--mmodes-path", required=True, type=str,
                     dest="mmodes_path", help="Path to array of mmodes")
-parser.add_argument("--rho-const", required=False, type=float,
+parser.add_argument("--beam-in-path", required=True, type=str, nargs=1,
+                    dest="beam_in_path", help="Path to input beam coefficients")
+parser.add_argument("--rho-const", required=False, type=float, nargs=1,
                     dest="rho_const", default=np.sqrt(1-np.cos(np.pi * 23 / 45)))
 parser.add_argument("--ref-freq-ind", required=False, type=int,
                     dest="ref_freq_ind", default=0,
@@ -36,6 +38,7 @@ def plot_cmatr(fig, ax, cmatr):
     return
 
 fl = glob.glob(f"{args.chdir}/beam_*.npy")
+beam_coeff_in = np.load(args.beam_in_path)
 
 chain = []
 for fn in fl[args.burn_in:]:
@@ -45,14 +48,17 @@ chain = np.array(chain)
 # Plot some traces
 Nants = chain.shape[3]
 Npols = chain.shape[-1]
+Ncoeff = chain.shape[1]
 
-for bas_ind in range(Npols):
-    for feed_ind in range(Npols):
-        chfig, chax = plt.subplots(figsize=(14, 8), nrows=2, ncols=Nants)
-        for ant_idx in range(Nants):
-            chain_use = chain[:, :, args.ref_freq_ind, ant_idx, bas_ind, feed_ind]
-            chax[0, ant_idx].plot(chain_use.real)
-            chax[1, ant_idx].plot(chain_use.imag)
+for bas_idx in range(Npols):
+    for feed_idx in range(Npols):
+        plot_dim = int(np.sqrt(Ncoeff))
+        chfig, chax = plt.subplots(figsize=(14, 8), nrows=plot_dim, ncols=plot_dim)
+        chax = chax.ravel()
+        for coeff_idx in range(Ncoeff):
+            chain_use = chain[:, coeff_idx, args.ref_freq_ind, :, bas_idx, feed_idx]
+            chax[coeff_idx].plot(chain_use.real, alpha=0.5, color="tab:blue")
+            chax[coeff_idx].plot(chain_use.imag, alpha=0.5, color="tab:orange")
         chfig.tight_layout()
         chfig.savefig(f"{args.outdir}/beam_chain_plot_bas_{bas_ind}_feed_{feed_ind}.png")
         plt.close(chfig)
@@ -62,8 +68,10 @@ chain_split = np.concatenate([chain.real[:, np.newaxis], chain.imag[:, np.newaxi
 Niters = chain.shape[0]
 mean = np.mean(chain_split, axis=0)
 mfig, meax = plt.subplots(figsize=(4, 4))
-meax.plot(mean[0].reshape(mean.size // 2), label="Real Component")
-meax.plot(mean[1].reshape(mean.size // 2), label="Imaginary Component")
+meax.plot(mean[0].reshape(mean.size // 2), label="Real Comp Post Mean")
+meax.plot(mean[1].reshape(mean.size // 2), label="Imag Comp Post Mean")
+meax.plot(beam_coeff_in.real, label="Real input")
+meax.plot(beam_coeff_in.imag, label="Imag input")
 meax.legend()
 mfig.savefig(f"{args.outdir}/beam_post_mean.pdf")
 plt.close(mfig)
@@ -94,6 +102,7 @@ bess_matr = get_bess_matr(nmodes, mmodes, Rho, Az)
 
 # Shape ncoeff, Nfreqs, Nants, Npols, Npols -> Naz, Nrho, Nfreqs, Nants, Npols, Npols
 mean_beam = np.tensordot(bess_matr, mean_comp, axes=1)
+beam_in = np.tensordot(bess_matr, beam_coeff_in, axes=1)
 
 # Plot beams
 for bas_ind in range(Npols):
@@ -112,7 +121,7 @@ for bas_ind in range(Npols):
                 bcax[ant_ind1, ant_ind2].set_xticklabels([])
                 if ant_ind1 != ant_ind2:
                     imtwi = bcax[ant_ind2, ant_ind1].pcolormesh(Az, Za, np.angle(beam_use1 * beam_use2.conj()),
-                                                                cmap="twilight")   
+                                                                cmap="twilight")
                     bcax[ant_ind2, ant_ind1].set_xticklabels([])
                 else:
                     bax[0, ant_ind1].pcolormesh(Az, Za, beam_use1.real,
