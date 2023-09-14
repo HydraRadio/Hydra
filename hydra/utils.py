@@ -5,20 +5,44 @@ import pyuvdata
 from pyuvsim import AnalyticBeam
 
 
-def flatten_vector(v):
+def flatten_vector(v, reduced_idxs=None):
     """
     Flatten a complex vector with shape (N, Ntimes, Nfreq) into a block
     vector of shape (N x Ntimes x Nfreqs x 2), i.e. the real and imaginary
     blocks stuck together.
+    
+    Parameters:
+        reduced_idxs (array_like):
+            If specified, this is an array of indices that maps a reduced x 
+            vector to the full x vector. The unspecified modes are set to zero.
     """
-    return np.concatenate((v.real.flatten(), v.imag.flatten()))
+    # If only certain indices were kept, remove others
+    if reduced_idxs is not None:
+        return np.concatenate((v.real.flatten(), v.imag.flatten()))[reduced_idxs]
+    else:
+        return np.concatenate((v.real.flatten(), v.imag.flatten()))
+    
 
 
-def reconstruct_vector(v, shape):
+def reconstruct_vector(v, shape, reduced_idxs=None):
     """
     Undo the flattening of a complex vector.
+    
+    Parameters:
+        reduced_idxs (array_like):
+            If specified, this is an array of indices that maps a reduced x 
+            vector to the full x vector expected by the linear operator. The 
+            unspecified modes are set to zero.
     """
-    y = v[: v.size // 2] + 1.0j * v[v.size // 2 :]
+    # If only certain indices were kept, populate those into a vector of zeros
+    if reduced_idxs is not None:
+        vv = np.zeros(2*np.prod(shape), dtype=v.dtype) # required size = product of shape tuple
+        vv[reduced_idxs] = v[:]
+    else:
+        vv = v
+        
+    # Now unpack the full-sized array
+    y = vv[: vv.size // 2] + 1.0j * vv[vv.size // 2 :]
     return y.reshape(shape)
 
 

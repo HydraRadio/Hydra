@@ -51,7 +51,7 @@ if __name__ == '__main__':
                         help="Calculate statistics about the sampling results.")
     parser.add_argument("--diagnostics", action="store_true",
                         required=False, dest="output_diagnostics",
-                        help="Output diagnostics.")
+                        help="Output diagnostics.") # This will be ignored
     parser.add_argument("--timing", action="store_true", required=False,
                         dest="save_timing_info", help="Save timing info.")
     parser.add_argument("--plotting", action="store_true",
@@ -138,7 +138,10 @@ if __name__ == '__main__':
     parser.add_argument("--gain-prior-delay0", type=float, action="store", default=0.,
                         required=False, dest="gain_prior_delay0",
                         help="The central delay of the Gaussian taper (ns).")
-                        
+    parser.add_argument("--gain-mode-cut-level", type=float, action="store", default=None,
+                        required=False, dest="gain_mode_cut_level",
+                        help="If specified, gain modes with (prior power spectrum) < (gain-mode-cut-level) * max(prior power spectrum) will be excluded from the linear solve (i.e. set to zero).")
+    
     # Gain simulation
     parser.add_argument("--sim-gain-amp-std", type=float, action="store", default=0.05,
                         required=False, dest="sim_gain_amp_std",
@@ -159,7 +162,7 @@ if __name__ == '__main__':
     # Beam parameters
     parser.add_argument("--beam-prior-std", type=float, action="store", default=1,
                         required=False, dest="beam_prior_std",
-                        help="Standard deviation of beam coefficient prior, in units of Zernike coefficient")
+                        help="Std. dev. of beam coefficient prior, in units of Zernike coefficient")
     parser.add_argument("--beam-nmax", type=int, action="store",
                         default=16, required=False, dest="beam_nmax",
                         help="Maximum radial degree of the Fourier-Bessel basis for the beams.")
@@ -179,7 +182,6 @@ if __name__ == '__main__':
     SAMPLE_PTSRC_AMPS = args.sample_ptsrc
     SAMPLE_BEAM = args.sample_beam
     CALCULATE_STATS = args.calculate_stats
-    OUTPUT_DIAGNOSTICS = args.output_diagnostics
     SAVE_TIMING_INFO = args.save_timing_info
     PLOTTING = args.plotting
     MULTIPROCESS = args.multiprocess
@@ -253,6 +255,7 @@ if __name__ == '__main__':
     gain_prior_zeropoint_std = args.gain_prior_zeropoint_std
     gain_prior_frate0 = args.gain_prior_frate0
     gain_prior_delay0 = args.gain_prior_delay0
+    gain_mode_cut_level = args.gain_mode_cut_level
     print("    Gain prior:")
     print("        amp:          ", gain_prior_amp)
     print("        sigma_frate:  ", gain_prior_sigma_frate)
@@ -308,7 +311,6 @@ if __name__ == '__main__':
     Nants = len(ants)
     print("Nants =", Nants)
 
-    #ants = np.arange(Nants)
     antpairs = []
     for i in range(len(ants)):
         for j in range(i, len(ants)):
@@ -322,6 +324,7 @@ if __name__ == '__main__':
     # Generate random point source locations
     # RA goes from [0, 2 pi] and Dec from [-pi / 2, +pi / 2].
     ra = np.random.uniform(low=ra_low, high=ra_high, size=Nptsrc)
+    
     # inversion sample to get them uniform on the sphere, in case wide bounds are used
     U = np.random.uniform(low=0, high=1, size=Nptsrc)
     dsin = np.sin(dec_high) - np.sin(dec_low)
@@ -410,24 +413,6 @@ if __name__ == '__main__':
     data = model0.copy() * window
     hydra.apply_gains(data, gains * (1. + delta_g), ants, antpairs, inline=True)
 
-    # Plot input (simulated) gain perturbation for ant 0
-    if PLOTTING:
-        vminmax = np.max(delta_g[0].real)
-        plt.subplot(121)
-        plt.matshow(delta_g[0].real, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
-        plt.colorbar()
-        plt.subplot(122)
-        plt.matshow(delta_g[0].imag, vmin=-vminmax, vmax=vminmax, fignum=False, aspect='auto')
-        plt.colorbar()
-        plt.gcf().set_size_inches((10., 4.))
-        plt.savefig(os.path.join(output_dir, "delta_g_true_000.png"))
-
-        # Plot input (simulated) visibility model
-        vminmax_vis = np.max(model0[0,:,:].real)
-        plt.matshow(model0[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
-        plt.colorbar()
-        plt.savefig(os.path.join(output_dir, "data_model_000_xxxxx.png"))
-
     # Add noise
     data += sigma_noise * np.sqrt(0.5) \
           * (  1.0 * np.random.randn(*data.shape) \
@@ -435,19 +420,13 @@ if __name__ == '__main__':
 
     np.save(os.path.join(output_dir, "data0"), data)
 
-    # Plot data (including noise)
-    if PLOTTING:
-        plt.matshow(data[0,:,:].real, vmin=-vminmax_vis, vmax=vminmax_vis)
-        plt.colorbar()
-        plt.savefig(os.path.join(output_dir, "data_000.png"))
-
     #-------------------------------------------------------------------------------
     # (2) Set up Gibbs sampler
     #-------------------------------------------------------------------------------
 
     # Get initial visibility model guesses (use the actual baseline model for now)
     # This SHOULD NOT include gain factors of any kind
-    current_data_model = 1.*model0.copy() * window # FIXME
+    current_data_model = 1.*model0.copy() * window
 
     # Initial gain perturbation guesses
     current_delta_gain = np.zeros_like(delta_g)
@@ -488,20 +467,31 @@ if __name__ == '__main__':
                                 gain_prior_zeropoint_std=gain_prior_zeropoint_std,
                                 frate0=gain_prior_frate0, 
                                 delay0=gain_prior_delay0 )
-
-    if PLOTTING:
-        plt.matshow(gain_pspec_sqrt, aspect='auto')
-        plt.colorbar()
-        plt.savefig(os.path.join(output_dir, "gain_pspec_sqrt.png"))
-
+            
+    # Exclude gain modes that are strongly downweighted by the prior from the 
+    # linear system
+    reduced_idxs = None
+    if gain_mode_cut_level is not None:
+        # Find modes that are strongly suppressed by prior (1 = keep, 0 = discard)
+        _cut_level = gain_mode_cut_level * gain_pspec_sqrt.max()
+        gmodes = (1. + 1.j) * np.ones(gains.shape, dtype=np.complex128)
+        gmodes[:, gain_pspec_sqrt < _cut_level] *= 0. # modes to discard
+        gmodes = hydra.gain_sampler.flatten_vector(gmodes) # flatten
+        reduced_idxs = np.where(gmodes == 1.)[0] # indices of kept modes
+        
+        print("(0) Excluding some gain modes: %d / %d excluded" \
+              % (reduced_idxs.size, gmodes.size))
+        print("    Gain mode cut threshold: %6.2e x max" % gain_mode_cut_level)
+    
     # Ptsrc priors
     amp_prior_std = ptsrc_amp_prior_level * np.ones(Nptsrc)
-    print("Ptsrc amp. prior level:", ptsrc_amp_prior_level)
+    print("(0) Ptsrc amp. prior level:", ptsrc_amp_prior_level)
     if calsrc:
         amp_prior_std[calsrc_idx] = calsrc_std
     
     # Visibility priors
-    vis_pspec_sqrt = vis_prior_level * np.ones((1, Nfreqs, Ntimes)) # currently same for all visibilities
+    # (currently same for all visibilities)
+    vis_pspec_sqrt = vis_prior_level * np.ones((1, Nfreqs, Ntimes))
     vis_group_id = np.zeros(len(antpairs), dtype=int) # index 0 for all
 
     # Construct projection operators and store shapes
@@ -539,7 +529,9 @@ if __name__ == '__main__':
                                     antpairs,
                                     inline=False)
             resid = data - ggv
-
+            
+            # LHS operator and RHS vector of linear system
+            # Uses reduced_idxs to exclude modes that are strongly down-weighted
             b = hydra.gain_sampler.flatten_vector(
                     hydra.gain_sampler.construct_rhs(resid,
                                                      inv_noise_var,
@@ -547,34 +539,44 @@ if __name__ == '__main__':
                                                      A_real,
                                                      A_imag,
                                                      ggv,
-                                                     realisation=True)
+                                                     realisation=True),
+                    reduced_idxs=reduced_idxs
                 )
 
             def gain_lhs_operator(x):
                 return hydra.gain_sampler.flatten_vector(
                             hydra.gain_sampler.apply_operator(
-                                hydra.gain_sampler.reconstruct_vector(x, gain_shape),
+                                hydra.gain_sampler.reconstruct_vector(
+                                                        x, 
+                                                        gain_shape, 
+                                                        reduced_idxs=reduced_idxs),
                                                  inv_noise_var,
                                                  gain_pspec_sqrt,
                                                  A_real,
                                                  A_imag,
-                                                 ggv)
+                                                 ggv),
+                            reduced_idxs=reduced_idxs
                                      )
 
             # Build linear operator object
-            gain_lhs_shape = (N_gain_params, N_gain_params)
+            if reduced_idxs is not None:
+                gain_lhs_shape = (reduced_idxs.size, reduced_idxs.size)
+            else:
+                gain_lhs_shape = (N_gain_params, N_gain_params)
             gain_linear_op = LinearOperator(matvec=gain_lhs_operator,
                                             shape=gain_lhs_shape)
 
-            # Solve using Conjugate Gradients
+            # Solve using Conjugate Gradients or similar
             t0 = time.time()
             x_soln, convergence_info = solver(gain_linear_op, b)
             timing_info(ftime, n, "(A) Gain sampler", time.time() - t0)
-
+            print("    Gain sampler convergence info:", convergence_info)
 
             # Reshape solution into complex array and multiply by S^1/2 to get set of
             # Fourier coeffs of the actual solution for the frac. gain perturbation
-            x_soln = hydra.utils.reconstruct_vector(x_soln, gain_shape)
+            x_soln = hydra.utils.reconstruct_vector(x_soln, 
+                                                    gain_shape, 
+                                                    reduced_idxs=reduced_idxs)
             x_soln = hydra.gain_sampler.apply_sqrt_pspec(gain_pspec_sqrt, x_soln)
 
             # x_soln is a set of Fourier coefficients, so transform to real space
@@ -585,86 +587,6 @@ if __name__ == '__main__':
 
             print("    Gain sample:", xgain[0,0,0], xgain.shape)
             np.save(os.path.join(output_dir, "delta_gain_%05d" % n), x_soln)
-
-            if PLOTTING:
-                for i in range(len(ants)):
-                    plt.subplot(121)
-                    plt.matshow(xgain[i].real, vmin=-vminmax, vmax=vminmax,
-                                fignum=False, aspect='auto')
-                    plt.colorbar()
-                    plt.subplot(122)
-                    plt.matshow(xgain[i].imag, vmin=-vminmax, vmax=vminmax,
-                                fignum=False, aspect='auto')
-                    plt.colorbar()
-                    plt.gcf().set_size_inches((10., 4.))
-                    plt.savefig(os.path.join(output_dir, "delta_g_%03d_%05d.png" % (i, n)))
-
-                # Residual with true gains (abs)
-                plt.matshow(np.abs(xgain[0]) - np.abs(delta_g[0]),
-                            vmin=-np.max(np.abs(delta_g[0])),
-                            vmax=np.max(np.abs(delta_g[0])),
-                            aspect='auto')
-                plt.colorbar()
-                plt.title("%05d" % n)
-                plt.gcf().set_size_inches((6., 4.))
-                plt.savefig(os.path.join(output_dir, "gain_resid_amp_000_%05d.png" % n))
-
-                # Residual with true gains (real)
-                plt.matshow(np.real(xgain[0]) - np.real(delta_g[0]),
-                            vmin=-np.max(np.real(delta_g[0])),
-                            vmax=np.max(np.real(delta_g[0])),
-                            aspect='auto')
-                plt.colorbar()
-                plt.title("%05d" % n)
-                plt.gcf().set_size_inches((6., 4.))
-                plt.savefig(os.path.join(output_dir, "gain_resid_real_000_%05d.png" % n))
-
-                # Residual with true gains (imag)
-                plt.matshow(np.imag(xgain[0]) - np.imag(delta_g[0]),
-                            vmin=-np.max(np.imag(delta_g[0])),
-                            vmax=np.max(np.imag(delta_g[0])),
-                            aspect='auto')
-                plt.colorbar()
-                plt.title("%05d" % n)
-                plt.gcf().set_size_inches((6., 4.))
-                plt.savefig(os.path.join(output_dir, "gain_resid_imag_000_%05d.png" % n))
-
-                # DEBUG
-                # Compare imaginary parts of gains
-                plt.subplot(121)
-                plt.matshow(np.imag(xgain[0]),
-                            vmin=-np.max(np.imag(delta_g[0])),
-                            vmax=np.max(np.imag(delta_g[0])),
-                            fignum=False, aspect='auto')
-                plt.colorbar()
-
-                plt.subplot(122)
-                plt.matshow(np.imag(delta_g[0]),
-                            vmin=-np.max(np.imag(delta_g[0])),
-                            vmax=np.max(np.imag(delta_g[0])),
-                            fignum=False, aspect='auto')
-                plt.colorbar()
-                plt.title("%05d" % n)
-                plt.gcf().set_size_inches((10., 4.))
-                plt.savefig(os.path.join(output_dir, "gain_resid_compare_imag_000_%05d.png" % n))
-
-                # Compare real parts of gains
-                plt.subplot(121)
-                plt.matshow(np.imag(xgain[0]),
-                            vmin=-np.max(np.imag(delta_g[0])),
-                            vmax=np.max(np.imag(delta_g[0])),
-                            fignum=False, aspect='auto')
-                plt.colorbar()
-
-                plt.subplot(122)
-                plt.matshow(np.imag(delta_g[0]),
-                            vmin=-np.max(np.imag(delta_g[0])),
-                            vmax=np.max(np.imag(delta_g[0])),
-                            fignum=False, aspect='auto')
-                plt.colorbar()
-                plt.title("%05d" % n)
-                plt.gcf().set_size_inches((10., 4.))
-                plt.savefig(os.path.join(output_dir, "gain_resid_compare_imag_000_%05d.png" % n))
 
             # Update gain model with latest solution (in real space)
             current_delta_gain = xgain
@@ -728,35 +650,8 @@ if __name__ == '__main__':
             print("    Vis sample:", x_soln[0,0,0], x_soln.shape)
             np.save(os.path.join(output_dir, "vis_%05d" % n), x_soln)
 
-            if PLOTTING:
-                plt.matshow(current_data_model[0].real + x_soln[0].real,
-                            vmin=-vminmax_vis,
-                            vmax=vminmax_vis)
-                plt.colorbar()
-                plt.title("%05d" % n)
-                plt.savefig(os.path.join(output_dir, "vis_000_%05d.png" % n))
-
             # Update current state
             current_data_model = current_data_model + x_soln
-
-            # Residual with true data model
-            if PLOTTING:
-                plt.subplot(121)
-                plt.matshow(current_data_model[0].real - model0[0].real,
-                            vmin=-0.5,
-                            vmax=0.5,
-                            fignum=False, aspect='auto')
-                plt.colorbar()
-                plt.title("%05d" % n)
-
-                plt.subplot(122)
-                plt.matshow(current_data_model[0].imag - model0[0].imag,
-                            vmin=-0.5,
-                            vmax=0.5,
-                            fignum=False, aspect='auto')
-                plt.colorbar()
-                plt.gcf().set_size_inches((10., 4.))
-                plt.savefig(os.path.join(output_dir, "resid_datamodel_000_%05d.png" % n))
 
 
         #---------------------------------------------------------------------------
@@ -784,7 +679,8 @@ if __name__ == '__main__':
 
             # Construct current state of model (residual from amplitudes = 1)
             resid = data.copy() \
-                  - ( proj.reshape((-1, Nptsrc)) @ np.ones_like(amp_prior_std) ).reshape(current_data_model.shape)
+                  - (  proj.reshape((-1, Nptsrc)) 
+                     @ np.ones_like(amp_prior_std) ).reshape(current_data_model.shape)
 
             # Construct RHS of linear system
             bsrc = hydra.ptsrc_sampler.construct_rhs(resid.flatten(),
@@ -808,33 +704,14 @@ if __name__ == '__main__':
             x_soln, convergence_info = solver(ptsrc_linear_op, bsrc)
             timing_info(ftime, n, "(C) Point source sampler", time.time() - t0)
             x_soln *= amp_prior_std # we solved for x = S^-1/2 s, so recover s
-            print("    Example soln:", x_soln[:5]) # this is fractional deviation from assumed amplitude, so should be close to 0
+            # this is fractional deviation from assumed amplitude; should be close to 0
+            print("    Example soln:", x_soln[:5])
             np.save(os.path.join(output_dir, "ptsrc_amp_%05d" % n), x_soln)
-
-            # Plot point source amplitude perturbations
-            if PLOTTING:
-                plt.subplot(111)
-                plt.plot(x_soln, 'r.')
-                plt.axhline(0., ls='dashed', color='k')
-                plt.axhline(-np.max(amp_prior_std), ls='dotted', color='gray')
-                plt.axhline(np.max(amp_prior_std), ls='dotted', color='gray')
-                plt.ylim((-1., 1.))
-                plt.title("%05d" % n)
-                plt.gcf().set_size_inches((5., 4.))
-                plt.savefig(os.path.join(output_dir, "ptsrc_amp_%05d.png" % n))
 
             # Update visibility model with latest solution (does not include any gains)
             # Applies projection operator to ptsrc amplitude vector
-            current_data_model = ( vis_proj_operator0.reshape((-1, Nptsrc)) @ (1. + x_soln) ).reshape(current_data_model.shape)
-
-            # Plot visibility waterfalls for current model
-            if PLOTTING:
-                plt.matshow(current_data_model[0,:,:].real,
-                            vmin=-vminmax_vis, vmax=vminmax_vis, aspect='auto')
-                plt.colorbar()
-                plt.title("%05d" % n)
-                plt.gcf().set_size_inches((5., 4.))
-                plt.savefig(os.path.join(output_dir, "data_model_000_%05d.png" % n))
+            current_data_model = (  vis_proj_operator0.reshape((-1, Nptsrc)) 
+                                  @ (1. + x_soln) ).reshape(current_data_model.shape)
 
         #---------------------------------------------------------------------------
         # (D) Beam sampler
@@ -877,6 +754,7 @@ if __name__ == '__main__':
                 fig.savefig(f"{output_dir}/beam_plot_ant_{ant_ind}_iter_{iter}_{type}_{tag}.png")
                 plt.close(fig)
                 return
+            
             # Have to have an initial guess and do some precompute
             if n == 0:
                 beam_nmodes, beam_mmodes = np.meshgrid(np.arange(1, beam_nmax + 1), np.arange(-beam_mmax, beam_mmax + 1))
@@ -1106,42 +984,7 @@ if __name__ == '__main__':
             print("    chi^2 / Ndof = %+8.5e" % (-2.*logl_approx / Ndof))
             with open(os.path.join(output_dir, "stats.dat"), "ab") as f:
                 np.savetxt(f, np.atleast_2d([n, logl_exact, logl_approx, importance_weight, Ndof]))
-
-        #---------------------------------------------------------------------------
-        # (O) Output diagnostics
-        #---------------------------------------------------------------------------
-        if OUTPUT_DIAGNOSTICS:
-
-            # Output residual
-            ggv = hydra.apply_gains(current_data_model,
-                                    gains*(1.+current_delta_gain),
-                                    ants,
-                                    antpairs,
-                                    inline=False)
-            resid = data - ggv
-
-            if PLOTTING:
-                plt.matshow(np.abs(resid[0]), vmin=-5., vmax=5., aspect='auto')
-                plt.colorbar()
-                plt.title("%05d" % n)
-                plt.gcf().set_size_inches((5., 4.))
-                plt.savefig(os.path.join(output_dir, "resid_abs_000_%05d.png" % n))
-
-                # Output chi^2
-                chisq = (resid[0].real**2. + resid[0].imag**2.) / noise_var[0]
-                chisq_tot = np.sum( (resid.real**2. + resid.imag**2.) / noise_var )
-                plt.matshow(chisq, vmin=0., vmax=40., aspect='auto')
-                plt.title(r"$\chi^2_{\rm tot} = %5.3e$" % chisq_tot)
-                plt.colorbar()
-                plt.title("%05d" % n)
-                plt.gcf().set_size_inches((5., 4.))
-                plt.savefig(os.path.join(output_dir, "chisq_000_%05d.png" % n))
-
-
-
-        # Close all figures made in this iteration
-        if PLOTTING:
-            plt.close('all')
+            
         timing_info(ftime, n, "(Z) Full iteration", time.time() - t0iter)
 
 
