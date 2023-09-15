@@ -48,7 +48,7 @@ if __name__ == '__main__':
     # Output options
     parser.add_argument("--stats", action="store_true",
                         required=False, dest="calculate_stats",
-                        help="Calculate statistics about the sampling results.")
+                        help="Calcultae statistics about the sampling results.")
     parser.add_argument("--diagnostics", action="store_true",
                         required=False, dest="output_diagnostics",
                         help="Output diagnostics.") # This will be ignored
@@ -141,7 +141,10 @@ if __name__ == '__main__':
     parser.add_argument("--gain-mode-cut-level", type=float, action="store", default=None,
                         required=False, dest="gain_mode_cut_level",
                         help="If specified, gain modes with (prior power spectrum) < (gain-mode-cut-level) * max(prior power spectrum) will be excluded from the linear solve (i.e. set to zero).")
-    
+    parser.add_argument("--gain-always-linear", type=bool, action="store", default=False,
+                        required=False, dest="gain_always_linear",
+                        help="If True, the gain perturbations are always applied under the linear approximation (the x_i x_j^* term is neglected everywhere)")
+
     # Gain simulation
     parser.add_argument("--sim-gain-amp-std", type=float, action="store", default=0.05,
                         required=False, dest="sim_gain_amp_std",
@@ -256,6 +259,7 @@ if __name__ == '__main__':
     gain_prior_frate0 = args.gain_prior_frate0
     gain_prior_delay0 = args.gain_prior_delay0
     gain_mode_cut_level = args.gain_mode_cut_level
+    gain_always_linear = args.gain_always_linear
     print("    Gain prior:")
     print("        amp:          ", gain_prior_amp)
     print("        sigma_frate:  ", gain_prior_sigma_frate)
@@ -263,7 +267,7 @@ if __name__ == '__main__':
     print("        zeropoint_std:", gain_prior_zeropoint_std)
     print("        frate0:       ", gain_prior_frate0)
     print("        delay0:       ", gain_prior_delay0)
-    
+    print("    Gains always linear:", gain_always_linear)
     print("")
 
     # Check that output directory exists

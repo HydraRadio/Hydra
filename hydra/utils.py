@@ -46,7 +46,7 @@ def reconstruct_vector(v, shape, reduced_idxs=None):
     return y.reshape(shape)
 
 
-def apply_gains(v, gains, ants, antpairs, inline=False):
+def apply_gains(v, gains, ants, antpairs, perturbation=None, inline=False):
     """
     Apply gain factors to an input array of complex visibility values.
 
@@ -63,6 +63,11 @@ def apply_gains(v, gains, ants, antpairs, inline=False):
             Array of antenna IDs.
         antpairs (list of tuples):
             List of antenna pair tuples.
+        perturbation (array_like):
+            Linear perturbations to the gains. If set, this will apply these 
+            perturbations under the linear approximation, i.e. 
+            `g_i g_j* \approx \bar{g}_i \bar{g}_j^* (1 + x_i + x_j^*)`.
+            Expected shape is (Nants, Nfreqs, Ntimes).
         inline (bool):
             If True, apply the gains to the input array directly. If False,
             return a copy of the input array with the gains applied.
@@ -83,7 +88,10 @@ def apply_gains(v, gains, ants, antpairs, inline=False):
         ant1, ant2 = bl
         i1 = np.where(ants == ant1)[0][0]
         i2 = np.where(ants == ant2)[0][0]
-        ggv[k,:,:] *= gains[i1] * gains[i2].conj()
+        fac = 1.
+        if perturbation is not None:
+            fac = 1. + perturbation[i1] + perturbation[i2].conj()
+        ggv[k,:,:] *= gains[i1] * gains[i2].conj() * fac
     return ggv
 
 
