@@ -320,7 +320,8 @@ def simulate_vis_per_source(
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
     multiprocess=True,
-    subarr_ant=None
+    subarr_ant=None,
+    mpi_comm=None
 ):
     """
     Run a basic simulation, returning the visibility for each source
@@ -358,9 +359,12 @@ def simulate_vis_per_source(
             The latitude of the center of the array, in radians. The default is
             the HERA latitude = -30.7215 * pi / 180.
         multiprocess (bool): Whether to use multiprocessing to speed up the
-            calculation
+            calculation.
         subarr_ant (int): Used to calculate only those visibilities associated
             with a particular antenna.
+        mpi_comm (MPI.Comm):
+            MPI comm object. If given, MPI will be used for parallelisation. 
+            Note that this will set `multiprocess = False`.
 
     Returns:
         vis (array_like):
@@ -369,6 +373,12 @@ def simulate_vis_per_source(
             otherwise.
     """
     nsrcs = ra.size
+    
+    # Disable multiprocess if mpi_comm is specified
+    if mpi_comm is not None:
+        multiprocess = False
+        myid = comm.Get_rank()
+        nworkers = comm.Get_size()
 
     assert len(ants) == len(
         beams
@@ -428,9 +438,10 @@ def simulate_vis_per_source(
     # Parallel loop over frequencies that calls vis_cpu for UVBeam
     # The `global` declaration is needed so that multiprocessing can handle
     # the input args correctly
-    global _sim_fn_simulate_vis_per_source
-    def _sim_fn_simulate_vis_per_source(i):
-        return vis_sim_per_source(
+    if multiprocess:
+        global _sim_fn_simulate_vis_per_source
+        def _sim_fn_simulate_vis_per_source(i):
+            return vis_sim_per_source(
                                   antpos,
                                   freqs[i],
                                   eq2tops,
@@ -441,7 +452,7 @@ def simulate_vis_per_source(
                                   polarized=polarized,
                                   subarr_ant=subarr_ant,
                                  )
-    if multiprocess:
+    
         # Set up parallel loop
         try:
             Nthreads = int(os.environ['OMP_NUM_THREADS'])
@@ -452,7 +463,17 @@ def simulate_vis_per_source(
     else:
         vv = np.zeros_like(vis)
         for i in range(len(freqs)):
-            vv[i] = _sim_fn_simulate_vis_per_source(i)
+            vv[i] = vis_sim_per_source(
+                                  antpos,
+                                  freqs[i],
+                                  eq2tops,
+                                  crd_eq,
+                                  fluxes[:, i],
+                                  beam_list=beams,
+                                  precision=precision,
+                                  polarized=polarized,
+                                  subarr_ant=subarr_ant,
+                                 )
 
     # Assign returned values to array
     for i in range(freqs.size):
@@ -657,3 +678,190 @@ def simulate_vis_per_alm(
                 vis[:,:,:,:,n + j*ell.size] = np.sum(vis_pix * skymap, axis=-1)
 
     return ell, m, vis
+
+
+def vis_sim_per_source_new(
+    antpos: np.ndarray,
+    freq: float,
+    lsts: np.ndarray,
+    alt: np.ndarray,
+    az: np.ndarray,
+    I_sky: np.ndarray,  
+    beam_list: Sequence[UVBeam],
+    precision: int = 2,
+    polarized: bool = False,
+    subarr_ant=None
+):
+    """
+    Calculate visibility from an input intensity map and beam model. This is
+    a trimmed-down version of vis_cpu that only uses UVBeam beams (not gridded
+    beams).
+
+    Parameters:
+        antpos (array_like):
+            Antenna position array. Shape=(NANT, 3).
+        freq (float):
+            Frequency to evaluate the visibilities at [Hz].
+        lsts (array_like):
+            LSTs.
+        alt, az (array_like):
+            Alt and az of sources at each time.
+        I_sky (array_like):
+            Intensity distribution of sources/pixels on the sky, assuming
+            intensity (Stokes I) only. The Stokes I intensity will be split
+            equally between the two linear polarization channels, resulting in
+            a factor of 0.5 from the value inputted here. This is done even if
+            only one polarization channel is simulated. Shape=(NSRCS,).
+        beam_list (list of UVBeam, optional):
+            If specified, evaluate primary beam values directly using UVBeam
+            objects. Note that if `polarized` is True, these beams must be
+            efield beams, and conversely if `polarized` is False they
+            must be power beams with a single polarization (either XX or YY).
+        precision (int):
+            Which precision level to use for floats and complex numbers.
+            Allowed values:
+            - 1: float32, complex64
+            - 2: float64, complex128
+        polarized (bool):
+            Whether to simulate a full polarized response in terms of nn, ne,
+            en, ee visibilities. See Eq. 6 of Kohn+ (arXiv:1802.04151) for
+            notation.
+        subarr_ant (int): Used to calculate only those visibilities associated
+            with a particular antenna.
+
+    Returns:
+        vis (array_like):
+            Simulated visibilities. If `polarized = True`, the output will have
+            shape (NAXES, NFEED, NTIMES, NANTS, NANTS, NSRCS), otherwise it
+            will have shape (NTIMES, NANTS, NANTS, NSRCS).
+    """
+    if precision == 1:
+        real_dtype = np.float32
+        complex_dtype = np.complex64
+    else:
+        real_dtype = np.float64
+        complex_dtype = np.complex128
+
+    # Specify number of polarizations (axes/feeds)
+    if polarized:
+        nax = nfeed = 2
+    else:
+        nax = nfeed = 1
+
+    nant, ncrd = antpos.shape
+    assert ncrd == 3, "antpos must have shape (NANTS, 3)."
+    ntimes, nsrcs = alt.shape
+    assert (
+        I_sky.ndim == 1 and I_sky.shape[0] == nsrcs
+    ), "I_sky must have shape (NSRCS,)."
+
+    # Get the number of unique beams
+    nbeam = len(beam_list)
+
+    # Intensity distribution (sqrt) and antenna positions. Does not support
+    # negative sky. Factor of 0.5 accounts for splitting Stokes I between
+    # polarization channels
+    Isqrt = np.sqrt(0.5 * I_sky).astype(real_dtype)
+    antpos = antpos.astype(real_dtype)
+    ang_freq = 2.0 * np.pi * freq
+
+    # Zero arrays: beam pattern, visibilities, delays, complex voltages
+    if subarr_ant is None:
+        vis_shape = (nfeed, nfeed, ntimes, nant, nant, nsrcs)
+    else:
+        vis_shape = (nfeed, nfeed, ntimes, nant, nsrcs)
+    vis = np.zeros(vis_shape, dtype=complex_dtype)
+
+    # Loop over time samples
+    im = 0
+    for tidx in range(len(lsts)):
+
+        # Simulate even if sources are below the horizon, since we need a
+        # visibility per source regardless
+        above_horizon = alt[tidx] > 0.
+        nsrcs_up = nsrcs
+
+        A_s = np.zeros((nax, nfeed, nbeam, nsrcs_up), dtype=complex_dtype)
+        tau = np.zeros((nant, nsrcs_up), dtype=real_dtype)
+        v = np.zeros((nant, nsrcs_up), dtype=complex_dtype)
+
+        # Primary beam pattern using direct interpolation of UVBeam object
+        za = 0.5*np.pi - alt
+        for i, bm in enumerate(beam_list):
+            spw_axis_present = utils.get_beam_interp_shape(bm)
+            kw = (
+                {"reuse_spline": True, "check_azza_domain": False}
+                if isinstance(bm, UVBeam)
+                else {}
+            )
+
+            interp_beam = bm.interp(
+                az_array=az[tidx], za_array=za[tidx], freq_array=np.atleast_1d(freq), **kw
+            )[0]
+
+            if polarized:
+                if spw_axis_present:
+                    interp_beam = interp_beam[:, 0, :, 0, :]
+                else:
+                    interp_beam = interp_beam[:, :, 0, :]
+            else:
+                # Here we have already asserted that the beam is a power beam and
+                # has only one polarization, so we just evaluate that one.
+                if spw_axis_present:
+                    interp_beam = np.sqrt(interp_beam[0, 0, 0, 0, :])
+                else:
+                    interp_beam = np.sqrt(interp_beam[0, 0, 0, :])
+
+            A_s[:, :, i] = interp_beam
+
+        # Check for invalid beam values
+        if np.any(np.isinf(A_s)) or np.any(np.isnan(A_s)):
+            raise ValueError("Beam interpolation resulted in an invalid value")
+
+        # Calculate delays, where tau = (b * s) / c
+        #enu_e, enu_n, enu_u = crd_top
+        crd_top = np.array([np.sin(za[tidx])*np.cos(az[tidx]), 
+                            np.sin(za[tidx])*np.sin(az[tidx]), 
+                            np.cos(za[tidx])])
+        np.dot(antpos, crd_top[:,:], out=tau)
+        tau /= c.value
+
+        # Component of complex phase factor for one antenna
+        # (actually, b = (antpos1 - antpos2) * crd_top / c; need dot product
+        # below to build full phase factor for a given baseline)
+        np.exp(1.0j * (ang_freq * tau), out=v)
+
+        # Complex voltages.
+        #v *= Isqrt[above_horizon]
+        v *= Isqrt[:]
+        v[:,~above_horizon] *= 0. # zero-out sources below the horizon
+
+        # Compute visibilities using product of complex voltages (upper triangle).
+        # Input arrays have shape (Nax, Nfeed, [Nants], Nsrcs
+        v = A_s[:, :, :] * v[np.newaxis, np.newaxis, :]
+
+        #print(">>>", A_s)
+        #print("\n\n\n")
+        #print("***", v)
+
+        if subarr_ant is None:
+            for i in range(len(antpos)):
+                # We want to take an outer product over feeds/antennas, contract over
+                # E-field components, and integrate over the sky.
+                vis[:, :, tidx, i : i + 1, i:, :] = np.einsum(
+                    "jiln,jkmn->iklmn",
+                    v[:, :, i : i + 1, :].conj(),
+                    v[:, :, i:, :],
+                    optimize=True,
+                )
+        else:
+            # Get the ones where the antenna in question is not conjugated
+            vis[:, :, tidx] = np.einsum(
+                "jiln,jkmn->ikln", # summing over m just sums over one antenna (squeezes an axis)
+                v[:, :, :, :].conj(),
+                v[:, :, subarr_ant: subarr_ant + 1, :],
+                optimize=True,
+            )
+
+    # Return visibilities with or without multiple polarization channels
+    return vis if polarized else vis[0, 0]
