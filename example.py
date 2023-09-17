@@ -10,6 +10,7 @@ from scipy.sparse.linalg import cg, gmres, LinearOperator, bicgstab
 from scipy.signal import blackmanharris
 from scipy.sparse import coo_matrix
 import pyuvsim
+from hera_sim.beams import PolyBeam
 import time, os, resource
 import multiprocessing
 from hydra.utils import flatten_vector, reconstruct_vector, timing_info, \
@@ -163,6 +164,9 @@ if __name__ == '__main__':
                         help="The central delay of the Gaussian taper (ns).")
     
     # Beam parameters
+    parser.add_argument("--beam-sim-type", type=str, action="store", default="gaussian",
+                        required=False, dest="beam_sim_type",
+                        help="Which type of beam to use for the simulation. ['gaussian', 'polybeam']")
     parser.add_argument("--beam-prior-std", type=float, action="store", default=1,
                         required=False, dest="beam_prior_std",
                         help="Std. dev. of beam coefficient prior, in units of Zernike coefficient")
@@ -357,8 +361,23 @@ if __name__ == '__main__':
     print("")
 
     # Beams
-    beams = [pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14.)
-             for ant in ants]
+    if "polybeam" in args.beam_sim_type.lower():
+        # PolyBeam fitted to HERA Fagnoni beam
+        beam_coeffs=[  0.29778665, -0.44821433, 0.27338272, 
+                      -0.10030698, -0.01195859, 0.06063853, 
+                      -0.04593295,  0.0107879,  0.01390283, 
+                      -0.01881641, -0.00177106, 0.01265177, 
+                      -0.00568299, -0.00333975, 0.00452368,
+                       0.00151808, -0.00593812, 0.00351559
+                     ]
+        beams = [PolyBeam(beam_coeffs, spectral_index=-0.6975, ref_freq=1.e8)
+                 for ant in ants]
+    else:
+        beams = [pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14.)
+                 for ant in ants]
+    print("beam type:", args.beam_sim_type)
+
+
 
     # Run a simulation
     t0 = time.time()
