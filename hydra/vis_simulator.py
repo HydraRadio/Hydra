@@ -10,7 +10,8 @@ from typing import Optional, Sequence
 from vis_cpu import conversions
 import healpy as hp
 from multiprocessing import Pool, cpu_count
-import os, warnings, datetime, time
+import os, warnings, time
+from datetime import datetime
 from . import utils
 
 def run_checks(
