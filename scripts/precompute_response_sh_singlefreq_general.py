@@ -58,7 +58,7 @@ uvd.read_uvh5(template, read_data=False)
 print("    Read uvh5 file metadata.")
 
 # Check logfile
-logfile = os.path.join(outdir, "logfile")
+logfile = os.path.join(outdir, "logfile%04d" % freqidx)
 with open(logfile, 'w+') as f:
     f.write("Starting precompute script\n")
 
