@@ -5,6 +5,7 @@ from pyuvdata import UVData, UVBeam
 import healpy as hp
 import argparse, os, sys, time
 import pyuvsim
+from hera_sim.beams import PolyBeam
 
 #sys.path.insert(0,'/home/phil/hera/Hydra/')
 sys.path.insert(0,'/cosma/home/dp270/dc-bull2/software/Hydra/')
@@ -28,9 +29,9 @@ parser.add_argument("--outdir", type=str, action="store",
 parser.add_argument("--freqidx", type=int, action="store", 
                     required=True, dest="freqidx",
                     help="Frequency index.")
-parser.add_argument("--beam-file", type=str, action="store", 
-                    required=True, dest="beam_file",
-                    help="Path to UVBeam file.")
+parser.add_argument("--beam", type=str, action="store", 
+                    required=True, dest="beam",
+                    help="Beam type ('gaussian' or 'polybeam'), or path to UVBeam file.")
 
 args = parser.parse_args()
 
@@ -41,7 +42,7 @@ nside = args.nside
 freqidx = args.freqidx
 outdir = args.outdir
 template = args.template
-beam_file = args.beam_file
+beam_str = args.beam
 
 # Check that output directory exists
 if not os.path.exists(outdir):
@@ -80,11 +81,30 @@ print("LSTs:        %5.4f -- %5.4f rad (%d times)" \
 print("(Identical Gaussian beams)")
 print("-"*50)
     
-# Load identical UVBeams and set interpolator properties
-uvb = UVBeam.from_file(beam_file)
-uvb.interpolation_function = 'healpix_simple'
-uvb.freq_interp_kind = 'linear'
-beams = [uvb for i in range(len(antnums))]
+# Load beams and set interpolator properties
+if beam_str.lower() == 'polybeam':
+    print("PolyBeam")
+    # PolyBeam fitted to HERA Fagnoni beam
+    beam_coeffs=[  0.29778665, -0.44821433, 0.27338272, 
+                  -0.10030698, -0.01195859, 0.06063853, 
+                  -0.04593295,  0.0107879,  0.01390283, 
+                  -0.01881641, -0.00177106, 0.01265177, 
+                  -0.00568299, -0.00333975, 0.00452368,
+                   0.00151808, -0.00593812, 0.00351559
+                 ]
+    beams = [PolyBeam(beam_coeffs, spectral_index=-0.6975, ref_freq=1.e8)
+             for ant in ants]
+
+elif beam_str.lower() == 'gaussian':
+    beams = [pyuvsim.AnalyticBeam('gaussian', diameter=14.) 
+             for ant in ants]
+else:
+    print("UVBeam:", beam_str)
+    uvb = UVBeam.from_file(beam_str)
+    uvb.interpolation_function = 'healpix_simple'
+    uvb.freq_interp_kind = 'linear'
+    beams = [uvb for i in range(len(antnums))]
+        
 
 # Output metadata
 metafile = os.path.join(outdir, "response_sh_metadata_%04d" % freqidx)
@@ -116,7 +136,7 @@ ell, m, vis = hydra.vis_simulator.simulate_vis_per_alm(
                     precision=2,
                     latitude=np.deg2rad(-30.7215),
                     use_feed="x",
-                    multiprocess=False,
+                    multiprocess=True,
                     amplitude=1.
                 )
 # vis shape (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS, NMODES)
