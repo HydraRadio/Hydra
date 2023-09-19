@@ -32,7 +32,9 @@ parser.add_argument("--freqidx", type=int, action="store",
 parser.add_argument("--beam", type=str, action="store", 
                     required=True, dest="beam",
                     help="Beam type ('gaussian' or 'polybeam'), or path to UVBeam file.")
-
+parser.add_argument("--logfile", type=str, action="store", 
+                    required=True, dest="logfile",
+                    help="Path to output directory.")
 args = parser.parse_args()
 
 
@@ -43,6 +45,7 @@ freqidx = args.freqidx
 outdir = args.outdir
 template = args.template
 beam_str = args.beam
+logfile = args.logfile
 
 # Check that output directory exists
 if not os.path.exists(outdir):
@@ -57,6 +60,10 @@ print("Template file:", template)
 uvd = UVData()
 uvd.read_uvh5(template, read_data=False)
 print("    Read uvh5 file metadata.")
+
+# Check logfile
+with open(logfile, 'w+') as f:
+    f.write("Starting precompute script\n")
 
 # Get freqs, lsts, ants etc.
 freqs = np.unique(uvd.freq_array)
@@ -137,7 +144,8 @@ ell, m, vis = hydra.vis_simulator.simulate_vis_per_alm(
                     latitude=np.deg2rad(-30.7215),
                     use_feed="x",
                     multiprocess=True,
-                    amplitude=1.
+                    amplitude=1.,
+                    logfile=logfile
                 )
 # vis shape (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS, NMODES)
 # (NFREQS, NTIMES, NANTS, NANTS, NMODES) if pol False

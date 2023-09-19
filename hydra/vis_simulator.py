@@ -10,7 +10,7 @@ from typing import Optional, Sequence
 from vis_cpu import conversions
 import healpy as hp
 from multiprocessing import Pool, cpu_count
-import os, warnings
+import os, warnings, datetime, time
 from . import utils
 
 def run_checks(
@@ -550,7 +550,8 @@ def simulate_vis_per_alm(
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
     multiprocess=True,
-    amplitude=1.
+    amplitude=1.,
+    logfile=None
 ):
     """
     Run a basic simulation, returning the visibility for each spherical harmonic mode
@@ -594,6 +595,8 @@ def simulate_vis_per_alm(
         amplitude (float):
             The amplitude to use for the spherical harmonic modes when running
             the simulation.
+        logfile (str):
+            Path to log file.
 
     Returns:
         ell, m (array_like):
@@ -632,6 +635,11 @@ def simulate_vis_per_alm(
 
     # Run simulation using the per-source simulation function, to get
     # visibility contrib. from each pixel
+    if logfile is not None:
+        t0 = time.time()
+        with open(logfile, 'a') as f:
+            f.write("%s Starting simulate_vis_per_source\n" % (datetime.now()))
+
     vis_pix = simulate_vis_per_source(ants=ants,
                                       fluxes=fluxes,
                                       ra=ra,
@@ -645,6 +653,11 @@ def simulate_vis_per_alm(
                                       use_feed=use_feed,
                                       multiprocess=multiprocess)
 
+    if logfile is not None:
+        with open(logfile, 'a') as f:
+            f.write("%s Finished simulate_vis_per_source in %5.2f sec\n" \
+                     % (datetime.now(), time.time() - t0))
+
     # Empty array with the right shape (no. visibilities times no. l,m modes)
     shape = list(vis_pix.shape)
     shape[-1] = 2*ell.size # replace last dim. with Nmodes (real + imag.)
@@ -654,6 +667,10 @@ def simulate_vis_per_alm(
     # by the value of each spherical harmonic mode in each pixel
     alm = np.zeros(ell.size, dtype=np.complex128)
     for n in range(ell.size):
+
+        if logfile is not None:
+            with open(logfile, 'a') as f:
+                f.write("%s ell %d / %d\n" % (datetime.now(), n, ell.size))
 
         # Start with zero vector for all modes
         alm *= 0
@@ -676,6 +693,10 @@ def simulate_vis_per_alm(
             else:
                 # vis_pix: (NFREQS, NTIMES, NANTS, NANTS, NSRCS)
                 vis[:,:,:,:,n + j*ell.size] = np.sum(vis_pix * skymap, axis=-1)
+
+    if logfile is not None:
+        with open(logfile, 'a') as f:
+            f.write("%s Finished all.\n" % (datetime.now()))
 
     return ell, m, vis
 
