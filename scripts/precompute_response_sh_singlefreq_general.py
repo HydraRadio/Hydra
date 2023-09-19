@@ -32,9 +32,6 @@ parser.add_argument("--freqidx", type=int, action="store",
 parser.add_argument("--beam", type=str, action="store", 
                     required=True, dest="beam",
                     help="Beam type ('gaussian' or 'polybeam'), or path to UVBeam file.")
-parser.add_argument("--logfile", type=str, action="store", 
-                    required=True, dest="logfile",
-                    help="Path to output directory.")
 args = parser.parse_args()
 
 
@@ -45,7 +42,6 @@ freqidx = args.freqidx
 outdir = args.outdir
 template = args.template
 beam_str = args.beam
-logfile = args.logfile
 
 # Check that output directory exists
 if not os.path.exists(outdir):
@@ -62,6 +58,7 @@ uvd.read_uvh5(template, read_data=False)
 print("    Read uvh5 file metadata.")
 
 # Check logfile
+logfile = os.path.join(outdir, "logfile")
 with open(logfile, 'w+') as f:
     f.write("Starting precompute script\n")
 
