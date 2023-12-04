@@ -38,6 +38,94 @@ def precompute_op(vis_proj_operator, inv_noise_var):
     return v_re.T @ v_re + v_im.T @ v_im
 
 
+
+def precompute_mpi(comm, ra, dec, fluxes, 
+                   ant_pos, antpairs, 
+                   freqs, times, beams, 
+                   inv_noise_var,
+                   resid, 
+                   amp_prior_std, 
+                   fchunks, 
+                   tchunks=1, 
+                   realisation=True):
+    """
+    Precompute the projection operator and matrix operator in parallel, using MPI.
+    """
+    # Get frequency/time indices for this worker
+    freq_idxs, time_idxs = freqs_times_for_worker(myid, freqs=freqs, times=times, 
+                                                  fchunks=fchunks, tchunks=tchunks)
+    freq_chunk = freqs[freq_idxs]
+    time_chunk = times[time_idxs]
+
+    # (1) Calculate projection operator for this worker
+    proj = calc_proj_operator(
+              ra=ra, 
+              dec=dec, 
+              fluxes=fluxes[:,freq_idxs], 
+              ant_pos=ant_pos, antpairs=antpairs, 
+              freqs=freq_chunk, 
+              times=time_chunk, 
+              beams=beams,
+              multiprocess=False
+    )
+
+    # (2) Precompute linear system operator
+    nsrcs = proj.shape[-1]
+    my_linear_op = np.zeros((nsrcs, nsrcs), dtype=proj.real.dtype)
+
+    # inv_noise_var has shape (Nbls, Nfreqs, Ntimes)
+    inv_noise_var_chunk = inv_noise_var[:, freq_idxs, :][:, :, time_idxs]
+    v = proj * np.sqrt(inv_noise_var_chunk[...,np.newaxis])
+
+    # Treat real and imaginary separately, and get copies, to massively
+    # speed-up the matrix multiplication!
+    v_re = v.reshape((-1, nsrcs)).real.copy()
+    v_im = v.reshape((-1, nsrcs)).imag.copy()
+    my_linear_op[:,:] = v_re.T @ v_re + v_im.T @ v_im
+
+    # Do Reduce (sum) operation to get total operator on root node
+    linear_op = np.zeros((1,1), dtype=my_linear_op.dtype) # dummy data for non-root workers
+    if myid == 0:
+        linear_op = np.zeros_like(my_linear_op)
+    
+    comm.Reduce(my_linear_op,
+                linear_op,
+                op=MPI.SUM,
+                root=0)
+    
+    # (3) Calculate linear system RHS
+    proj = proj.reshape((-1, nsrcs))
+    resid_chunk = resid[:, freq_idxs, :][:, :, time_idxs]
+
+    # Switch to turn random realisations on or off
+    realisation_switch = 1.0 if realisation else 0.0
+
+    # (Terms 1+3): S^1/2 A^\dagger [ N^{-1} r + N^{-1/2} \omega_r ]
+    omega_n = (
+        realisation_switch
+        * (1.0 * np.random.randn(*resid_chunk.shape) + 1.0j * np.random.randn(*resid_chunk.shape))
+        / np.sqrt(2.0)
+    )
+
+    # Separate complex part of RHS into real and imaginary parts, and apply
+    # the real and imaginary parts of the projection operator separately.
+    # This is necessary to get a real RHS vector
+    y = ((resid_chunk * inv_noise_var_chunk) + (omega_n * np.sqrt(inv_noise_var_chunk))).flatten()
+    b = amp_prior_std * (proj.T.real @ y.real + proj.T.imag @ y.imag)
+
+    # Reduce (sum) operation on b
+    linear_rhs = np.zeros((1,), dtype=b.dtype) # dummy data for non-root workers
+    if myid == 0:
+        linear_rhs = np.zeros_like(b)
+    comm.Reduce(b, linear_rhs, op=MPI.SUM, root=0)
+
+    # (Term 2): \omega_a
+    if myid == 0:
+        linear_rhs += realisation_switch * np.random.randn(nsrcs) # real vector
+
+    return linear_op, linear_rhs
+
+
 def apply_operator(x, amp_prior_std, vsquared):
     """
     Apply LHS operator to a vector of source amplitudes.
@@ -183,3 +271,5 @@ def calc_proj_operator(
         vis_ptsrc[i, :, :, :] = vis[:, :, idx1, idx2, :]
 
     return vis_ptsrc
+
+
