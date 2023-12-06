@@ -283,8 +283,8 @@ def vis_sim_per_source(
         # Input arrays have shape (Nax, Nfeed, [Nants], Nsrcs
         v = A_s[:, :, beam_idx] * v[np.newaxis, np.newaxis, :]
 
-
-
+        # If a subarray is requested, only compute the visibilities that involve 
+        # a specified antenna (useful for beam computations etc.)
         if subarr_ant is None:
             for i in range(len(antpos)):
                 # We want to take an outer product over feeds/antennas, contract over
@@ -320,9 +320,7 @@ def simulate_vis_per_source(
     precision=2,
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
-    multiprocess=True,
     subarr_ant=None,
-    mpi_comm=None
 ):
     """
     Run a basic simulation, returning the visibility for each source
@@ -359,13 +357,8 @@ def simulate_vis_per_source(
         latitude (float):
             The latitude of the center of the array, in radians. The default is
             the HERA latitude = -30.7215 * pi / 180.
-        multiprocess (bool): Whether to use multiprocessing to speed up the
-            calculation.
         subarr_ant (int): Used to calculate only those visibilities associated
             with a particular antenna.
-        mpi_comm (MPI.Comm):
-            MPI comm object. If given, MPI will be used for parallelisation. 
-            Note that this will set `multiprocess = False`.
 
     Returns:
         vis (array_like):
@@ -374,12 +367,6 @@ def simulate_vis_per_source(
             otherwise.
     """
     nsrcs = ra.size
-    
-    # Disable multiprocess if mpi_comm is specified
-    if mpi_comm is not None:
-        multiprocess = False
-        myid = comm.Get_rank()
-        nworkers = comm.Get_size()
 
     assert len(ants) == len(
         beams
@@ -436,45 +423,20 @@ def simulate_vis_per_source(
         vis_shape = (freqs.size, lsts.size, nants, nants, nsrcs)
     vis = np.zeros(vis_shape, dtype=complex_dtype)
 
-    # Parallel loop over frequencies that calls vis_cpu for UVBeam
-    # The `global` declaration is needed so that multiprocessing can handle
-    # the input args correctly
-    if multiprocess:
-        global _sim_fn_simulate_vis_per_source
-        def _sim_fn_simulate_vis_per_source(i):
-            return vis_sim_per_source(
-                                  antpos,
-                                  freqs[i],
-                                  eq2tops,
-                                  crd_eq,
-                                  fluxes[:, i],
-                                  beam_list=beams,
-                                  precision=precision,
-                                  polarized=polarized,
-                                  subarr_ant=subarr_ant,
-                                 )
-    
-        # Set up parallel loop
-        try:
-            Nthreads = int(os.environ['OMP_NUM_THREADS'])
-        except:
-            Nthreads = cpu_count()
-        with Pool(Nthreads) as pool:
-            vv = pool.map(_sim_fn_simulate_vis_per_source, range(freqs.size))
-    else:
-        vv = np.zeros_like(vis)
-        for i in range(len(freqs)):
-            vv[i] = vis_sim_per_source(
-                                  antpos,
-                                  freqs[i],
-                                  eq2tops,
-                                  crd_eq,
-                                  fluxes[:, i],
-                                  beam_list=beams,
-                                  precision=precision,
-                                  polarized=polarized,
-                                  subarr_ant=subarr_ant,
-                                 )
+    # Loop over frequencies that calls vis_cpu for UVBeam
+    vv = np.zeros_like(vis)
+    for i in range(len(freqs)):
+        vv[i] = vis_sim_per_source(
+                              antpos,
+                              freqs[i],
+                              eq2tops,
+                              crd_eq,
+                              fluxes[:, i],
+                              beam_list=beams,
+                              precision=precision,
+                              polarized=polarized,
+                              subarr_ant=subarr_ant,
+                             )
 
     # Assign returned values to array
     for i in range(freqs.size):
@@ -484,6 +446,7 @@ def simulate_vis_per_source(
             vis[i] = vv[i]  # v.shape: (ntimes, nant, nant, nsrcs) (unless subarr_ant is not None)
 
     return vis
+
 
 
 def simulate_vis(
@@ -887,3 +850,4 @@ def vis_sim_per_source_new(
 
     # Return visibilities with or without multiple polarization channels
     return vis if polarized else vis[0, 0]
+

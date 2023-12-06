@@ -39,29 +39,24 @@ def precompute_op(vis_proj_operator, inv_noise_var):
 
 
 
-def precompute_mpi(comm, ra, dec, fluxes, 
+def precompute_mpi(comm, ra, dec, fluxes_chunk, 
                    ant_pos, antpairs, 
-                   freqs, times, beams, 
-                   inv_noise_var,
-                   resid, 
+                   freq_chunk, time_chunk, beams, 
+                   inv_noise_var_chunk,
+                   resid_chunk, 
                    amp_prior_std, 
                    fchunks, 
                    tchunks=1, 
                    realisation=True):
     """
-    Precompute the projection operator and matrix operator in parallel, using MPI.
+    Precompute the projection operator and matrix operator in parallel, using
     """
-    # Get frequency/time indices for this worker
-    freq_idxs, time_idxs = freqs_times_for_worker(myid, freqs=freqs, times=times, 
-                                                  fchunks=fchunks, tchunks=tchunks)
-    freq_chunk = freqs[freq_idxs]
-    time_chunk = times[time_idxs]
 
     # (1) Calculate projection operator for this worker
     proj = calc_proj_operator(
               ra=ra, 
               dec=dec, 
-              fluxes=fluxes[:,freq_idxs], 
+              fluxes=fluxes_chunk, 
               ant_pos=ant_pos, antpairs=antpairs, 
               freqs=freq_chunk, 
               times=time_chunk, 
@@ -74,7 +69,6 @@ def precompute_mpi(comm, ra, dec, fluxes,
     my_linear_op = np.zeros((nsrcs, nsrcs), dtype=proj.real.dtype)
 
     # inv_noise_var has shape (Nbls, Nfreqs, Ntimes)
-    inv_noise_var_chunk = inv_noise_var[:, freq_idxs, :][:, :, time_idxs]
     v = proj * np.sqrt(inv_noise_var_chunk[...,np.newaxis])
 
     # Treat real and imaginary separately, and get copies, to massively
@@ -95,10 +89,7 @@ def precompute_mpi(comm, ra, dec, fluxes,
     
     # (3) Calculate linear system RHS
     proj = proj.reshape((-1, nsrcs))
-    resid_chunk = resid[:, freq_idxs, :][:, :, time_idxs]
-
-    # Switch to turn random realisations on or off
-    realisation_switch = 1.0 if realisation else 0.0
+    realisation_switch = 1.0 if realisation else 0.0 # Turn random realisations on or off
 
     # (Terms 1+3): S^1/2 A^\dagger [ N^{-1} r + N^{-1/2} \omega_r ]
     omega_n = (

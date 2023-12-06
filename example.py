@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from mpi4py import MPI
 import numpy as np
 import pylab as plt
 import hydra
@@ -12,176 +13,22 @@ from scipy.sparse import coo_matrix
 import pyuvsim
 from hera_sim.beams import PolyBeam
 import time, os, resource
-import multiprocessing
 from hydra.utils import flatten_vector, reconstruct_vector, timing_info, \
                             build_hex_array, get_flux_from_ptsrc_amp, \
-                            convert_to_tops, gain_prior_pspec_sqrt
+                            convert_to_tops, gain_prior_pspec_sqrt, \
+                            freqs_times_for_worker, partial_fourier_basis_2d_from_nmax
+from hydra.example import generate_random_ptsrc_catalogue, run_example_simulation
 
-import argparse
 
 if __name__ == '__main__':
 
-    # Don't use fork! It duplicates the memory used.
-    #multiprocessing.set_start_method('forkserver', force=True)
+    # MPI setup
+    comm = MPI.COMM_WORLD
+    nworkers = comm.Get_size()
+    myid = comm.Get_rank()
 
-    description = "Example Gibbs sampling of the joint posterior of several analysis " \
-                  "parameters in 21-cm power spectrum estimation from a simulated " \
-                  "visibility data set"
-    parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--seed", type=int, action="store", default=0,
-                        required=False, dest="seed",
-                        help="Set the random seed.")
-    
-    # Samplers
-    parser.add_argument("--gains", action="store_true",
-                        required=False, dest="sample_gains",
-                        help="Sample gains.")
-    parser.add_argument("--vis", action="store_true",
-                        required=False, dest="sample_vis",
-                        help="Sample visibilities in general.")
-    parser.add_argument("--ptsrc", action="store_true",
-                        required=False, dest="sample_ptsrc",
-                        help="Sample point source amplitudes.")
-    parser.add_argument("--beam", action="store_true",
-                        required=False, dest="sample_beam",
-                        help="Sample beams.")
-    
-    # Output options
-    parser.add_argument("--stats", action="store_true",
-                        required=False, dest="calculate_stats",
-                        help="Calcultae statistics about the sampling results.")
-    parser.add_argument("--diagnostics", action="store_true",
-                        required=False, dest="output_diagnostics",
-                        help="Output diagnostics.") # This will be ignored
-    parser.add_argument("--timing", action="store_true", required=False,
-                        dest="save_timing_info", help="Save timing info.")
-    parser.add_argument("--plotting", action="store_true",
-                        required=False, dest="plotting",
-                        help="Output plots.")
-    
-    # Array and data shape options
-    parser.add_argument('--hex-array', type=int, action="store", default=(3,4),
-                        required=False, nargs='+', dest="hex_array",
-                        help="Hex array layout, specified as the no. of antennas "
-                             "in the 1st and middle rows, e.g. '--hex-array 3 4'.")
-    parser.add_argument("--Nptsrc", type=int, action="store", default=100,
-                        required=False, dest="Nptsrc",
-                        help="Number of point sources to use in simulation (and model).")
-    parser.add_argument("--Ntimes", type=int, action="store", default=30,
-                        required=False, dest="Ntimes",
-                        help="Number of times to use in the simulation.")
-    parser.add_argument("--Nfreqs", type=int, action="store", default=60,
-                        required=False, dest="Nfreqs",
-                        help="Number of frequencies to use in the simulation.")
-    parser.add_argument("--Niters", type=int, action="store", default=100,
-                        required=False, dest="Niters",
-                        help="Number of joint samples to gather.")
-    
-    # Noise level
-    parser.add_argument("--sigma-noise", type=float, action="store",
-                        default=0.05, required=False, dest="sigma_noise",
-                        help="Standard deviation of the noise, in the same units "
-                             "as the visibility data.")
-    
-    parser.add_argument("--solver", type=str, action="store",
-                        default='cg', required=False, dest="solver_name",
-                        help="Which sparse matrix solver to use for linear systems ('cg' or 'gmres').")
-    parser.add_argument("--output-dir", type=str, action="store",
-                        default="./output", required=False, dest="output_dir",
-                        help="Output directory.")
-    parser.add_argument("--multiprocess", action="store_true", dest="multiprocess",
-                        required=False,
-                        help="Whether to use multiprocessing in vis sim calls.")
-    
-    # Point source sim params
-    parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 1),
-                        nargs=2, required=False, dest="ra_bounds",
-                        help="Bounds for the Right Ascension of the randomly simulated sources")
-    parser.add_argument("--dec-bounds", type=float, action="store", default=(-0.6, 0.4),
-                        nargs=2, required=False, dest="dec_bounds",
-                        help="Bounds for the Declination of the randomly simulated sources")
-    parser.add_argument("--lst-bounds", type=float, action="store", default=(0.2, 0.5),
-                        nargs=2, required=False, dest="lst_bounds",
-                        help="Bounds for the LST range of the simulation, in radians.")
-    parser.add_argument("--freq-bounds", type=float, action="store", default=(100., 120.),
-                        nargs=2, required=False, dest="freq_bounds",
-                        help="Bounds for the frequency range of the simulation, in MHz.")
-    parser.add_argument("--ptsrc-amp-prior-level", type=float, action="store", default=0.1,
-                        required=False, dest="ptsrc_amp_prior_level",
-                        help="Fractional prior on point source amplitudes")
-    parser.add_argument("--vis-prior-level", type=float, action="store", default=0.1,
-                        required=False, dest="vis_prior_level",
-                        help="Prior on visibility values")
-
-    parser.add_argument("--calsrc-std", type=float, action="store", default=-1.,
-                        required=False, dest="calsrc_std",
-                        help="Define a different std. dev. for the amplitude prior of a calibration source. If -1, do not use a calibration source.")
-    parser.add_argument("--calsrc-radius", type=float, action="store", default=10.,
-                        required=False, dest="calsrc_radius",
-                        help="Radius around declination of the zenith in which to search for brightest source, which is then identified as the calibration source.")
-                        
-    # Gain prior
-    parser.add_argument("--gain-prior-amp", type=float, action="store", default=0.1,
-                        required=False, dest="gain_prior_amp",
-                        help="Overall amplitude of gain prior.")
-    parser.add_argument("--gain-prior-sigma-frate", type=float, action="store", default=None,
-                        required=False, dest="gain_prior_sigma_frate",
-                        help="Width of a Gaussian prior in fringe rate, in units of mHz.")
-    parser.add_argument("--gain-prior-sigma-delay", type=float, action="store", default=None,
-                        required=False, dest="gain_prior_sigma_delay",
-                        help="Width of a Gaussian prior in delay, in units of ns.")
-    parser.add_argument("--gain-prior-zeropoint-std", type=float, action="store", default=None,
-                        required=False, dest="gain_prior_zeropoint_std",
-                        help="If specified, fix the std. dev. of the (0,0) mode to some value.")
-    parser.add_argument("--gain-prior-frate0", type=float, action="store", default=0.,
-                        required=False, dest="gain_prior_frate0",
-                        help="The central fringe rate of the Gaussian taper (mHz).")
-    parser.add_argument("--gain-prior-delay0", type=float, action="store", default=0.,
-                        required=False, dest="gain_prior_delay0",
-                        help="The central delay of the Gaussian taper (ns).")
-    parser.add_argument("--gain-mode-cut-level", type=float, action="store", default=None,
-                        required=False, dest="gain_mode_cut_level",
-                        help="If specified, gain modes with (prior power spectrum) < (gain-mode-cut-level) * max(prior power spectrum) will be excluded from the linear solve (i.e. set to zero).")
-    parser.add_argument("--gain-always-linear", type=bool, action="store", default=False,
-                        required=False, dest="gain_always_linear",
-                        help="If True, the gain perturbations are always applied under the linear approximation (the x_i x_j^* term is neglected everywhere)")
-
-    # Gain simulation
-    parser.add_argument("--sim-gain-amp-std", type=float, action="store", default=0.05,
-                        required=False, dest="sim_gain_amp_std",
-                        help="Std. dev. of amplitude of simulated gain.")
-    parser.add_argument("--sim-gain-sigma-frate", type=float, action="store", default=None,
-                        required=False, dest="sim_gain_sigma_frate",
-                        help="Width of a Gaussian in fringe rate, in units of mHz.")
-    parser.add_argument("--sim-gain-sigma-delay", type=float, action="store", default=None,
-                        required=False, dest="sim_gain_sigma_delay",
-                        help="Width of a Gaussian in delay, in units of ns.")
-    parser.add_argument("--sim-gain-frate0", type=float, action="store", default=0.,
-                        required=False, dest="sim_gain_frate0",
-                        help="The central fringe rate of the Gaussian taper (mHz).")
-    parser.add_argument("--sim-gain-delay0", type=float, action="store", default=0.,
-                        required=False, dest="sim_gain_delay0",
-                        help="The central delay of the Gaussian taper (ns).")
-    
-    # Beam parameters
-    parser.add_argument("--beam-sim-type", type=str, action="store", default="gaussian",
-                        required=False, dest="beam_sim_type",
-                        help="Which type of beam to use for the simulation. ['gaussian', 'polybeam']")
-    parser.add_argument("--beam-prior-std", type=float, action="store", default=1,
-                        required=False, dest="beam_prior_std",
-                        help="Std. dev. of beam coefficient prior, in units of Zernike coefficient")
-    parser.add_argument("--beam-nmax", type=int, action="store",
-                        default=16, required=False, dest="beam_nmax",
-                        help="Maximum radial degree of the Fourier-Bessel basis for the beams.")
-    parser.add_argument("--beam-mmax", type=int, action="store",
-                        default=0, required=False, dest="beam_mmax",
-                        help="Maximum azimuthal degree of the Fourier-Bessel basis for the beams.")
-    parser.add_argument("--rho-const", type=float, action="store", 
-                        default=np.sqrt(1-np.cos(np.pi * 23 / 45)),
-                        required=False, dest="rho_const",
-                        help="A constant to define the radial projection for the beam spatial basis")
-    
-    args = parser.parse_args()
+    # Parse commandline arguments
+    args = hydra.config.get_config()
 
     # Set switches
     SAMPLE_GAINS = args.sample_gains
@@ -191,19 +38,21 @@ if __name__ == '__main__':
     CALCULATE_STATS = args.calculate_stats
     SAVE_TIMING_INFO = args.save_timing_info
     PLOTTING = args.plotting
-    MULTIPROCESS = args.multiprocess
 
     # Print what's switched on
-    print("    Gain sampler:       ", SAMPLE_GAINS)
-    print("    Vis. sampler:       ", SAMPLE_VIS)
-    print("    Ptsrc. amp. sampler:", SAMPLE_PTSRC_AMPS)
-    print("    Beam sampler:       ", SAMPLE_BEAM)
+    if myid == 0:
+        print("    Gain sampler:       ", SAMPLE_GAINS)
+        print("    Vis. sampler:       ", SAMPLE_VIS)
+        print("    Ptsrc. amp. sampler:", SAMPLE_PTSRC_AMPS)
+        print("    Beam sampler:       ", SAMPLE_BEAM)
 
     # Check that at least one thing is being sampled
     if not SAMPLE_GAINS and not SAMPLE_VIS and not SAMPLE_PTSRC_AMPS and not SAMPLE_BEAM:
         raise ValueError("No samplers were enabled. Must enable at least one "
                          "of 'gains', 'vis', 'ptsrc', 'beams'.")
 
+
+    ############
     # Simulation settings -- want some shorter variable names
     Nptsrc = args.Nptsrc
     Ntimes = args.Ntimes
@@ -223,38 +72,23 @@ if __name__ == '__main__':
     sim_gain_amp_std = args.sim_gain_amp_std
     
     # Source position and LST/frequency ranges
-    ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
-    dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
+    #ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
+    #dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
     lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
     freq_min, freq_max = (min(args.freq_bounds), max(args.freq_bounds))
     
     # Array latitude
-    hera_latitude = np.deg2rad(-30.7215)
+    array_latitude = np.deg2rad(-30.7215)
+    ##############
+
+    #--------------------------------------------------------------------------
+    # Prior settings
+    #--------------------------------------------------------------------------
 
     # Ptsrc and vis prior settings
     ptsrc_amp_prior_level = args.ptsrc_amp_prior_level
     vis_prior_level = args.vis_prior_level
 
-    calsrc_radius = args.calsrc_radius
-    if args.calsrc_std < 0.:
-        calsrc = False
-    else:
-        calsrc = True
-        calsrc_std = args.calsrc_std
-
-    # Gain sim settings
-    sim_gain_amp = args.sim_gain_amp_std
-    sim_gain_sigma_frate = args.sim_gain_sigma_frate
-    sim_gain_sigma_delay = args.sim_gain_sigma_delay
-    sim_gain_frate0 = args.sim_gain_frate0
-    sim_gain_delay0 = args.sim_gain_delay0
-    print("    Gain sim:")
-    print("        amp:          ", sim_gain_amp)
-    print("        sigma_frate:  ", sim_gain_sigma_frate)
-    print("        sigma_delay:  ", sim_gain_sigma_delay)
-    print("        frate0:       ", sim_gain_frate0)
-    print("        delay0:       ", sim_gain_delay0)
-    
     # Gain prior settings
     gain_prior_amp = args.gain_prior_amp
     gain_prior_sigma_frate = args.gain_prior_sigma_frate
@@ -264,21 +98,28 @@ if __name__ == '__main__':
     gain_prior_delay0 = args.gain_prior_delay0
     gain_mode_cut_level = args.gain_mode_cut_level
     gain_always_linear = args.gain_always_linear
-    print("    Gain prior:")
-    print("        amp:          ", gain_prior_amp)
-    print("        sigma_frate:  ", gain_prior_sigma_frate)
-    print("        sigma_delay:  ", gain_prior_sigma_delay)
-    print("        zeropoint_std:", gain_prior_zeropoint_std)
-    print("        frate0:       ", gain_prior_frate0)
-    print("        delay0:       ", gain_prior_delay0)
-    print("    Gains always linear:", gain_always_linear)
-    print("")
+    if myid == 0:
+        print("    Gain prior:")
+        print("        amp:          ", gain_prior_amp)
+        print("        sigma_frate:  ", gain_prior_sigma_frate)
+        print("        sigma_delay:  ", gain_prior_sigma_delay)
+        print("        zeropoint_std:", gain_prior_zeropoint_std)
+        print("        frate0:       ", gain_prior_frate0)
+        print("        delay0:       ", gain_prior_delay0)
+        print("    Gains always linear:", gain_always_linear)
+        print("")
 
+
+    #--------------------------------------------------------------------------
+    # Run and solver settings
+    #--------------------------------------------------------------------------
     # Check that output directory exists
     output_dir = args.output_dir
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    print("\nOutput directory:", output_dir)
+    if myid == 0:
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        print("\nOutput directory:", output_dir)
+    comm.barrier()
 
     # Linear solver to use
     if args.solver_name == 'cg':
@@ -289,19 +130,19 @@ if __name__ == '__main__':
         solver = bicgstab
     else:
         raise ValueError("Solver '%s' not recognised." % args.solver_name)
-    print("    Solver:  %s" % args.solver_name)
+    if myid == 0:
+        print("    Solver:  %s" % args.solver_name)
 
     # Random seed
-    np.random.seed(args.seed)
-    print("    Seed:    %d" % args.seed)
+    np.random.seed(args.seed + myid) # need unique seed for each worker
+    if myid == 0:
+        print("    Seed:    %d" % args.seed)
 
     # Check number of threads available
     Nthreads = os.environ.get('OMP_NUM_THREADS')
-    if Nthreads is None:
-        Nthreads = multiprocessing.cpu_count()
-    else:
-        Nthreads = int(Nthreads)
-    print("    Threads: %d available" % Nthreads)
+    if myid == 0:
+        print("    Parallelisation: %03d MPI workers, %s threads on root worker" \
+               % (nworkers, Nthreads))
 
     # Timing file
     ftime = os.path.join(output_dir, "timing.dat")
@@ -313,6 +154,210 @@ if __name__ == '__main__':
     # Simulate some data
     times = np.linspace(lst_min, lst_max, Ntimes)
     freqs = np.linspace(freq_min, freq_max, Nfreqs)
+
+    # FIXME
+    fchunks = 2
+    tchunks = 1
+
+    # Get frequency/time indices for this worker
+    freq_idxs, time_idxs = freqs_times_for_worker(myid, freqs=freqs, times=times, 
+                                                  fchunks=fchunks, tchunks=tchunks)
+    freq_chunk = freqs[freq_idxs]
+    time_chunk = times[time_idxs]
+    #inv_noise_var_chunk = inv_noise_var[:, freq_idxs, :][:, :, time_idxs]
+    #resid_chunk = resid[:, freq_idxs, :][:, :, time_idxs]
+
+
+    #--------------------------------------------------------------------------
+    # Generate random point source catalogue and distribute between workers
+    #--------------------------------------------------------------------------
+    ra = np.zeros(Nptsrc, dtype=np.float64)
+    dec = np.zeros_like(ra)
+    ptsrc_amps = np.zeros_like(ra)
+
+    if myid == 0:
+        # Generate random catalogue
+        ra, dec, ptsrc_amps = generate_random_ptsrc_catalogue(Nptsrc, 
+                                                              ra_bounds=args.ra_bounds, 
+                                                              dec_bounds=args.dec_bounds, 
+                                                              logflux_bounds=(-1., 2.))
+        # Save generated catalogue info
+        np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
+        np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
+
+    # Broadcast full catalogue from root to all other workers
+    comm.Bcast(ra, root=0)
+    comm.Bcast(dec, root=0)
+    comm.Bcast(ptsrc_amps, root=0)
+    print("Worker %03d received %d point sources (sum of amps: %f)" \
+          % (myid, ra.size, np.sum(ptsrc_amps)))
+    comm.barrier()
+
+    #--------------------------------------------------------------------------
+    # Run visibility simulation for this worker's chunk of frequency/time space
+    #--------------------------------------------------------------------------
+    t0 = time.time()
+    model0_chunk, fluxes_chunk, beams = run_example_simulation(
+                                                   args=args, 
+                                                   output_dir=output_dir, 
+                                                   times=time_chunk,
+                                                   freqs=freq_chunk,
+                                                   ra=ra, 
+                                                   dec=dec, 
+                                                   ptsrc_amps=ptsrc_amps,
+                                                   array_latitude=array_latitude)
+    print("Worker %03d finished simulation in %6.3f sec" % (myid, time.time() - t0))
+    comm.barrier() 
+
+
+    #--------------------------------------------------------------------------
+    # Identify calibration source (brightest near beam)
+    #--------------------------------------------------------------------------
+    # Calibration source
+    calsrc_radius = args.calsrc_radius
+    if args.calsrc_std < 0.:
+        calsrc = False
+    else:
+        calsrc = True
+        calsrc_std = args.calsrc_std
+
+    # Select what would be the calibration source (brightest, close to beam)
+    calsrc_idxs = np.where(np.abs(dec - array_latitude)*180./np.pi < calsrc_radius)[0]
+    assert len(calsrc_idxs) > 0, "No sources found within %d deg of the zenith" % calsrc_radius
+    calsrc_idx = calsrc_idxs[np.argmax(ptsrc_amps[calsrc_idxs])]
+    calsrc_amp = ptsrc_amps[calsrc_idx]
+    if myid == 0:
+        print("Calibration source:")
+        print("  Enabled:            %s" % calsrc)
+        print("  Index:              %d" % calsrc_idx)
+        print("  Amplitude:          %6.3e" % calsrc_amp)
+        print("  Dist. from zenith:  %6.2f deg" \
+              % np.rad2deg(np.abs(dec[calsrc_idx] - array_latitude)))
+        print("  Flux @ lowest freq: %6.3e Jy" % fluxes[calsrc_idx,0])
+        print("")
+
+
+    #--------------------------------------------------------------------------
+    # Simulate antenna gains
+    #--------------------------------------------------------------------------
+    # Gain sim settings
+    sim_gain_amp = args.sim_gain_amp_std
+    sim_gain_sigma_frate = args.sim_gain_sigma_frate
+    sim_gain_sigma_delay = args.sim_gain_sigma_delay
+    sim_gain_frate0 = args.sim_gain_frate0
+    sim_gain_delay0 = args.sim_gain_delay0
+    if myid == 0:
+        print("    Gain sim:")
+        print("        amp:          ", sim_gain_amp)
+        print("        sigma_frate:  ", sim_gain_sigma_frate)
+        print("        sigma_delay:  ", sim_gain_sigma_delay)
+        print("        frate0:       ", sim_gain_frate0)
+        print("        delay0:       ", sim_gain_delay0)
+
+    comm.barrier()
+
+    # Construct partial Fourier basis with only low-order modes, evaluated on 
+    # the time/freq. ranges belonging to this worker
+    Fbasis, k_freq, k_time = partial_fourier_basis_2d_from_nmax(
+                                                freqs=freq_chunk, 
+                                                times=time_chunk, 
+                                                nmaxfreq=9, 
+                                                nmaxtime=4, 
+                                                Lfreq=freqs.max() - freqs.min(), 
+                                                Ltime=times.max() - times.min())
+    Ngain_modes = k_freq.size
+    Nants = 6 # FIXME FIXME
+
+    # Define gains and gain perturbations
+    gains = (1. + 0.j) * np.ones((Nants, freq_chunk.size, time_chunk.size), dtype=model0.dtype)
+    
+    # Simple prior on gain perturbation modes
+    # FIXME: Other gain parameters are currently ignored
+    prior_std_delta_g = sim_gain_amp_std * np.ones(Ngain_modes)
+
+    # Random gain perturbation amplitudes (Nants, Ngain_modes)
+    # Do realisation on root node and then broadcast to other workers
+    delta_g_amps = np.zeros((Nants, Ngain_modes), dtype=np.complex128)
+    if myid == 0:
+        delta_g_amps = prior_std_delta_g * (  1.0 * np.random.randn(Nants, Ngain_modes) \
+                                            + 1.j * np.random.randn(Nants, Ngain_modes) )
+    comm.Bcast(delta_g_amps, root=0)
+    print("Worker %03d received %d delta_g amps (sum of amps: %f)" \
+          % (myid, delta_g_amps.size, np.sum(delta_g_amps)))
+
+    # Dot product with partial Fourier operator to get simulated gain perturbations. 
+    # These are for this worker's time/freq. chunk, but should be continuous if you 
+    # stitch the chunks together.
+    # (Nants, Nfreqs, Ntimes) = (Nants, Ngain_modes) . (Ngain_modes, Nfreqs, Ntimes)
+    delta_g_chunk = np.tensordot(delta_g_amps, Fbasis, axes=((1,), (0,)))
+    print(delta_g_chunk.shape, delta_g_amps.shape, Fbasis.shape)
+    comm.barrier()
+
+    sys.exit(1)
+
+
+    #------------
+    # FIXME FIXME
+    # Apply gains to model
+    data = model0.copy()
+    hydra.apply_gains(data, gains * (1. + delta_g), ants, antpairs, inline=True)
+
+    # Add noise
+    data += sigma_noise * np.sqrt(0.5) \
+          * (  1.0 * np.random.randn(*data.shape) \
+             + 1.j * np.random.randn(*data.shape))
+    #-----------
+
+
+    """
+    ##np.save(os.path.join(output_dir, "model0"), model0)
+
+    
+
+    
+
+    # Generate gain fluctuations from FFT basis
+    frate = np.fft.fftfreq(times.size, d=times[1] - times[0])
+    tau = np.fft.fftfreq(freqs.size, d=freqs[1] - freqs[0])
+    delta_g_sqrt_pspec = gain_prior_pspec_sqrt(
+                                lsts=times, 
+                                freqs=freqs, 
+                                gain_prior_amp=sim_gain_amp_std, 
+                                gain_prior_sigma_frate=sim_gain_sigma_frate, 
+                                gain_prior_sigma_delay=sim_gain_sigma_delay, 
+                                gain_prior_zeropoint_std=None,
+                                frate0=sim_gain_frate0, 
+                                delay0=sim_gain_delay0 )
+    
+    # Make Gaussian realisation of gain fluctuation power spectrum, different for each antenna
+    delta_g = np.array([np.fft.ifft2(delta_g_sqrt_pspec 
+                                     * np.random.randn(*delta_g_sqrt_pspec.shape)) 
+                        for i in range(Nants)],
+                        dtype=model0.dtype)
+
+    ##np.save(os.path.join(output_dir, "gains0"), gains)
+    ##np.save(os.path.join(output_dir, "delta_g0"), delta_g)
+
+    # Apply a Blackman-Harris window to apodise the edges
+    #window = blackmanharris(model0.shape[1], sym=True)[np.newaxis,:,np.newaxis] \
+    #       * blackmanharris(model0.shape[2], sym=True)[np.newaxis,np.newaxis,:]
+    window = 1. # no window for now
+
+    # Apply gains to model
+    data = model0.copy() * window
+    hydra.apply_gains(data, gains * (1. + delta_g), ants, antpairs, inline=True)
+
+    # Add noise
+    data += sigma_noise * np.sqrt(0.5) \
+          * (  1.0 * np.random.randn(*data.shape) \
+             + 1.j * np.random.randn(*data.shape))
+
+    ##np.save(os.path.join(output_dir, "data0"), data)
+    """
+
+
+
+
 
     ant_pos = build_hex_array(hex_spec=hex_array, d=14.6)
     ants = np.array(list(ant_pos.keys()))
@@ -329,25 +374,10 @@ if __name__ == '__main__':
 
     ants1, ants2 = list(zip(*antpairs))
 
-    # Generate random point source locations
-    # RA goes from [0, 2 pi] and Dec from [-pi / 2, +pi / 2].
-    ra = np.random.uniform(low=ra_low, high=ra_high, size=Nptsrc)
     
-    # inversion sample to get them uniform on the sphere, in case wide bounds are used
-    U = np.random.uniform(low=0, high=1, size=Nptsrc)
-    dsin = np.sin(dec_high) - np.sin(dec_low)
-    dec = np.arcsin(U * dsin + np.sin(dec_low)) # np.arcsin returns on [-pi / 2, +pi / 2]
-
-    # Generate fluxes
-    beta_ptsrc = -2.7
-    ptsrc_amps = 10.**np.random.uniform(low=-1., high=2., size=Nptsrc)
-    fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc)
-    print("pstrc amps (input):", ptsrc_amps[:5])
-    np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
-    np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
 
     # Select what would be the calibration source (brightest, close to beam)
-    calsrc_idxs = np.where(np.abs(dec - hera_latitude)*180./np.pi < calsrc_radius)[0]
+    calsrc_idxs = np.where(np.abs(dec - array_latitude)*180./np.pi < calsrc_radius)[0]
     assert len(calsrc_idxs) > 0, "No sources found within %d deg of the zenith" % calsrc_radius
     calsrc_idx = calsrc_idxs[np.argmax(ptsrc_amps[calsrc_idxs])]
     calsrc_amp = ptsrc_amps[calsrc_idx]
@@ -356,7 +386,7 @@ if __name__ == '__main__':
     print("  Index:              %d" % calsrc_idx)
     print("  Amplitude:          %6.3e" % calsrc_amp)
     print("  Dist. from zenith:  %6.2f deg" \
-          % np.rad2deg(np.abs(dec[calsrc_idx] - hera_latitude)))
+          % np.rad2deg(np.abs(dec[calsrc_idx] - array_latitude)))
     print("  Flux @ lowest freq: %6.3e Jy" % fluxes[calsrc_idx,0])
     print("")
 
@@ -391,7 +421,7 @@ if __name__ == '__main__':
             beams=beams,
             polarized=False,
             precision=2,
-            latitude=hera_latitude,
+            latitude=array_latitude,
             use_feed="x",
             multiprocess=MULTIPROCESS
         )
@@ -470,7 +500,7 @@ if __name__ == '__main__':
                                     freqs=freqs,
                                     times=times,
                                     beams=beams,
-                                    latitude=hera_latitude,
+                                    latitude=array_latitude,
                                     multiprocess=MULTIPROCESS
     )
     timing_info(ftime, 0, "(0) Precomp. ptsrc proj. operator", time.time() - t0)
@@ -820,7 +850,7 @@ if __name__ == '__main__':
                 print(np.amax(np.abs(beam_coeffs_fit)), np.amin(np.abs(beam_coeffs_fit)))
                 print("Printing data dynamic range")
                 print(np.amax(np.abs(data_beam)), np.amin(np.abs(data_beam)))
-                txs, tys, tzs = convert_to_tops(ra, dec, times, hera_latitude)
+                txs, tys, tzs = convert_to_tops(ra, dec, times, array_latitude)
 
                 # area-preserving
                 rho = np.sqrt(1 - tzs) / args.rho_const
@@ -874,7 +904,7 @@ if __name__ == '__main__':
                                                                    beam_coeffs,
                                                                    ant_samp_ind,
                                                                    polarized=False,
-                                                                   latitude=hera_latitude,
+                                                                   latitude=array_latitude,
                                                                    multiprocess=MULTIPROCESS)
 
 
