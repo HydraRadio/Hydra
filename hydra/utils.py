@@ -5,6 +5,19 @@ import pyuvdata
 from pyuvsim import AnalyticBeam
 
 
+# Terminal colour codes
+#terminal_ = '\033[95m'
+terminal_blue = '\033[94m'
+terminal_cyan = '\033[96m'
+terminal_green = '\033[92m'
+terminal_yellow = '\033[93m'
+#FAIL = '\033[91m'
+terminal_endc = '\033[0m'
+terminal_bold = '\033[1m'
+terminal_ul = '\033[4m'
+
+
+
 def flatten_vector(v, reduced_idxs=None):
     """
     Flatten a complex vector with shape (N, Ntimes, Nfreq) into a block
@@ -76,6 +89,10 @@ def apply_gains(v, gains, ants, antpairs, perturbation=None, inline=False):
         ggv (array_like):
             A copy of the input `v` array with gains applied.
     """
+
+    print("GAINS", v.shape, gains.shape, ants)
+
+
     if inline:
         ggv = v
     else:
@@ -287,6 +304,23 @@ def timing_info(fname, iter, task, duration, verbose=True):
         f.write("%05d %7.5f %s\n" % (iter, duration, task))
         if verbose:
             print("%s took %3.2f sec" % (task, duration))
+
+
+def freqs_times_for_worker(myid, freqs, times, fchunks, tchunks=1):
+    """
+    Get the unique frequency and time chunk for a worker.
+    """
+    assert myid < fchunks * tchunks, "There are more workers than time and frequency chunks"
+
+    # Get chunks for this worker
+    allidxs = np.arange(fchunks * tchunks).reshape((fchunks, tchunks))
+    fidx, tidx = np.where(allidxs == myid)
+    fidx, tidx = int(fidx[0]), int(tidx[0])
+    freq_idxs = np.arange(freqs.size)
+    time_idxs = np.arange(times.size)
+    freq_idx_chunk = np.array_split(freq_idxs, fchunks)[fidx]
+    time_idx_chunk = np.array_split(time_idxs, tchunks)[tidx]
+    return freq_idx_chunk, time_idx_chunk
 
 
 def build_hex_array(hex_spec=(3,4), ants_per_row=None, d=14.6):
@@ -524,3 +558,69 @@ def gain_prior_pspec_sqrt(lsts, freqs,
     
     return gain_pspec_sqrt
 
+
+def partial_fourier_basis_2d(freqs, times, nfreq, ntime, Lfreq, Ltime):
+    """
+    Construct a set of 2D Fourier modes from a list of wavenumber integers, 
+    to form an incomplete set of 2D Fourier modes.
+    """
+    nfreq = np.atleast_1d(nfreq)
+    ntime = np.atleast_1d(ntime)
+    assert len(nfreq.shape) == 1
+    assert len(ntime.shape) == 1
+    assert len(freqs.shape) == 1
+    assert len(times.shape) == 1
+    t2d, f2d = np.meshgrid(times, freqs)
+
+    # Calculate wavenumbers for each mode
+    kfreq = 2. * np.pi * nfreq / Lfreq # inverse freq. units
+    ktime = 2. * np.pi * ntime / Ltime # inverse time units
+
+    # Shape: (Nmodes, Nfreqs, Ntimes)
+    basis_fns = np.exp(1.j \
+                        * (  (kfreq[:,np.newaxis,np.newaxis] * f2d[np.newaxis,:,:]) \
+                           + (ktime[:,np.newaxis,np.newaxis] * t2d[np.newaxis,:,:])) )
+    return basis_fns, kfreq, ktime
+
+
+def partial_fourier_basis_2d_from_nmax(freqs, times, nmaxfreq, nmaxtime, Lfreq, Ltime):
+    """
+    Convenience function to construct a set of 2D Fourier modes with wavenumbers 
+    between -nmax <= 0 <= nmax.
+    """
+    # Make grid of wavenumber values for both frequency and time, in the range 
+    # -nmax <= 0 <= nmax
+    _nfreq = np.arange(-nmaxfreq, nmaxfreq+1)
+    _ntime = np.arange(-nmaxtime, nmaxtime+1)
+    nfreq, ntime = np.meshgrid(_nfreq, _ntime)
+
+    # Use generic function to construct Fourier basis functions
+    basis_fns, kfreq, ktime = partial_fourier_basis_2d(
+                                         freqs=freqs, 
+                                         times=times, 
+                                         nfreq=nfreq.flatten(), 
+                                         ntime=ntime.flatten(), 
+                                         Lfreq=Lfreq, 
+                                         Ltime=Ltime)
+    return basis_fns, kfreq, ktime
+
+
+def status(myid, message, colour=None):
+    """
+    Print a status message.
+    """
+    #terminal_ = '\033[95m'
+    endchar = '\033[0m'
+    colours = {
+        'b':    '\033[94m',
+        'c':    '\033[96m',
+        'g':    '\033[92m',
+        'y':    '\033[93m',
+        'r':    '\033[91m',
+        'bold': '\033[1m',
+        'ul':   '\033[4m',
+        }
+    if colours is not None:
+        print("%s[%d] %s%s" % (colours[colour], myid, message, endchar))
+    else:
+        print("[%d] %s" % (myid, message))

@@ -1,5 +1,7 @@
-# HDF5 files
+# HDF5 and uvh5 files
 *.hdf5
+*.uvh5
+*.npy
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -107,5 +107,7 @@ def run_example_simulation(args, times, freqs, output_dir, ra, dec, ptsrc_amps,
     model0 = extract_vis_from_sim(ants, antpairs, _sim_vis)
     del _sim_vis # save some memory
 
-    return model0, fluxes, beams
+    # Return
+    ant_info = (ants, ant_pos, antpairs, ants1, ants2)
+    return model0, fluxes, beams, ant_info
 

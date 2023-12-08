@@ -12,11 +12,12 @@ from scipy.signal import blackmanharris
 from scipy.sparse import coo_matrix
 import pyuvsim
 from hera_sim.beams import PolyBeam
-import time, os, resource
+import time, os, sys, resource
 from hydra.utils import flatten_vector, reconstruct_vector, timing_info, \
                             build_hex_array, get_flux_from_ptsrc_amp, \
                             convert_to_tops, gain_prior_pspec_sqrt, \
-                            freqs_times_for_worker, partial_fourier_basis_2d_from_nmax
+                            freqs_times_for_worker, partial_fourier_basis_2d_from_nmax, \
+                            status
 from hydra.example import generate_random_ptsrc_catalogue, run_example_simulation
 
 
@@ -189,25 +190,28 @@ if __name__ == '__main__':
     comm.Bcast(ra, root=0)
     comm.Bcast(dec, root=0)
     comm.Bcast(ptsrc_amps, root=0)
-    print("Worker %03d received %d point sources (sum of amps: %f)" \
-          % (myid, ra.size, np.sum(ptsrc_amps)))
+    status(myid, "Received %d point sources (sum of amps: %f)" \
+          % (ra.size, np.sum(ptsrc_amps)), colour='y')
     comm.barrier()
 
     #--------------------------------------------------------------------------
     # Run visibility simulation for this worker's chunk of frequency/time space
     #--------------------------------------------------------------------------
     t0 = time.time()
-    model0_chunk, fluxes_chunk, beams = run_example_simulation(
-                                                   args=args, 
-                                                   output_dir=output_dir, 
-                                                   times=time_chunk,
-                                                   freqs=freq_chunk,
-                                                   ra=ra, 
-                                                   dec=dec, 
-                                                   ptsrc_amps=ptsrc_amps,
-                                                   array_latitude=array_latitude)
-    print("Worker %03d finished simulation in %6.3f sec" % (myid, time.time() - t0))
-    comm.barrier() 
+    model0_chunk, fluxes_chunk, beams, ant_info = run_example_simulation(
+                                                       args=args, 
+                                                       output_dir=output_dir, 
+                                                       times=time_chunk,
+                                                       freqs=freq_chunk,
+                                                       ra=ra, 
+                                                       dec=dec, 
+                                                       ptsrc_amps=ptsrc_amps,
+                                                       array_latitude=array_latitude)
+    status(myid, "Finished simulation in %6.3f sec" % (time.time() - t0), colour='b')
+    
+    # Unpack antenna info
+    ants, ant_pos, antpairs, ants1, ants2 = ant_info
+    comm.barrier()
 
 
     #--------------------------------------------------------------------------
@@ -233,7 +237,7 @@ if __name__ == '__main__':
         print("  Amplitude:          %6.3e" % calsrc_amp)
         print("  Dist. from zenith:  %6.2f deg" \
               % np.rad2deg(np.abs(dec[calsrc_idx] - array_latitude)))
-        print("  Flux @ lowest freq: %6.3e Jy" % fluxes[calsrc_idx,0])
+        print("  Flux @ lowest freq: %6.3e Jy" % fluxes_chunk[calsrc_idx,0])
         print("")
 
 
@@ -266,10 +270,11 @@ if __name__ == '__main__':
                                                 Lfreq=freqs.max() - freqs.min(), 
                                                 Ltime=times.max() - times.min())
     Ngain_modes = k_freq.size
-    Nants = 6 # FIXME FIXME
+    Nants = len(ants)
 
     # Define gains and gain perturbations
-    gains = (1. + 0.j) * np.ones((Nants, freq_chunk.size, time_chunk.size), dtype=model0.dtype)
+    gains_chunk = (1. + 0.j) * np.ones((Nants, freq_chunk.size, time_chunk.size), 
+                                       dtype=model0_chunk.dtype)
     
     # Simple prior on gain perturbation modes
     # FIXME: Other gain parameters are currently ignored
@@ -277,13 +282,13 @@ if __name__ == '__main__':
 
     # Random gain perturbation amplitudes (Nants, Ngain_modes)
     # Do realisation on root node and then broadcast to other workers
-    delta_g_amps = np.zeros((Nants, Ngain_modes), dtype=np.complex128)
+    delta_g_amps = np.zeros((Nants, Ngain_modes), dtype=gains_chunk.dtype)
     if myid == 0:
         delta_g_amps = prior_std_delta_g * (  1.0 * np.random.randn(Nants, Ngain_modes) \
                                             + 1.j * np.random.randn(Nants, Ngain_modes) )
     comm.Bcast(delta_g_amps, root=0)
-    print("Worker %03d received %d delta_g amps (sum of amps: %f)" \
-          % (myid, delta_g_amps.size, np.sum(delta_g_amps)))
+    status(myid, "Received %d delta_g amps (sum of amps: %f)" \
+          % (delta_g_amps.size, np.sum(delta_g_amps)), colour='y')
 
     # Dot product with partial Fourier operator to get simulated gain perturbations. 
     # These are for this worker's time/freq. chunk, but should be continuous if you 
@@ -293,185 +298,24 @@ if __name__ == '__main__':
     print(delta_g_chunk.shape, delta_g_amps.shape, Fbasis.shape)
     comm.barrier()
 
+    # Apply gains to model
+    data_chunk = model0_chunk.copy()
+    hydra.apply_gains(data_chunk, 
+                      gains_chunk * (1. + delta_g_chunk), 
+                      ants, 
+                      antpairs, 
+                      inline=True)
+
+    # Add noise
+    noise_chunk = sigma_noise * np.sqrt(0.5) \
+                              * (  1.0 * np.random.randn(*data_chunk.shape) \
+                                 + 1.j * np.random.randn(*data_chunk.shape))
+    data_chunk += noise_chunk
+    status(myid, "Simulation step finished", colour='y')
+    comm.barrier()
+
     sys.exit(1)
-
-
-    #------------
-    # FIXME FIXME
-    # Apply gains to model
-    data = model0.copy()
-    hydra.apply_gains(data, gains * (1. + delta_g), ants, antpairs, inline=True)
-
-    # Add noise
-    data += sigma_noise * np.sqrt(0.5) \
-          * (  1.0 * np.random.randn(*data.shape) \
-             + 1.j * np.random.randn(*data.shape))
-    #-----------
-
-
-    """
-    ##np.save(os.path.join(output_dir, "model0"), model0)
-
     
-
-    
-
-    # Generate gain fluctuations from FFT basis
-    frate = np.fft.fftfreq(times.size, d=times[1] - times[0])
-    tau = np.fft.fftfreq(freqs.size, d=freqs[1] - freqs[0])
-    delta_g_sqrt_pspec = gain_prior_pspec_sqrt(
-                                lsts=times, 
-                                freqs=freqs, 
-                                gain_prior_amp=sim_gain_amp_std, 
-                                gain_prior_sigma_frate=sim_gain_sigma_frate, 
-                                gain_prior_sigma_delay=sim_gain_sigma_delay, 
-                                gain_prior_zeropoint_std=None,
-                                frate0=sim_gain_frate0, 
-                                delay0=sim_gain_delay0 )
-    
-    # Make Gaussian realisation of gain fluctuation power spectrum, different for each antenna
-    delta_g = np.array([np.fft.ifft2(delta_g_sqrt_pspec 
-                                     * np.random.randn(*delta_g_sqrt_pspec.shape)) 
-                        for i in range(Nants)],
-                        dtype=model0.dtype)
-
-    ##np.save(os.path.join(output_dir, "gains0"), gains)
-    ##np.save(os.path.join(output_dir, "delta_g0"), delta_g)
-
-    # Apply a Blackman-Harris window to apodise the edges
-    #window = blackmanharris(model0.shape[1], sym=True)[np.newaxis,:,np.newaxis] \
-    #       * blackmanharris(model0.shape[2], sym=True)[np.newaxis,np.newaxis,:]
-    window = 1. # no window for now
-
-    # Apply gains to model
-    data = model0.copy() * window
-    hydra.apply_gains(data, gains * (1. + delta_g), ants, antpairs, inline=True)
-
-    # Add noise
-    data += sigma_noise * np.sqrt(0.5) \
-          * (  1.0 * np.random.randn(*data.shape) \
-             + 1.j * np.random.randn(*data.shape))
-
-    ##np.save(os.path.join(output_dir, "data0"), data)
-    """
-
-
-
-
-
-    ant_pos = build_hex_array(hex_spec=hex_array, d=14.6)
-    ants = np.array(list(ant_pos.keys()))
-    Nants = len(ants)
-    print("Nants =", Nants)
-
-    antpairs = []
-    for i in range(len(ants)):
-        for j in range(i, len(ants)):
-            if i != j:
-                # Exclude autos
-                antpairs.append((i,j))
-
-
-    ants1, ants2 = list(zip(*antpairs))
-
-    
-
-    # Select what would be the calibration source (brightest, close to beam)
-    calsrc_idxs = np.where(np.abs(dec - array_latitude)*180./np.pi < calsrc_radius)[0]
-    assert len(calsrc_idxs) > 0, "No sources found within %d deg of the zenith" % calsrc_radius
-    calsrc_idx = calsrc_idxs[np.argmax(ptsrc_amps[calsrc_idxs])]
-    calsrc_amp = ptsrc_amps[calsrc_idx]
-    print("Calibration source:")
-    print("  Enabled:            %s" % calsrc)
-    print("  Index:              %d" % calsrc_idx)
-    print("  Amplitude:          %6.3e" % calsrc_amp)
-    print("  Dist. from zenith:  %6.2f deg" \
-          % np.rad2deg(np.abs(dec[calsrc_idx] - array_latitude)))
-    print("  Flux @ lowest freq: %6.3e Jy" % fluxes[calsrc_idx,0])
-    print("")
-
-    # Beams
-    if "polybeam" in args.beam_sim_type.lower():
-        # PolyBeam fitted to HERA Fagnoni beam
-        beam_coeffs=[  0.29778665, -0.44821433, 0.27338272, 
-                      -0.10030698, -0.01195859, 0.06063853, 
-                      -0.04593295,  0.0107879,  0.01390283, 
-                      -0.01881641, -0.00177106, 0.01265177, 
-                      -0.00568299, -0.00333975, 0.00452368,
-                       0.00151808, -0.00593812, 0.00351559
-                     ]
-        beams = [PolyBeam(beam_coeffs, spectral_index=-0.6975, ref_freq=1.e8)
-                 for ant in ants]
-    else:
-        beams = [pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14.)
-                 for ant in ants]
-    print("beam type:", args.beam_sim_type)
-
-
-
-    # Run a simulation
-    t0 = time.time()
-    _sim_vis = hydra.vis_simulator.simulate_vis(
-            ants=ant_pos,
-            fluxes=fluxes,
-            ra=ra,
-            dec=dec,
-            freqs=freqs*1e6, # MHz -> Hz
-            lsts=times,
-            beams=beams,
-            polarized=False,
-            precision=2,
-            latitude=array_latitude,
-            use_feed="x",
-            multiprocess=MULTIPROCESS
-        )
-    timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
-
-    # Allocate computed visibilities to only the requested baselines (saves memory)
-    model0 = hydra.extract_vis_from_sim(ants, antpairs, _sim_vis)
-    del _sim_vis # save some memory
-    np.save(os.path.join(output_dir, "model0"), model0)
-
-    # Define gains and gain perturbations
-    gains = (1. + 0.j) * np.ones((Nants, Nfreqs, Ntimes), dtype=model0.dtype)
-
-    # Generate gain fluctuations from FFT basis
-    frate = np.fft.fftfreq(times.size, d=times[1] - times[0])
-    tau = np.fft.fftfreq(freqs.size, d=freqs[1] - freqs[0])
-    delta_g_sqrt_pspec = gain_prior_pspec_sqrt(
-                                lsts=times, 
-                                freqs=freqs, 
-                                gain_prior_amp=sim_gain_amp_std, 
-                                gain_prior_sigma_frate=sim_gain_sigma_frate, 
-                                gain_prior_sigma_delay=sim_gain_sigma_delay, 
-                                gain_prior_zeropoint_std=None,
-                                frate0=sim_gain_frate0, 
-                                delay0=sim_gain_delay0 )
-    
-    # Make Gaussian realisation of gain fluctuation power spectrum, different for each antenna
-    delta_g = np.array([np.fft.ifft2(delta_g_sqrt_pspec 
-                                     * np.random.randn(*delta_g_sqrt_pspec.shape)) 
-                        for i in range(Nants)],
-                        dtype=model0.dtype)
-
-    np.save(os.path.join(output_dir, "gains0"), gains)
-    np.save(os.path.join(output_dir, "delta_g0"), delta_g)
-
-    # Apply a Blackman-Harris window to apodise the edges
-    #window = blackmanharris(model0.shape[1], sym=True)[np.newaxis,:,np.newaxis] \
-    #       * blackmanharris(model0.shape[2], sym=True)[np.newaxis,np.newaxis,:]
-    window = 1. # no window for now
-
-    # Apply gains to model
-    data = model0.copy() * window
-    hydra.apply_gains(data, gains * (1. + delta_g), ants, antpairs, inline=True)
-
-    # Add noise
-    data += sigma_noise * np.sqrt(0.5) \
-          * (  1.0 * np.random.randn(*data.shape) \
-             + 1.j * np.random.randn(*data.shape))
-
-    np.save(os.path.join(output_dir, "data0"), data)
 
     #-------------------------------------------------------------------------------
     # (2) Set up Gibbs sampler
@@ -479,13 +323,53 @@ if __name__ == '__main__':
 
     # Get initial visibility model guesses (use the actual baseline model for now)
     # This SHOULD NOT include gain factors of any kind
-    current_data_model = 1.*model0.copy() * window
+    current_data_model_chunk = model0_chunk.copy()
 
     # Initial gain perturbation guesses
-    current_delta_gain = np.zeros_like(delta_g)
+    current_delta_gain = np.zeros_like(delta_g_chunk) # FIXME: Use parameters
 
     # Initial point source amplitude factor
     current_ptsrc_a = np.ones(ra.size)
+
+    # Set priors and auxiliary information
+    noise_var = (sigma_noise)**2. * np.ones(data.shape)
+    inv_noise_var = 1. / noise_var
+
+    # Gain prior
+    ##prior_std_delta_g
+    
+
+
+
+    ######################
+
+    ptsrc_op, ptsrc_rhs = hydra.ptsrc_sampler.precompute_mpi(
+                                           comm, ra, dec, fluxes_chunk, 
+                                           ant_pos, antpairs, 
+                                           freq_chunk, time_chunk, beams, 
+                                           inv_noise_var_chunk,
+                                           resid_chunk, 
+                                           amp_prior_std, 
+                                           fchunks=fchunks, 
+                                           tchunks=tchunks, 
+                                           realisation=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    #######################
+
+
 
     # Precompute visibility projection operator (without gain factors) for ptsrc
     # amplitude sampling step. NOTE: This has to be updated within the Gibbs loop
@@ -505,21 +389,6 @@ if __name__ == '__main__':
     )
     timing_info(ftime, 0, "(0) Precomp. ptsrc proj. operator", time.time() - t0)
 
-    # Set priors and auxiliary information
-    # FIXME: amp_prior_std is a prior around amp=0 I think, so can skew things low!
-    noise_var = (sigma_noise)**2. * np.ones(data.shape)
-    inv_noise_var = window / noise_var
-
-    # Gain prior
-    gain_pspec_sqrt = gain_prior_pspec_sqrt(
-                                lsts=times, 
-                                freqs=freqs, 
-                                gain_prior_amp=gain_prior_amp, 
-                                gain_prior_sigma_frate=gain_prior_sigma_frate, 
-                                gain_prior_sigma_delay=gain_prior_sigma_delay, 
-                                gain_prior_zeropoint_std=gain_prior_zeropoint_std,
-                                frate0=gain_prior_frate0, 
-                                delay0=gain_prior_delay0 )
             
     # Exclude gain modes that are strongly downweighted by the prior from the 
     # linear system
