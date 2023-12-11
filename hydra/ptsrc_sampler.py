@@ -1,3 +1,5 @@
+
+from mpi4py.MPI import SUM as MPI_SUM
 import numpy as np
 import numpy.fft as fft
 
@@ -40,17 +42,27 @@ def precompute_op(vis_proj_operator, inv_noise_var):
 
 
 def precompute_mpi(comm, ra, dec, fluxes_chunk, 
-                   ant_pos, antpairs, 
+                   ants, ant_pos, antpairs, 
                    freq_chunk, time_chunk, beams, 
+                   data_chunk,
                    inv_noise_var_chunk,
-                   resid_chunk, 
+                   current_data_model_chunk,
+                   gain_chunk, 
                    amp_prior_std, 
-                   fchunks, 
-                   tchunks=1, 
                    realisation=True):
     """
     Precompute the projection operator and matrix operator in parallel, using
     """
+    myid = comm.Get_rank()
+
+    # Check input dimensions
+    assert data_chunk.shape == (len(antpairs), freq_chunk.size, time_chunk.size)
+    assert data_chunk.shape == inv_noise_var_chunk.shape
+    assert data_chunk.shape == current_data_model_chunk.shape
+    assert ra.size == dec.size
+    assert ra.size == amp_prior_std.size
+    assert fluxes_chunk.shape == (ra.size, freq_chunk.size)
+    assert len(beams) == len(ant_pos)
 
     # (1) Calculate projection operator for this worker
     proj = calc_proj_operator(
@@ -60,9 +72,16 @@ def precompute_mpi(comm, ra, dec, fluxes_chunk,
               ant_pos=ant_pos, antpairs=antpairs, 
               freqs=freq_chunk, 
               times=time_chunk, 
-              beams=beams,
-              multiprocess=False
+              beams=beams
     )
+
+    # Apply gains to projection operator
+    for k, bl in enumerate(antpairs):
+        ant1, ant2 = bl
+        i1 = np.where(ants == ant1)[0][0]
+        i2 = np.where(ants == ant2)[0][0]
+        proj[k,:,:,:] *= gain_chunk[i1,:,:,np.newaxis] \
+                       * gain_chunk[i2,:,:,np.newaxis].conj()
 
     # (2) Precompute linear system operator
     nsrcs = proj.shape[-1]
@@ -84,12 +103,23 @@ def precompute_mpi(comm, ra, dec, fluxes_chunk,
     
     comm.Reduce(my_linear_op,
                 linear_op,
-                op=MPI.SUM,
+                op=MPI_SUM,
                 root=0)
+
+    # Include prior and identity terms to finish constructing LHS operator on root worker
+    if myid == 0:
+        linear_op = np.eye(linear_op.shape[0]) \
+                  + np.diag(amp_prior_std) @ linear_op @ np.diag(amp_prior_std)
     
     # (3) Calculate linear system RHS
     proj = proj.reshape((-1, nsrcs))
     realisation_switch = 1.0 if realisation else 0.0 # Turn random realisations on or off
+
+    # Construct current state of model (residual from amplitudes = 1)
+    # (proj now includes gains)
+    resid_chunk = data_chunk.copy() \
+          - (  proj.reshape((-1, nsrcs)) 
+             @ np.ones_like(amp_prior_std) ).reshape(current_data_model_chunk.shape)
 
     # (Terms 1+3): S^1/2 A^\dagger [ N^{-1} r + N^{-1/2} \omega_r ]
     omega_n = (
@@ -108,7 +138,7 @@ def precompute_mpi(comm, ra, dec, fluxes_chunk,
     linear_rhs = np.zeros((1,), dtype=b.dtype) # dummy data for non-root workers
     if myid == 0:
         linear_rhs = np.zeros_like(b)
-    comm.Reduce(b, linear_rhs, op=MPI.SUM, root=0)
+    comm.Reduce(b, linear_rhs, op=MPI_SUM, root=0)
 
     # (Term 2): \omega_a
     if myid == 0:
@@ -195,7 +225,7 @@ def construct_rhs(
 
 def calc_proj_operator(
     ra, dec, fluxes, ant_pos, antpairs, freqs, times, beams,
-    latitude=-0.5361913261514378, multiprocess=True
+    latitude=-0.5361913261514378
 ):
     """
     Calculate a visibility vector for each point source, as a function of
@@ -221,8 +251,6 @@ def calc_proj_operator(
             List of UVBeam objects, one for each antenna.
         latitude (float):
             Latitude of the observing site, in radians.
-        multiprocess (bool): Whether to use multiprocessing to speed up the
-            calculation
 
     Returns:
         vis_proj_operator (array_like):
@@ -250,8 +278,7 @@ def calc_proj_operator(
         polarized=False,
         precision=2,
         latitude=latitude,
-        use_feed="x",
-        multiprocess=multiprocess
+        use_feed="x"
     )
 
     # Allocate computed visibilities to only available baselines (saves memory)
