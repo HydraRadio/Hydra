@@ -360,7 +360,7 @@ def cg_mpi(comm_groups, Amat_block, bvec_block, vec_size, block_map,
     return x_all
 
 
-def cg(Amat, bvec, maxiters=1000, abs_tol=1e-8):
+def cg(Amat, bvec, maxiters=1000, abs_tol=1e-8, use_norm_tol=False, linear_op=None):
     """
     Simple Conjugate Gradient solver that operates in serial. This uses the 
     same algorithm as `cg_mpi()` and so can be used for testing/comparison of 
@@ -380,16 +380,26 @@ def cg(Amat, bvec, maxiters=1000, abs_tol=1e-8):
             Absolute tolerance on each element of the residual. Once this 
             tolerance has been reached for all entries of the residual vector, 
             the solution is considered to have converged.    
+        use_norm_tol (bool):
+            Whether to use the tolerance on each element (as above), or an 
+            overall tolerance on the norm of the residual.
+        linear_op (func):
+            If specified, this function will be used to operate on vectors, 
+            instead of the Amat matrix. Must have call signature `func(x)`.
     
     Returns:
         x (array_like):
             Solution vector for the full system.
     """
+    # Use Amat as the linear operator if function not specified
+    if linear_op is None:
+        linear_op = lambda v: Amat @ v
+    
     # Initialise solution vector
     x = np.zeros_like(bvec)
     
     # Calculate initial residual
-    r = bvec - Amat @ x
+    r = bvec - linear_op(x)
     pvec = r[:]
     
     # Blocks indexed by i,j: y = A . x = Sum_j A_ij b_j
@@ -397,26 +407,36 @@ def cg(Amat, bvec, maxiters=1000, abs_tol=1e-8):
     finished = False
     while niter < maxiters and not finished:
         
-        # Check convergence criterion
-        if np.all(np.abs(r) < abs_tol):
-            finished = True
-            break
+        try:
+            # Check convergence criterion
+            if use_norm_tol:
+                # Check tolerance on norm of r
+                if np.linalg.norm(r) < abs_tol:
+                    finished = True
+                    break
+            else:
+                # Check tolerance per array element
+                if np.all(np.abs(r) < abs_tol):
+                    finished = True
+                    break
 
-        # Do CG iteration
-        r_dot_r = np.dot(r.T, r)
-        A_dot_p = Amat @ pvec
-        
-        pAp = pvec.T @ A_dot_p
-        alpha = r_dot_r / pAp
+            # Do CG iteration
+            r_dot_r = np.dot(r.T, r)
+            A_dot_p = linear_op(pvec)
+            
+            pAp = pvec.T @ A_dot_p
+            alpha = r_dot_r / pAp
 
-        x = x + alpha * pvec
-        r = r - alpha * (Amat @ pvec)
+            x = x + alpha * pvec
+            r = r - alpha * A_dot_p
 
-        # Update pvec
-        beta = np.dot(r.T, r) / r_dot_r
-        pvec = r + beta * pvec
-        
-        # Increment iteration
-        niter += 1
+            # Update pvec
+            beta = np.dot(r.T, r) / r_dot_r
+            pvec = r + beta * pvec
+            
+            # Increment iteration
+            niter += 1
+        except:
+            raise
         
     return x

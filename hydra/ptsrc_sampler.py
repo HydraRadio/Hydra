@@ -41,9 +41,13 @@ def precompute_op(vis_proj_operator, inv_noise_var):
 
 
 
-def precompute_mpi(comm, ra, dec, fluxes_chunk, 
-                   ants, ant_pos, antpairs, 
-                   freq_chunk, time_chunk, beams, 
+def precompute_mpi(comm,
+                   ants, 
+                   antpairs, 
+                   freq_chunk, 
+                   time_chunk,
+                   fluxes_chunk,
+                   proj_chunk,
                    data_chunk,
                    inv_noise_var_chunk,
                    current_data_model_chunk,
@@ -51,7 +55,11 @@ def precompute_mpi(comm, ra, dec, fluxes_chunk,
                    amp_prior_std, 
                    realisation=True):
     """
-    Precompute the projection operator and matrix operator in parallel, using
+    Precompute the projection operator and matrix operator in parallel. 
+
+    The projection operator is computed in chunks in time and frequency. 
+    The overall matrix operator can be computed by summing the matrix 
+    operator for the time and frequency chunks.
     """
     myid = comm.Get_rank()
 
@@ -59,21 +67,9 @@ def precompute_mpi(comm, ra, dec, fluxes_chunk,
     assert data_chunk.shape == (len(antpairs), freq_chunk.size, time_chunk.size)
     assert data_chunk.shape == inv_noise_var_chunk.shape
     assert data_chunk.shape == current_data_model_chunk.shape
-    assert ra.size == dec.size
-    assert ra.size == amp_prior_std.size
-    assert fluxes_chunk.shape == (ra.size, freq_chunk.size)
-    assert len(beams) == len(ant_pos)
+    proj = proj_chunk
 
-    # (1) Calculate projection operator for this worker
-    proj = calc_proj_operator(
-              ra=ra, 
-              dec=dec, 
-              fluxes=fluxes_chunk, 
-              ant_pos=ant_pos, antpairs=antpairs, 
-              freqs=freq_chunk, 
-              times=time_chunk, 
-              beams=beams
-    )
+    # FIXME: Check for unused args!
 
     # Apply gains to projection operator
     for k, bl in enumerate(antpairs):

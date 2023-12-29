@@ -41,10 +41,6 @@ def run_example_simulation(args, times, freqs, output_dir, ra, dec, ptsrc_amps,
     Run an example visibility simulation for testing purposes.
     """
     # Dimensions of simulation
-    Nptsrc = args.Nptsrc
-    Ntimes = args.Ntimes
-    Nfreqs = args.Nfreqs
-    Niters = args.Niters
     hex_array = tuple(args.hex_array)
     assert len(hex_array) == 2, "hex-array argument must have length 2."
 

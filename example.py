@@ -19,6 +19,8 @@ from hydra.utils import flatten_vector, reconstruct_vector, timing_info, \
                             freqs_times_for_worker, partial_fourier_basis_2d_from_nmax, \
                             status
 from hydra.example import generate_random_ptsrc_catalogue, run_example_simulation
+import hydra.linear_solver as linsolver
+import hydra
 
 
 if __name__ == '__main__':
@@ -33,7 +35,7 @@ if __name__ == '__main__':
 
     # Set switches
     SAMPLE_GAINS = args.sample_gains
-    SAMPLE_VIS = args.sample_vis
+    #SAMPLE_VIS = args.sample_vis
     SAMPLE_PTSRC_AMPS = args.sample_ptsrc
     SAMPLE_BEAM = args.sample_beam
     CALCULATE_STATS = args.calculate_stats
@@ -43,14 +45,14 @@ if __name__ == '__main__':
     # Print what's switched on
     if myid == 0:
         print("    Gain sampler:       ", SAMPLE_GAINS)
-        print("    Vis. sampler:       ", SAMPLE_VIS)
+        #print("    Vis. sampler:       ", SAMPLE_VIS)
         print("    Ptsrc. amp. sampler:", SAMPLE_PTSRC_AMPS)
         print("    Beam sampler:       ", SAMPLE_BEAM)
 
     # Check that at least one thing is being sampled
-    if not SAMPLE_GAINS and not SAMPLE_VIS and not SAMPLE_PTSRC_AMPS and not SAMPLE_BEAM:
+    if not SAMPLE_GAINS and not SAMPLE_PTSRC_AMPS and not SAMPLE_BEAM:
         raise ValueError("No samplers were enabled. Must enable at least one "
-                         "of 'gains', 'vis', 'ptsrc', 'beams'.")
+                         "of 'gains', 'ptsrc', 'beams'.")
 
 
     ############
@@ -80,7 +82,6 @@ if __name__ == '__main__':
     
     # Array latitude
     array_latitude = np.deg2rad(-30.7215)
-    ##############
 
     #--------------------------------------------------------------------------
     # Prior settings
@@ -88,27 +89,9 @@ if __name__ == '__main__':
 
     # Ptsrc and vis prior settings
     ptsrc_amp_prior_level = args.ptsrc_amp_prior_level
-    vis_prior_level = args.vis_prior_level
 
     # Gain prior settings
     gain_prior_amp = args.gain_prior_amp
-    gain_prior_sigma_frate = args.gain_prior_sigma_frate
-    gain_prior_sigma_delay = args.gain_prior_sigma_delay
-    gain_prior_zeropoint_std = args.gain_prior_zeropoint_std
-    gain_prior_frate0 = args.gain_prior_frate0
-    gain_prior_delay0 = args.gain_prior_delay0
-    gain_mode_cut_level = args.gain_mode_cut_level
-    gain_always_linear = args.gain_always_linear
-    if myid == 0:
-        print("    Gain prior:")
-        print("        amp:          ", gain_prior_amp)
-        print("        sigma_frate:  ", gain_prior_sigma_frate)
-        print("        sigma_delay:  ", gain_prior_sigma_delay)
-        print("        zeropoint_std:", gain_prior_zeropoint_std)
-        print("        frate0:       ", gain_prior_frate0)
-        print("        delay0:       ", gain_prior_delay0)
-        print("    Gains always linear:", gain_always_linear)
-        print("")
 
 
     #--------------------------------------------------------------------------
@@ -129,6 +112,8 @@ if __name__ == '__main__':
         solver = gmres
     elif args.solver_name == 'bicgstab':
         solver = bicgstab
+    elif args.solver_name == 'mpicg':
+        solver = 'mpicg'
     else:
         raise ValueError("Solver '%s' not recognised." % args.solver_name)
     if myid == 0:
@@ -156,17 +141,17 @@ if __name__ == '__main__':
     times = np.linspace(lst_min, lst_max, Ntimes)
     freqs = np.linspace(freq_min, freq_max, Nfreqs)
 
-    # FIXME
-    fchunks = 2
-    tchunks = 1
+    # FIXME: Could be more flexible
+    ngrid = int(np.sqrt(nworkers))
+    assert nworkers == ngrid * ngrid, "Currently restricted to having a square number of workers"
+    fchunks = ngrid
+    tchunks = ngrid
 
     # Get frequency/time indices for this worker
     freq_idxs, time_idxs = freqs_times_for_worker(myid, freqs=freqs, times=times, 
                                                   fchunks=fchunks, tchunks=tchunks)
     freq_chunk = freqs[freq_idxs]
     time_chunk = times[time_idxs]
-    #inv_noise_var_chunk = inv_noise_var[:, freq_idxs, :][:, :, time_idxs]
-    #resid_chunk = resid[:, freq_idxs, :][:, :, time_idxs]
 
 
     #--------------------------------------------------------------------------
@@ -191,7 +176,7 @@ if __name__ == '__main__':
     comm.Bcast(dec, root=0)
     comm.Bcast(ptsrc_amps, root=0)
     status(myid, "Received %d point sources (sum of amps: %f)" \
-          % (ra.size, np.sum(ptsrc_amps)), colour='y')
+          % (ra.size, np.sum(ptsrc_amps).real), colour='y')
     comm.barrier()
 
     #--------------------------------------------------------------------------
@@ -246,29 +231,24 @@ if __name__ == '__main__':
     #--------------------------------------------------------------------------
     # Gain sim settings
     sim_gain_amp = args.sim_gain_amp_std
-    sim_gain_sigma_frate = args.sim_gain_sigma_frate
-    sim_gain_sigma_delay = args.sim_gain_sigma_delay
-    sim_gain_frate0 = args.sim_gain_frate0
-    sim_gain_delay0 = args.sim_gain_delay0
-    if myid == 0:
-        print("    Gain sim:")
-        print("        amp:          ", sim_gain_amp)
-        print("        sigma_frate:  ", sim_gain_sigma_frate)
-        print("        sigma_delay:  ", sim_gain_sigma_delay)
-        print("        frate0:       ", sim_gain_frate0)
-        print("        delay0:       ", sim_gain_delay0)
 
     comm.barrier()
 
     # Construct partial Fourier basis with only low-order modes, evaluated on 
     # the time/freq. ranges belonging to this worker
+    # NOTE: If you do freq.max() - freq.min(), this will not be periodic!
+    Lfreq = (freqs[1] - freqs[0]) * freqs.size
+    Ltime = (times[1] - times[0]) * times.size
     Fbasis, k_freq, k_time = partial_fourier_basis_2d_from_nmax(
                                                 freqs=freq_chunk, 
                                                 times=time_chunk, 
-                                                nmaxfreq=9, 
-                                                nmaxtime=4, 
-                                                Lfreq=freqs.max() - freqs.min(), 
-                                                Ltime=times.max() - times.min())
+                                                nmaxfreq=2, 
+                                                nmaxtime=2, 
+                                                Lfreq=Lfreq, 
+                                                Ltime=Ltime,
+                                                freq0=freqs[0],
+                                                time0=times[0],
+                                                shape0=(freqs.size, times.size))
     Ngain_modes = k_freq.size
     Nants = len(ants)
 
@@ -277,31 +257,33 @@ if __name__ == '__main__':
                                        dtype=model0_chunk.dtype)
     
     # Simple prior on gain perturbation modes
-    # FIXME: Other gain parameters are currently ignored
     prior_std_delta_g = sim_gain_amp_std * np.ones(Ngain_modes)
 
     # Random gain perturbation amplitudes (Nants, Ngain_modes)
     # Do realisation on root node and then broadcast to other workers
-    delta_g_amps = np.zeros((Nants, Ngain_modes), dtype=gains_chunk.dtype)
+    delta_g_amps0 = np.zeros(Nants*Ngain_modes, dtype=gains_chunk.dtype)
     if myid == 0:
-        delta_g_amps = prior_std_delta_g * (  1.0 * np.random.randn(Nants, Ngain_modes) \
-                                            + 1.j * np.random.randn(Nants, Ngain_modes) )
-    comm.Bcast(delta_g_amps, root=0)
+        np.random.seed(1)
+        delta_g_amps0[:] = (prior_std_delta_g 
+                              * (  1.0 * np.random.randn(Nants, Ngain_modes) \
+                                 + 1.j * np.random.randn(Nants, Ngain_modes) )).flatten()
+    delta_g_amps0 = delta_g_amps0.flatten().copy()
+    comm.Bcast(delta_g_amps0, root=0)
+    delta_g_amps0 = delta_g_amps0.reshape((Nants, Ngain_modes))
     status(myid, "Received %d delta_g amps (sum of amps: %f)" \
-          % (delta_g_amps.size, np.sum(delta_g_amps)), colour='y')
+          % (delta_g_amps0.size, np.sum(delta_g_amps0).real), colour='y')
 
     # Dot product with partial Fourier operator to get simulated gain perturbations. 
     # These are for this worker's time/freq. chunk, but should be continuous if you 
     # stitch the chunks together.
-    # (Nants, Nfreqs, Ntimes) = (Nants, Ngain_modes) . (Ngain_modes, Nfreqs, Ntimes)
-    delta_g_chunk = np.tensordot(delta_g_amps, Fbasis, axes=((1,), (0,)))
-    print(delta_g_chunk.shape, delta_g_amps.shape, Fbasis.shape)
+    # (Nants, Nfreqs, Ntimes) = (Ngain_modes, Nfreqs, Ntimes) . (Nants, Ngain_modes)
+    delta_g_chunk0 = np.tensordot(delta_g_amps0, Fbasis, axes=((1,), (0,)))
     comm.barrier()
 
     # Apply gains to model
     data_chunk = model0_chunk.copy()
     hydra.apply_gains(data_chunk, 
-                      gains_chunk * (1. + delta_g_chunk), 
+                      gains_chunk * (1. + delta_g_chunk0), 
                       ants, 
                       antpairs, 
                       inline=True)
@@ -314,8 +296,12 @@ if __name__ == '__main__':
     status(myid, "Simulation step finished", colour='y')
     comm.barrier()
 
-    sys.exit(1)
-    
+    # Save simulated model info
+    np.save(os.path.join(output_dir, "sim_model0_chunk_w%04d" % myid), model0_chunk)
+    np.save(os.path.join(output_dir, "sim_data_chunk_w%04d" % myid), data_chunk)
+    np.save(os.path.join(output_dir, "sim_delta_g0_chunk_w%04d" % myid), delta_g_chunk0)
+    np.save(os.path.join(output_dir, "sim_delta_g_amps0_w%04d" % myid), delta_g_amps0)
+
 
     #-------------------------------------------------------------------------------
     # (2) Set up Gibbs sampler
@@ -326,33 +312,242 @@ if __name__ == '__main__':
     current_data_model_chunk = model0_chunk.copy()
 
     # Initial gain perturbation guesses
-    current_delta_gain = np.zeros_like(delta_g_chunk) # FIXME: Use parameters
+    current_delta_gain = np.zeros_like(delta_g_chunk0)
 
     # Initial point source amplitude factor
     current_ptsrc_a = np.ones(ra.size)
 
     # Set priors and auxiliary information
-    noise_var = (sigma_noise)**2. * np.ones(data.shape)
-    inv_noise_var = 1. / noise_var
+    noise_var_chunk = (sigma_noise)**2. * np.ones(data_chunk.shape)
+    inv_noise_var_chunk = 1. / noise_var_chunk
 
     # Gain prior
-    ##prior_std_delta_g
+    gain_pspec_sqrt = gain_prior_amp * np.ones(Fbasis.shape[0])
+
+    # Ptsrc priors
+    amp_prior_std = ptsrc_amp_prior_level * np.ones(Nptsrc)
+    status(myid, "(0) Ptsrc amp. prior level: %s" % ptsrc_amp_prior_level, colour='b')
+    if calsrc:
+        amp_prior_std[calsrc_idx] = calsrc_std
+
+    # Precompute gain perturbation projection operators
+    A_real, A_imag = hydra.gain_sampler.proj_operator(ants, antpairs)
+
+    # Precompute point source projection operator
+    ptsrc_proj = hydra.ptsrc_sampler.calc_proj_operator(
+                                          ra=ra, 
+                                          dec=dec, 
+                                          fluxes=fluxes_chunk, 
+                                          ant_pos=ant_pos, 
+                                          antpairs=antpairs, 
+                                          freqs=freq_chunk, 
+                                          times=time_chunk, 
+                                          beams=beams
+                                        )
+
+    # Strict handling of floating point errors
+    np.seterr(all='raise')
+
+
+    # Iterate the Gibbs sampler
+    if myid == 0:
+        print("="*60)
+        print("Starting Gibbs sampler (%d iterations)" % Niters)
+        print("="*60)
     
+    for n in range(Niters):
+        if myid == 0:
+            print("-"*60)
+            print(">>> Iteration %4d / %4d" % (n+1, Niters))
+            print("-"*60)
+        t0iter = time.time()
+
+        #---------------------------------------------------------------------------
+        # (A) Gain sampler
+        #---------------------------------------------------------------------------
+        if SAMPLE_GAINS:
+            if myid == 0:
+                status(None, "Gain sampler iteration %d" % n, 'b')
+
+            # Current_data_model DOES NOT include gbar_i gbar_j^* factor, so we need
+            # to apply it here to calculate the residual
+            ggv_chunk = hydra.apply_gains(current_data_model_chunk,
+                                          gains_chunk,
+                                          ants,
+                                          antpairs,
+                                          inline=False)
+            resid_chunk = data_chunk - ggv_chunk
+
+            # Shape of the gain solution vector
+            #x_shape = 2*len(ants)*Fbasis.shape[0]
+
+            # Calculte RHS vector
+            t0 = time.time()
+            bgain = hydra.gain_sampler.construct_rhs_mpi(
+                                                  comm=comm, 
+                                                  resid=resid_chunk, 
+                                                  inv_noise_var=inv_noise_var_chunk, 
+                                                  pspec_sqrt=gain_pspec_sqrt, 
+                                                  A_real=A_real, 
+                                                  A_imag=A_imag, 
+                                                  model_vis=ggv_chunk, 
+                                                  Fbasis=Fbasis, 
+                                                  realisation=True, 
+                                                  seed=100000*myid+n)
+            if myid == 0:
+                status(None, "Gain sampler construct RHS took %6.3f sec" 
+                             % (time.time() - t0), 'b')
+
+            # Bundle LHS operator into lambda function
+            gain_lhs_fn = lambda v: hydra.gain_sampler.apply_operator_mpi(
+                                                  comm=comm, 
+                                                  x=v, 
+                                                  inv_noise_var=inv_noise_var_chunk, 
+                                                  pspec_sqrt=gain_pspec_sqrt, 
+                                                  A_real=A_real, 
+                                                  A_imag=A_imag, 
+                                                  model_vis=ggv_chunk, 
+                                                  Fbasis=Fbasis).flatten()
+
+            # Run CG linear solver
+            t0 = time. time()
+            xgain = hydra.linear_solver.cg(Amat=None, 
+                                           bvec=bgain, 
+                                           linear_op=gain_lhs_fn, 
+                                           use_norm_tol=True)
+            if myid == 0:
+                status(None, "Gain sampler solver took %6.3f sec" 
+                             % (time.time() - t0), 'b')
+            
+            # We solved for x = S^-1/2 s, so recover s
+            xgain = (  1.0*xgain[:xgain.size//2]
+                     + 1.j*xgain[xgain.size//2:] ).reshape(delta_g_amps0.shape)
+            xgain *= gain_pspec_sqrt[np.newaxis,:]
+            
+            status(myid, "    Example soln:" + str(xgain[1,:3]))
+            status(myid, "    True soln:   " + str(delta_g_amps0[1,:3]))
+            
+
+            # Save solution as new sample
+            if myid == 0:
+                # this is fractional deviation from assumed amplitude; should be close to 0
+                np.save(os.path.join(output_dir, "delta_g_amps_%05d" % n), xgain)
+
+
+            # Update current state of gain model
+            current_delta_gain = np.tensordot(xgain, Fbasis, axes=((1,), (0,)))
+
+
+            comm.barrier()
+
+
+        #---------------------------------------------------------------------------
+        # (B) Ptsrc sampler
+        #---------------------------------------------------------------------------
+        if SAMPLE_PTSRC_AMPS:
+
+            # Get LHS and RHS operators for linear system
+            t0 = time.time()
+            ptsrc_op, ptsrc_rhs = hydra.ptsrc_sampler.precompute_mpi(
+                                       comm,
+                                       ants=ants, 
+                                       antpairs=antpairs, 
+                                       freq_chunk=freq_chunk, 
+                                       time_chunk=time_chunk,
+                                       fluxes_chunk=fluxes_chunk, 
+                                       proj_chunk=ptsrc_proj,
+                                       data_chunk=data_chunk,
+                                       inv_noise_var_chunk=inv_noise_var_chunk,
+                                       current_data_model_chunk=current_data_model_chunk,
+                                       gain_chunk=gains_chunk * (1. + current_delta_gain),
+                                       amp_prior_std=amp_prior_std, 
+                                       realisation=True)
+            comm.barrier()
+            if myid == 0:
+                status(None, "Ptsrc sampler linear system precompute took %6.3f sec" 
+                             % (time.time() - t0), 'c')
+
+            # Solve linear system
+            x_soln = np.zeros(amp_prior_std.shape, dtype=amp_prior_std.dtype)
+            
+            if solver == 'mpicg':
+                # Use MPI solver, which will distribute the linear system across workers
+
+                # Get shape of ptsrc linear operator from root node
+                ptsrc_op_shape = comm.bcast(ptsrc_op.shape, root=0)
+
+                # Determine which workers get which blocks
+                comm_groups, block_map, block_shape \
+                    = linsolver.setup_mpi_blocks(comm, 
+                                                 matrix_shape=ptsrc_op_shape, 
+                                                 split=ngrid)
+
+                # Collect matrix/vector blocks on each worker
+                my_Amat, my_bvec = None, None
+                if comm_groups is not None:
+                    comm_active = comm_groups[0]
+                    my_Amat, my_bvec = linsolver.collect_linear_sys_blocks(comm_active, 
+                                                                           block_map, 
+                                                                           block_shape, 
+                                                                           Amat=ptsrc_op, 
+                                                                           bvec=ptsrc_rhs)
+                comm.barrier()
+
+                # Run MPI CG solver
+                t0 = time.time()
+                _xsoln = linsolver.cg_mpi(comm_groups, 
+                                          my_Amat, 
+                                          my_bvec, 
+                                          ptsrc_op_shape[0], 
+                                          block_map)
+                if myid == 0:
+                    x_soln = _xsoln # only root worker has complete x_soln
+                    status(None, "Ptsrc sampler MPI CG solve took %6.3f sec" \
+                                 % (time.time() - t0), 'c')
+
+                comm.barrier()
+
+            else:
+                # Use serial CG solver on root worker
+                if myid == 0:
+                    t0 = time.time()
+                    x_soln = scipy.linalg.solve(ptsrc_op, ptsrc_rhs, assume_a='her')
+                    status(None, "Ptsrc sampler serial CG solve took %6.3f sec" \
+                                 % (time.time() - t0), 'c')
+                comm.barrier()
+
+            # Save solution as new sample
+            if myid == 0:
+                x_soln *= amp_prior_std # we solved for x = S^-1/2 s, so recover s
+                # this is fractional deviation from assumed amplitude; should be close to 0
+                np.save(os.path.join(output_dir, "ptsrc_amp_%05d" % n), x_soln)
+
+            # Broadcast x_soln to all workers and update model
+            comm.Bcast(x_soln, root=0)
+            comm.barrier()
+            status(myid, "    Example soln:" + str(x_soln[:3]))
+
+            # Update visibility model with latest solution (does not include any gains)
+            # Applies projection operator to ptsrc amplitude vector
+            current_data_model_chunk = (  ptsrc_proj.reshape((-1, Nptsrc)) 
+                                     @ (1. + x_soln) ).reshape(current_data_model_chunk.shape)
+
+        #---------------------------------------------------------------------------
+        # (Q) Resource report
+        #---------------------------------------------------------------------------
+    
+        # Print resource usage info for this iteration
+        rusage = resource.getrusage(resource.RUSAGE_SELF)
+        print("\nResource usage (iter %05d):" % n)
+        print("    Max. RSS (MB):   %8.2f" % (rusage.ru_maxrss/1024.))
+        print("    User time (sec): %8.2f" % (rusage.ru_utime), flush=True)
+        
+        comm.barrier()
 
 
 
-    ######################
-
-    ptsrc_op, ptsrc_rhs = hydra.ptsrc_sampler.precompute_mpi(
-                                           comm, ra, dec, fluxes_chunk, 
-                                           ant_pos, antpairs, 
-                                           freq_chunk, time_chunk, beams, 
-                                           inv_noise_var_chunk,
-                                           resid_chunk, 
-                                           amp_prior_std, 
-                                           fchunks=fchunks, 
-                                           tchunks=tchunks, 
-                                           realisation=True)
+status(myid, "Finished run", 'g')
+comm.barrier()
 
 
 
@@ -364,12 +559,7 @@ if __name__ == '__main__':
 
 
 
-
-
-
-    #######################
-
-
+if True == False:
 
     # Precompute visibility projection operator (without gain factors) for ptsrc
     # amplitude sampling step. NOTE: This has to be updated within the Gibbs loop

@@ -18,9 +18,9 @@ def get_config():
     parser.add_argument("--gains", action="store_true",
                         required=False, dest="sample_gains",
                         help="Sample gains.")
-    parser.add_argument("--vis", action="store_true",
-                        required=False, dest="sample_vis",
-                        help="Sample visibilities in general.")
+    #parser.add_argument("--vis", action="store_true",
+    #                    required=False, dest="sample_vis",
+    #                    help="Sample visibilities in general.")
     parser.add_argument("--ptsrc", action="store_true",
                         required=False, dest="sample_ptsrc",
                         help="Sample point source amplitudes.")
@@ -67,13 +67,16 @@ def get_config():
 
     parser.add_argument("--solver", type=str, action="store",
                         default='cg', required=False, dest="solver_name",
-                        help="Which sparse matrix solver to use for linear systems ('cg' or 'gmres').")
+                        help="Which linear solver to use ('cg' or 'gmres' or 'mpicg').")
+    #parser.add_argument("--mpicg-split", type=int, action="store",
+    #                    default=1, required=False, dest="mpicg_split",
+    #                    help="If the MPI CG solver is being used, how many blocks to split the linear system into.")
     parser.add_argument("--output-dir", type=str, action="store",
                         default="./output", required=False, dest="output_dir",
                         help="Output directory.")
-    parser.add_argument("--multiprocess", action="store_true", dest="multiprocess",
-                        required=False,
-                        help="Whether to use multiprocessing in vis sim calls.")
+    #parser.add_argument("--multiprocess", action="store_true", dest="multiprocess",
+    #                    required=False,
+    #                    help="Whether to use multiprocessing in vis sim calls.")
 
     # Point source sim params
     parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 1),
@@ -91,9 +94,9 @@ def get_config():
     parser.add_argument("--ptsrc-amp-prior-level", type=float, action="store", default=0.1,
                         required=False, dest="ptsrc_amp_prior_level",
                         help="Fractional prior on point source amplitudes")
-    parser.add_argument("--vis-prior-level", type=float, action="store", default=0.1,
-                        required=False, dest="vis_prior_level",
-                        help="Prior on visibility values")
+    #parser.add_argument("--vis-prior-level", type=float, action="store", default=0.1,
+    #                    required=False, dest="vis_prior_level",
+    #                    help="Prior on visibility values")
 
     parser.add_argument("--calsrc-std", type=float, action="store", default=-1.,
                         required=False, dest="calsrc_std",
@@ -106,44 +109,44 @@ def get_config():
     parser.add_argument("--gain-prior-amp", type=float, action="store", default=0.1,
                         required=False, dest="gain_prior_amp",
                         help="Overall amplitude of gain prior.")
-    parser.add_argument("--gain-prior-sigma-frate", type=float, action="store", default=None,
-                        required=False, dest="gain_prior_sigma_frate",
-                        help="Width of a Gaussian prior in fringe rate, in units of mHz.")
-    parser.add_argument("--gain-prior-sigma-delay", type=float, action="store", default=None,
-                        required=False, dest="gain_prior_sigma_delay",
-                        help="Width of a Gaussian prior in delay, in units of ns.")
-    parser.add_argument("--gain-prior-zeropoint-std", type=float, action="store", default=None,
-                        required=False, dest="gain_prior_zeropoint_std",
-                        help="If specified, fix the std. dev. of the (0,0) mode to some value.")
-    parser.add_argument("--gain-prior-frate0", type=float, action="store", default=0.,
-                        required=False, dest="gain_prior_frate0",
-                        help="The central fringe rate of the Gaussian taper (mHz).")
-    parser.add_argument("--gain-prior-delay0", type=float, action="store", default=0.,
-                        required=False, dest="gain_prior_delay0",
-                        help="The central delay of the Gaussian taper (ns).")
-    parser.add_argument("--gain-mode-cut-level", type=float, action="store", default=None,
-                        required=False, dest="gain_mode_cut_level",
-                        help="If specified, gain modes with (prior power spectrum) < (gain-mode-cut-level) * max(prior power spectrum) will be excluded from the linear solve (i.e. set to zero).")
-    parser.add_argument("--gain-always-linear", type=bool, action="store", default=False,
-                        required=False, dest="gain_always_linear",
-                        help="If True, the gain perturbations are always applied under the linear approximation (the x_i x_j^* term is neglected everywhere)")
+    # parser.add_argument("--gain-prior-sigma-frate", type=float, action="store", default=None,
+    #                     required=False, dest="gain_prior_sigma_frate",
+    #                     help="Width of a Gaussian prior in fringe rate, in units of mHz.")
+    # parser.add_argument("--gain-prior-sigma-delay", type=float, action="store", default=None,
+    #                     required=False, dest="gain_prior_sigma_delay",
+    #                     help="Width of a Gaussian prior in delay, in units of ns.")
+    # parser.add_argument("--gain-prior-zeropoint-std", type=float, action="store", default=None,
+    #                     required=False, dest="gain_prior_zeropoint_std",
+    #                     help="If specified, fix the std. dev. of the (0,0) mode to some value.")
+    # parser.add_argument("--gain-prior-frate0", type=float, action="store", default=0.,
+    #                     required=False, dest="gain_prior_frate0",
+    #                     help="The central fringe rate of the Gaussian taper (mHz).")
+    # parser.add_argument("--gain-prior-delay0", type=float, action="store", default=0.,
+    #                     required=False, dest="gain_prior_delay0",
+    #                     help="The central delay of the Gaussian taper (ns).")
+    # parser.add_argument("--gain-mode-cut-level", type=float, action="store", default=None,
+    #                     required=False, dest="gain_mode_cut_level",
+    #                     help="If specified, gain modes with (prior power spectrum) < (gain-mode-cut-level) * max(prior power spectrum) will be excluded from the linear solve (i.e. set to zero).")
+    # parser.add_argument("--gain-always-linear", type=bool, action="store", default=False,
+    #                     required=False, dest="gain_always_linear",
+    #                     help="If True, the gain perturbations are always applied under the linear approximation (the x_i x_j^* term is neglected everywhere)")
 
     # Gain simulation
     parser.add_argument("--sim-gain-amp-std", type=float, action="store", default=0.05,
                         required=False, dest="sim_gain_amp_std",
                         help="Std. dev. of amplitude of simulated gain.")
-    parser.add_argument("--sim-gain-sigma-frate", type=float, action="store", default=None,
-                        required=False, dest="sim_gain_sigma_frate",
-                        help="Width of a Gaussian in fringe rate, in units of mHz.")
-    parser.add_argument("--sim-gain-sigma-delay", type=float, action="store", default=None,
-                        required=False, dest="sim_gain_sigma_delay",
-                        help="Width of a Gaussian in delay, in units of ns.")
-    parser.add_argument("--sim-gain-frate0", type=float, action="store", default=0.,
-                        required=False, dest="sim_gain_frate0",
-                        help="The central fringe rate of the Gaussian taper (mHz).")
-    parser.add_argument("--sim-gain-delay0", type=float, action="store", default=0.,
-                        required=False, dest="sim_gain_delay0",
-                        help="The central delay of the Gaussian taper (ns).")
+    # parser.add_argument("--sim-gain-sigma-frate", type=float, action="store", default=None,
+    #                     required=False, dest="sim_gain_sigma_frate",
+    #                     help="Width of a Gaussian in fringe rate, in units of mHz.")
+    # parser.add_argument("--sim-gain-sigma-delay", type=float, action="store", default=None,
+    #                     required=False, dest="sim_gain_sigma_delay",
+    #                     help="Width of a Gaussian in delay, in units of ns.")
+    # parser.add_argument("--sim-gain-frate0", type=float, action="store", default=0.,
+    #                     required=False, dest="sim_gain_frate0",
+    #                     help="The central fringe rate of the Gaussian taper (mHz).")
+    # parser.add_argument("--sim-gain-delay0", type=float, action="store", default=0.,
+    #                     required=False, dest="sim_gain_delay0",
+    #                     help="The central delay of the Gaussian taper (ns).")
 
     # Beam parameters
     parser.add_argument("--beam-sim-type", type=str, action="store", default="gaussian",
