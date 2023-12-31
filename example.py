@@ -345,10 +345,6 @@ if __name__ == '__main__':
                                           beams=beams
                                         )
 
-    # Strict handling of floating point errors
-    np.seterr(all='raise')
-
-
     # Iterate the Gibbs sampler
     if myid == 0:
         print("="*60)
