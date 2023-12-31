@@ -589,7 +589,6 @@ if __name__ == '__main__':
             print("    chi^2 / Ndof = %+8.5e" % (-2.*logl_approx / Ndof))
             with open(os.path.join(output_dir, "stats.dat"), "ab") as f:
                 np.savetxt(f, np.atleast_2d([n, logl_exact, logl_approx, importance_weight, Ndof]))
-            """
 
 
 
