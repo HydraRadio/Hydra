@@ -109,6 +109,13 @@ def get_config():
     parser.add_argument("--gain-prior-amp", type=float, action="store", default=0.1,
                         required=False, dest="gain_prior_amp",
                         help="Overall amplitude of gain prior.")
+    parser.add_argument("--gain-nmax-freq", type=int, action="store", default=2,
+                        required=False, dest="gain_nmaxfreq",
+                        help="Max. Fourier mode index for gain perturbations (freq. direction).")
+    parser.add_argument("--gain-nmax-time", type=int, action="store", default=2,
+                        required=False, dest="gain_nmaxtime",
+                        help="Max. Fourier mode index for gain perturbations (time direction).")
+
     # parser.add_argument("--gain-prior-sigma-frate", type=float, action="store", default=None,
     #                     required=False, dest="gain_prior_sigma_frate",
     #                     help="Width of a Gaussian prior in fringe rate, in units of mHz.")

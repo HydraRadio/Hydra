@@ -97,7 +97,7 @@ def run_example_simulation(args, times, freqs, output_dir, ra, dec, ptsrc_amps,
             use_feed="x"
         )
     #timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
-    print("(0) Simulation", time.time() - t0)
+    #print("(0) Simulation", time.time() - t0)
 
     # Allocate computed visibilities to only the requested baselines (saves memory)
     model0 = extract_vis_from_sim(ants, antpairs, _sim_vis)

@@ -139,29 +139,6 @@ def apply_proj_conj(v, A_real, A_imag, model_vis, gain_shape):
     return g
 
 
-def apply_sqrt_pspec_old(sqrt_pspec, x):
-    """
-    Apply the square root of the power spectrum to a set of complex Fourier
-    coefficients. This is a way of implementing the operation "S^1/2 x" if S is
-    diagonal, represented only by a 2D power spectrum.
-
-    Parameters:
-        sqrt_pspec (array_like):
-            If given as a 3D array, apply a different power spectrum to each antenna.
-            Otherwise, apply the same (2D) power spectrum to each antenna. The
-            power spectrum should have shape (Ntau, Nfrate).
-
-        x (array_like):
-            Array of complex Fourier coefficients.
-
-    Returns:
-        z (array_like):
-            Array of complex Fourier coefficients that have been multiplied by
-            the sqrt of the power spectrum. Same shape as x.
-    """
-    return sqrt_pspec[np.newaxis, :] * x
-
-
 def construct_rhs_mpi(
     comm, resid, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis, Fbasis, 
     realisation=True, seed=None
@@ -313,19 +290,14 @@ def apply_operator_mpi(comm, x, inv_noise_var, pspec_sqrt, A_real, A_imag, model
     # Add identity and return
     return x + total_y
 
+#--------------------------
 
-
-
-#-------------------------------------------------------------------------------
-
-
-
-
-
-
-def apply_linear_op_mpi(comm, ants, antpairs, Fbasis, vec, vec_shape, inv_noise_var, 
-                        gain_pspec_sqrt, ggV):
+def nonfunctioning_apply_linear_op_mpi(comm, ants, antpairs, Fbasis, vec, vec_shape, 
+                                       inv_noise_var, gain_pspec_sqrt, ggV):
     """
+    This was an attempted MPI rewrite of the linear operator function using a 
+    different mathematical approach, but it seems to have a bug.
+
     Apply the linear system operator on each chunk.
 
     Assume that only the root worker has the correct x vector and distribute 
@@ -458,9 +430,7 @@ def apply_linear_op_mpi(comm, ants, antpairs, Fbasis, vec, vec_shape, inv_noise_
     return x + my_y.flatten() #total_y.flatten() # add identity times input too
 
 
-
-
-def apply_sqrt_pspec_old(sqrt_pspec, x):
+def legacy_apply_sqrt_pspec(sqrt_pspec, x):
     """
     Apply the square root of the power spectrum to a set of complex Fourier
     coefficients. This is a way of implementing the operation "S^1/2 x" if S is
@@ -487,7 +457,7 @@ def apply_sqrt_pspec_old(sqrt_pspec, x):
         return sqrt_pspec[np.newaxis, :, :] * x
 
 
-def apply_operator(x, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis, 
+def legacy_apply_operator(x, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis, 
                    reduced_idxs=None):
     r"""
     Apply LHS operator to a vector of Fourier coefficients.
@@ -546,7 +516,7 @@ def apply_operator(x, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis,
         
 
 
-def construct_rhs(
+def legacy_construct_rhs(
     resid, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis, realisation=True
 ):
     """

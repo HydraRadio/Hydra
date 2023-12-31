@@ -242,8 +242,8 @@ if __name__ == '__main__':
     Fbasis, k_freq, k_time = partial_fourier_basis_2d_from_nmax(
                                                 freqs=freq_chunk, 
                                                 times=time_chunk, 
-                                                nmaxfreq=2, 
-                                                nmaxtime=2, 
+                                                nmaxfreq=args.gain_nmaxfreq, 
+                                                nmaxtime=args.gain_nmaxtime, 
                                                 Lfreq=Lfreq, 
                                                 Ltime=Ltime,
                                                 freq0=freqs[0],
@@ -315,7 +315,7 @@ if __name__ == '__main__':
     current_delta_gain = np.zeros_like(delta_g_chunk0)
 
     # Initial point source amplitude factor
-    current_ptsrc_a = np.ones(ra.size)
+    #current_ptsrc_a = np.ones(ra.size)
 
     # Set priors and auxiliary information
     noise_var_chunk = (sigma_noise)**2. * np.ones(data_chunk.shape)
@@ -532,15 +532,77 @@ if __name__ == '__main__':
             current_data_model_chunk = (  ptsrc_proj.reshape((-1, Nptsrc)) 
                                      @ (1. + x_soln) ).reshape(current_data_model_chunk.shape)
 
+
+        #---------------------------------------------------------------------------
+        # (P) Probability values and importance weights
+        #---------------------------------------------------------------------------
+        if CALCULATE_STATS:
+            # Calculate importance weights for this Gibbs sample
+            # FIXME: Ignores priors for now! They will cancel anyway, unless the
+            # prior terms also contain approximations
+
+            # Calculate data minus model (chi^2) for the exact model
+            ggv = hydra.apply_gains(current_data_model_chunk,
+                                    gains * (1. + current_delta_gain),
+                                    ants,
+                                    antpairs,
+                                    inline=False)
+            chisq_exact = (data - ggv) * np.sqrt(inv_noise_var)
+
+            # Calculate data minus model for the approximate model
+            ggv0 = hydra.apply_gains(current_data_model,
+                                     gains,
+                                     ants,
+                                     antpairs,
+                                     inline=False)
+            ggv_approx = ggv0 + hydra.gain_sampler.apply_proj(current_delta_gain,
+                                                              A_real,
+                                                              A_imag,
+                                                              ggv0)
+            chisq_approx = (data - ggv_approx) * np.sqrt(inv_noise_var)
+
+            # Calculate chi^2 (log-likelihood) term for each model
+            logl_exact = -0.5 * (  np.sum(chisq_exact.real**2.)
+                                 + np.sum(chisq_exact.imag**2.))
+            logl_approx = -0.5 * (  np.sum(chisq_approx.real**2.)
+                                  + np.sum(chisq_approx.imag**2.))
+
+            # Calculate importance weight (ratio of likelihoods here)
+            importance_weight = np.exp(logl_exact - logl_approx)
+
+            # Approximate number of degrees of freedom
+            Ndof = 2*data.size # real + imaginary
+            if SAMPLE_GAINS:
+                Ndof -= gain_lhs_shape[-1]
+            if SAMPLE_VIS:
+                Ndof -= vis_lhs_shape[-1]
+            if SAMPLE_PTSRC_AMPS:
+                Ndof -= ptsrc_lhs_shape[-1]
+
+            # Print log-likelihood and importance weight
+            print("(P) Log-likelihood and importance weights:")
+            print("    Exact logL   = %+8.5e" % logl_exact)
+            print("    Approx. logL = %+8.5e" % logl_approx)
+            print("    Delta logL   = %+8.5e" % (logl_exact - logl_approx))
+            print("    Import. wgt  = %+8.5e" % importance_weight)
+            print("    Deg. freedom = %+8.5e" % Ndof)
+            print("    chi^2 / Ndof = %+8.5e" % (-2.*logl_approx / Ndof))
+            with open(os.path.join(output_dir, "stats.dat"), "ab") as f:
+                np.savetxt(f, np.atleast_2d([n, logl_exact, logl_approx, importance_weight, Ndof]))
+            """
+
+
+
         #---------------------------------------------------------------------------
         # (Q) Resource report
         #---------------------------------------------------------------------------
     
         # Print resource usage info for this iteration
-        rusage = resource.getrusage(resource.RUSAGE_SELF)
-        print("\nResource usage (iter %05d):" % n)
-        print("    Max. RSS (MB):   %8.2f" % (rusage.ru_maxrss/1024.))
-        print("    User time (sec): %8.2f" % (rusage.ru_utime), flush=True)
+        if myid == 0:
+            rusage = resource.getrusage(resource.RUSAGE_SELF)
+            print("\nResource usage (iter %05d):" % n)
+            print("    Max. RSS (MB):   %8.2f" % (rusage.ru_maxrss/1024.))
+            print("    User time (sec): %8.2f" % (rusage.ru_utime), flush=True)
         
         comm.barrier()
 

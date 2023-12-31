@@ -417,7 +417,7 @@ def simulate_vis_per_source(
     if polarized:
         vis_shape = (naxes, nfeeds, freqs.size, lsts.size, nants, nants, nsrcs)
     elif subarr_ant is not None:
-    # When polarized beams implemented, need to have similar block in  polarized case above
+    # When polarized beams implemented, need to have similar block in polarized case above
         vis_shape = (freqs.size, lsts.size, nants, nsrcs)
     else:
         vis_shape = (freqs.size, lsts.size, nants, nants, nsrcs)

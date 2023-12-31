@@ -143,82 +143,6 @@ def precompute_mpi(comm,
     return linear_op, linear_rhs
 
 
-def apply_operator(x, amp_prior_std, vsquared):
-    """
-    Apply LHS operator to a vector of source amplitudes.
-
-    Parameters:
-        x (array_like):
-            Vector of source amplitudes to apply the operator to.
-        amp_prior_std (array_like):
-            Vector of standard deviation values to use for independent Gaussian
-            priors on the source amplitudes.
-        vsquared (array_like):
-            Sum of the real and imaginary blocks of the precomputed matrix
-            (v^T N^-1 v), which is the most expensive part of the LHS operator.
-            Precomputing this typically leads to a large speed-up. The
-            `precompute_op` function generates the necessary operator.
-
-    Returns:
-        lhs (array_like):
-            Result of applying the LHS operator to the input vector, x.
-    """
-    return x + amp_prior_std * (vsquared @ (x * amp_prior_std))
-
-
-def construct_rhs(
-    resid, inv_noise_var, amp_prior_std, vis_proj_operator, realisation=False
-):
-    """
-    Construct the RHS vector of the linear system. This will have shape
-    (2*Nsrcs), as the real and imaginary parts are separated.
-
-    Parameters:
-        resid (array_like):
-            Residual of data minus reference model, with the same shape as the
-            visibility data.
-        inv_noise_var (array_like):
-            Inverse noise variance array, with the same shape as the visibility
-            data.
-        amp_prior_std (array_like):
-            Vector of standard deviation values to use for independent Gaussian
-            priors on the source amplitudes.
-        vis_proj_operator (array_like):
-            The projection operator from source amplitudes to visibilities,
-            from `calc_proj_operator`.
-        realisation (bool):
-            Whether to include the random realisation terms in the RHS
-            (constrained realisation), or just the deterministic terms (Wiener
-            filter).
-
-    Returns:
-        rhs (array_like):
-            The RHS of the linear system.
-    """
-    Nptsrc = amp_prior_std.size
-    proj = vis_proj_operator.reshape((-1, Nptsrc))
-
-    # Switch to turn random realisations on or off
-    realisation_switch = 1.0 if realisation else 0.0
-
-    # (Term 2): \omega_a
-    b = realisation_switch * np.random.randn(Nptsrc) # real vector
-
-    # (Terms 1+3): S^1/2 A^\dagger [ N^{-1} r + N^{-1/2} \omega_r ]
-    omega_n = (
-        realisation_switch
-        * (1.0 * np.random.randn(*resid.shape) + 1.0j * np.random.randn(*resid.shape))
-        / np.sqrt(2.0)
-    )
-
-    # Separate complex part of RHS into real and imaginary parts, and apply
-    # the real and imaginary parts of the projection operator separately.
-    # This is necessary to get a real RHS vector
-    y = ((resid * inv_noise_var) + (omega_n * np.sqrt(inv_noise_var))).flatten()
-    b += amp_prior_std * (proj.T.real @ y.real + proj.T.imag @ y.imag)
-    return b
-
-
 def calc_proj_operator(
     ra, dec, fluxes, ant_pos, antpairs, freqs, times, beams,
     latitude=-0.5361913261514378
@@ -287,3 +211,77 @@ def calc_proj_operator(
     return vis_ptsrc
 
 
+def legacy_apply_operator(x, amp_prior_std, vsquared):
+    """
+    Apply LHS operator to a vector of source amplitudes.
+
+    Parameters:
+        x (array_like):
+            Vector of source amplitudes to apply the operator to.
+        amp_prior_std (array_like):
+            Vector of standard deviation values to use for independent Gaussian
+            priors on the source amplitudes.
+        vsquared (array_like):
+            Sum of the real and imaginary blocks of the precomputed matrix
+            (v^T N^-1 v), which is the most expensive part of the LHS operator.
+            Precomputing this typically leads to a large speed-up. The
+            `precompute_op` function generates the necessary operator.
+
+    Returns:
+        lhs (array_like):
+            Result of applying the LHS operator to the input vector, x.
+    """
+    return x + amp_prior_std * (vsquared @ (x * amp_prior_std))
+
+
+def legacy_construct_rhs(
+    resid, inv_noise_var, amp_prior_std, vis_proj_operator, realisation=False
+):
+    """
+    Construct the RHS vector of the linear system. This will have shape
+    (2*Nsrcs), as the real and imaginary parts are separated.
+
+    Parameters:
+        resid (array_like):
+            Residual of data minus reference model, with the same shape as the
+            visibility data.
+        inv_noise_var (array_like):
+            Inverse noise variance array, with the same shape as the visibility
+            data.
+        amp_prior_std (array_like):
+            Vector of standard deviation values to use for independent Gaussian
+            priors on the source amplitudes.
+        vis_proj_operator (array_like):
+            The projection operator from source amplitudes to visibilities,
+            from `calc_proj_operator`.
+        realisation (bool):
+            Whether to include the random realisation terms in the RHS
+            (constrained realisation), or just the deterministic terms (Wiener
+            filter).
+
+    Returns:
+        rhs (array_like):
+            The RHS of the linear system.
+    """
+    Nptsrc = amp_prior_std.size
+    proj = vis_proj_operator.reshape((-1, Nptsrc))
+
+    # Switch to turn random realisations on or off
+    realisation_switch = 1.0 if realisation else 0.0
+
+    # (Term 2): \omega_a
+    b = realisation_switch * np.random.randn(Nptsrc) # real vector
+
+    # (Terms 1+3): S^1/2 A^\dagger [ N^{-1} r + N^{-1/2} \omega_r ]
+    omega_n = (
+        realisation_switch
+        * (1.0 * np.random.randn(*resid.shape) + 1.0j * np.random.randn(*resid.shape))
+        / np.sqrt(2.0)
+    )
+
+    # Separate complex part of RHS into real and imaginary parts, and apply
+    # the real and imaginary parts of the projection operator separately.
+    # This is necessary to get a real RHS vector
+    y = ((resid * inv_noise_var) + (omega_n * np.sqrt(inv_noise_var))).flatten()
+    b += amp_prior_std * (proj.T.real @ y.real + proj.T.imag @ y.imag)
+    return b
