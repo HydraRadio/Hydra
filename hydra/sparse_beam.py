@@ -1,7 +1,7 @@
 from pyuvdata import UVBeam
 import numpy as np
 from scipy.special import jn, jn_zeros
-from scipy.linalg import solve
+from scipy.linalg import solve, lstsq
 
 
 class sparse_beam(UVBeam):
@@ -109,11 +109,11 @@ class sparse_beam(UVBeam):
 
         Returns:
             fit_coeffs (array, complex):
-                The coefficients for the Fourier-Bessel basis. Has shape
-                (nmax, len(mmodes), 2, 1, 2, Nfreqs)
+                The coefficients for the Fourier-Bessel fit. Has shape
+                (nmax, len(mmodes), Naxes_vec, 1, Nfeeds, Nfreqs)
             fit_beam (array, complex):
                 The fit beam in sky coordinates. Has shape 
-                (2, 1, 2, Nfreqs, Nza, Naz)
+                (Naxes_vec, 1, Nfeeds, Nfreqs, Nza, Naz)
         """
         
         if load:
@@ -123,18 +123,18 @@ class sparse_beam(UVBeam):
             bess_matr, trig_matr = self.get_dmatr()
             # az_modes are discretely orthonormal so just project onto the basis
             # Saves loads of memory and time
-            az_fit = self.data_array @ trig_matr.conj() # 2, 1, 2, Nfreq, Nza, Nm
+            az_fit = self.data_array @ trig_matr.conj() # Naxes_vec, 1, Nfeeds, Nfreq, Nza, Nm
 
             BtB = bess_matr.T @ bess_matr
-            Baz = bess_matr.T @ az_fit # 2, 1, 2, Nfreq, Nn, Nm
-            Baz = Baz.transpose(4, 5, 0, 1, 2, 3) # Nn, Nm, 2, 1, 2, Nfreq
+            Baz = bess_matr.T @ az_fit # Naxes_vec, 1, Nfeeds, Nfreq, Nn, Nm
+            Baz = Baz.transpose(4, 5, 0, 1, 2, 3) # Nn, Nm, Naxes_vec, 1, Nfeeds, Nfreq
 
 
-            fit_coeffs = solve(BtB, Baz, assume_a="sym")[0] # Nn, Nm, 2, 1, 2, Nfreq
+            fit_coeffs = solve(BtB, Baz, assume_a="sym")[0] # Nn, Nm, Naxes_vec, 1, Nfeeds, Nfreq
 
             # Apply design matrices to get fit beams
-            fit_beam_az = np.tensordot(trig_matr, fit_beam_rad, axes=((1,), (1,))) # Naz, Nn, 2, 1, 2, Nfreq
-            fit_beam = np.tensordot(bess_matr, fit_beam_az, axes=((1,), (1,))) # Nza, Naz, 2, 1, 2, Nfreq
+            fit_beam_az = np.tensordot(trig_matr, fit_beam_rad, axes=((1,), (1,))) # Naz, Nn, Naxes_vec, 1, Nfeeds, Nfreq
+            fit_beam = np.tensordot(bess_matr, fit_beam_az, axes=((1,), (1,))) # Nza, Naz, Naxes_vec, 1, Nfeeds, Nfreq
             fit_beam = fit_beam.transpose(2, 3, 4, 5, 0, 1)
 
             np.save(f"{self.save_fn}_bess_fit_coeffs.npy", fit_coeffs)
@@ -154,13 +154,15 @@ class sparse_beam(UVBeam):
         Returns:
             nmodes_comp (array, int):
                 The radial mode numbers corresponding to the top num_modes 
-                Fourier-Bessl modes, in descending order of significance.
+                Fourier-Bessl modes, in descending order of significance. Has 
+                shape (Naxes_vec, 1, Nfeeds, Nfreqs, num_modes).
             mmodes_comp (array, int):    
                 The azimuthal modes numbers corresponding to the top num_modes 
-                Fourier-Bessel modes, in descending order of significance.
+                Fourier-Bessel modes, in descending order of significance. Has
+                shape (Naxes_vec, 1, Nfeeds, Nfreqs, num_modes).
         """
 
-        ps_sort_inds = np.argsort(self.bess_ps.reshape((2, 1, 2, self.Nfreqs, 
+        ps_sort_inds = np.argsort(self.bess_ps.reshape((self.Naxes_vec, 1, self.Nfeed, self.Nfreqs, 
                                                         self.ncoeff_bess)),
                                   axis=4)
         # Highest modes start from the end
@@ -171,56 +173,52 @@ class sparse_beam(UVBeam):
         
         return nmodes_comp, mmodes_comp
     
-    def get_comp_fits(self, basis_matr, comp_inds, lowmem=True, freq_dep=True):
+    def get_comp_fits(self, num_modes=64):
+        """
+        Get the beam fit coefficients and fit beams in a compressed basis using
+        num_modes modes for each polarization, feed, and frequency.
+
+        Parameters:
+            num_modes (int):
+                The number of Fourier-Bessel modes to use for the compresed fit.
+            
+        Returns:
+            fit_coeffs (array, complex):
+                The coefficients for the Fourier-Bessel fit. Has shape
+                (Naxes_vec, 1, Nfeeds, Nfreqs, num_modes)
+            fit_beam (array, complex):
+                The fit beam in sky coordinates. Has shape 
+                (Naxes_vec, 1, Nfeeds, Nfreqs, Nza, Naz)
+        """
+        nmodes_comp, mmodes_comp = self.get_comp_inds(num_modes=num_modes)
+        bess_matr, trig_matr = self.get_dmatr()
+        num_modes = nmodes_comp.shape[-1]
+
+        # nmodes might vary from pol to pol, freq to freq. The fit is fast, just do a big for loop.
+        fit_coeffs = np.zeros(self.Naxes_vec, 1, self.Nfeeds, self.Nfreqs, 
+                              num_modes, dtype=complex)
+        fit_beam = np.zeros_like(self.data_array)
+        for vec_ind in range(self.Naxes_vec):
+            for feed_ind in range(self.Nfeeds):
+                for freq_ind in range(self.Nfreqs):
+                    dat_iter = self.data_array[vec_ind, 0, feed_ind, freq_ind]
+                    nmodes_iter = nmodes_comp[vec_ind, 0, feed_ind, freq_ind]
+                    mmodes_iter = mmodes_comp[vec_ind, 0, feed_ind, freq_ind]
+                    unique_mmodes_iter = np.unique(mmodes_iter)
+       
+                    for mmode in unique_mmodes_iter:
+                        mmode_inds = mmodes_iter == mmode
+                        # Get the nmodes that this mmode is used for
+                        nmodes_mmode = nmodes_iter[mmode_inds] 
+
+                        bess_matr_mmode = bess_matr[:, nmodes_mmode]
+                        trig_mode = trig_matr[:, mmode]
+
+                        az_fit_mmode = dat_iter @ trig_mode.conj() # Nza
+
+                        fit_coeffs_mmode = lstsq(bess_matr_mmode, az_fit_mmode)[0]
+
+                        fit_coeffs[vec_ind, 0, feed_ind, freq_ind, mmode_inds] = fit_coeffs_mmode
+                        fit_beam[vec_ind, 0, feed_ind, freq_ind] += np.outer(bess_matr_mmode @ fit_coeffs_mmode, trig_mode)
         
-        num_modes = comp_inds[0].shape[-1]
-        if lowmem:
-            fit_coeffs = np.zeros((2, 1, 2, self.Nfreqs, num_modes), dtype=complex)
-            fit_beams = np.zeros_like(self.data_array)
-            for freq_ind in range(self.Nfreqs):
-                B = getattr(self, basis_matr)[:, :, comp_inds[0][:, :, :, freq_ind], 
-                                                 comp_inds[1][:, :, :, freq_ind]]
-                Bres = B.reshape(self.ncoord, 2, 1, 2, num_modes).transpose(1, 2, 3, 0, 4)
-
-                BTdA = (Bres.conj().transpose(0, 1, 2, 4, 3)) 
-
-                lhs_op = BTdA @ Bres
-                lhs_op = block_diag(lhs_op.reshape(4, num_modes, num_modes))
-
-
-                rhs_vec = (BTdA * self.data_array[:, :, :, freq_ind].reshape(2, 1, 2, 1, self.ncoord)).sum(axis=-1)
-                rhs_vec = rhs_vec.flatten()
-                soln = spsolve(lhs_op, rhs_vec)
-                soln_res = soln.reshape(2, 1, 2, num_modes)
-                fit_coeffs[:, :, :, freq_ind] = soln_res
-                fit_beams[:, :, :, freq_ind, :, :] = (B * soln_res).sum(axis=-1).transpose(2, 3, 4, 0, 1)
-        else:
-            if freq_dep:
-                raise NotImplemented("High mem option not implemented for freq_dep bases yet.")
-            
-            print("Indexing B")
-            Bres = getattr(self, basis_matr)[:, :, comp_inds[0][0,0,0,0], comp_inds[1][0,0,0,0]]
-            print("Reshaping B")
-            Bres = Bres.reshape(self.ncoord, num_modes)
-
-            BTdA = Bres.T.conj()
-            print("computing lhs_op")
-            lhs_op = BTdA @ Bres
-            
-            print("computing rhs_vec")
-            rhs_vec = np.tensordot(BTdA, self.data_array.reshape(2, 1, 2, self.Nfreqs, self.ncoord),
-                                   axes=((-1,), (-1,)))
-            print(f"rhs_vec shape: {rhs_vec.shape}")
-            print("Solving")
-            # Nmode, 2, 1, 2, Nfreq
-            fit_coeffs = solve(lhs_op, rhs_vec)
-            
-            # ncoord, 2, 1, 2, Nfreq -> 2, 1, 2, Nfreq, ncoord
-            fit_beams = np.tensordot(Bres, fit_coeffs, axes=1).transpose(1, 2, 3, 4, 0)
-            
-            # Nmode, 2, 1, 2, Nfreq -> 2, 1, 2, Nfreq, Nmode
-            fit_coeffs = fit_coeffs.transpose(1, 2, 3, 4, 0)
-            # 2, 1, 2, Nfreq, ncoord -> 2, 1, 2, Nfreq, Nza, Naz
-            fit_beams = fit_beams.reshape(2, 1, 2, self.Nfreqs, len(self.rad_array), len(self.az_array))
-        
-        return fit_coeffs, fit_beams
+        return fit_coeffs, fit_beam
