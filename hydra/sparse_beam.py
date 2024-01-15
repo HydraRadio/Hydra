@@ -67,8 +67,9 @@ class sparse_beam(UVBeam):
     def get_dmatr(self):
         """
         Compute the factored design matrix that maps from Fourier-Bessel 
-        coefficients to pixel centers on the sky. Assumes az/za coordinates.
-        Full design matrix is the tensor product of these two factors.
+        coefficients to pixel centers on the sky. Assumes az/za coordinates,
+        AND uniform sampling in azimuth. Full design matrix is the tensor 
+        product of these two factors.
                 
         Returns:
             bess_matr (array, complex):
@@ -99,6 +100,21 @@ class sparse_beam(UVBeam):
     
     
     def get_fits(self, load=False):
+        """
+        Compute Fourier-Bessel fits up to nmax and for all m-modes.
+
+        Parameters:
+            load (bool): 
+                Whether to load precomputed solutions
+
+        Returns:
+            fit_coeffs (array, complex):
+                The coefficients for the Fourier-Bessel basis. Has shape
+                (nmax, len(mmodes), 2, 1, 2, Nfreqs)
+            fit_beam (array, complex):
+                The fit beam in sky coordinates. Has shape 
+                (2, 1, 2, Nfreqs, Nza, Naz)
+        """
         
         if load:
             fit_coeffs = np.load(f"{self.save_fn}_bess_fit_coeffs.npy")
@@ -125,6 +141,35 @@ class sparse_beam(UVBeam):
             np.save(f"{self.save_fn}_bess_fit_beam.npy", fit_beam)        
 
         return fit_coeffs, fit_beam
+    
+    def get_comp_inds(self, num_modes=64):
+        """
+        Get the indices for the num_modes most significant modes for each
+        feed, polarization, and frequency.
+
+        Parameters:
+            num_modes (int): 
+                The number of modes to use for the compressed fit.
+
+        Returns:
+            nmodes_comp (array, int):
+                The radial mode numbers corresponding to the top num_modes 
+                Fourier-Bessl modes, in descending order of significance.
+            mmodes_comp (array, int):    
+                The azimuthal modes numbers corresponding to the top num_modes 
+                Fourier-Bessel modes, in descending order of significance.
+        """
+
+        ps_sort_inds = np.argsort(self.bess_ps.reshape((2, 1, 2, self.Nfreqs, 
+                                                        self.ncoeff_bess)),
+                                  axis=4)
+        # Highest modes start from the end
+        sort_inds_flip = np.flip(ps_sort_inds, axis=4)[:, :, :, :, :num_modes]
+        nmodes_comp, mmodes_comp = np.unravel_index(sort_inds_flip, 
+                                                    (self.nmax, 
+                                                     len(self.mmodes)))
+        
+        return nmodes_comp, mmodes_comp
     
     def get_comp_fits(self, basis_matr, comp_inds, lowmem=True, freq_dep=True):
         
