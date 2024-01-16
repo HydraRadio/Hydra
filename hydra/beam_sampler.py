@@ -629,9 +629,8 @@ def get_beam_from_FB_coeff(beam_coeffs, za, az, nmodes, mmodes):
     return beam
 
 
-def plot_FB_beam(beam, za, az,
-                 vmin=-1, vmax=1, norm=SymLogNorm, linthresh=1e-3, cmap="Spectral",
-                  **kwargs):
+def plot_FB_beam(beam, za, az, vmin=-1, vmax=1, norm=SymLogNorm, linthresh=1e-3, 
+                 cmap="Spectral", save=False, **kwargs):
     """
     Plots a Fourier_Bessel beam at specified zenith angles and azimuths.
 
@@ -656,7 +655,7 @@ def plot_FB_beam(beam, za, az,
     cax = ax[0].pcolormesh(Az, Za, beam.real,
                            norm=norm(vmin=vmin, vmax=vmax, linthresh=linthresh, **kwargs), cmap=cmap)
     ax[0].set_title("Real Component")
-    ax[1].pcolormesh(Theta, ZA, beam.imag,
+    ax[1].pcolormesh(Az, Za, beam.imag,
                      norm=norm(vmin=vmin, vmax=vmax, linthresh=linthresh, **kwargs), cmap=cmap)
     ax[1].set_title("Imaginary Component")
     fig.colorbar(cax, ax=ax.ravel().tolist())
