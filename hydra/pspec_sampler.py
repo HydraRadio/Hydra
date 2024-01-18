@@ -5,7 +5,7 @@ from scipy.signal.windows import blackmanharris as BH
 from scipy.stats import invgamma
 from scipy.optimize import minimize, Bounds
 
-from multiprocess import Pool
+#from multiprocess import Pool
 from . import utils
 import os, time
 
