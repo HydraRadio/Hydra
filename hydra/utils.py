@@ -356,7 +356,7 @@ def freqs_times_for_worker(comm, freqs, times, fchunks, tchunks=1):
     for i in range(nworkers):
         _fidx, _tidx = np.where(allidxs == i)
         _fidx, _tidx = int(_fidx[0]), int(_tidx[0])
-        worker_map[i] = (_fidx, _tidx, freq_idx_chunks[i], time_idx_chunks[i])
+        worker_map[i] = (_fidx, _tidx, freq_idx_chunks[_fidx], time_idx_chunks[_tidx])
 
     return freq_idx_chunks[fidx], time_idx_chunks[tidx], worker_map
 
