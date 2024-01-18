@@ -302,11 +302,43 @@ def timing_info(fname, iter, task, duration, verbose=True):
             print("%s took %3.2f sec" % (task, duration))
 
 
-def freqs_times_for_worker(myid, freqs, times, fchunks, tchunks=1):
+def freqs_times_for_worker(comm, freqs, times, fchunks, tchunks=1):
     """
-    Get the unique frequency and time chunk for a worker.
+    Get the unique frequency and time chunk for a worker. The workers 
+    are arranged onto an `fchunks * tchunks` grid, and each worker is 
+    given the corresponding chunk of the 2D `freqs * times` grid.
+
+    Parameters:
+        comm (MPI Communicator):
+            MPI communicator.
+        freqs (array_like):
+            Array of all frequencies in the data.
+        times (array_like):
+            Array of all times (LSTs) in the data.
+        fchunks (int):
+            Number of chunks to divide the frequency array into.
+        tchunks (int):
+            Number of chunks to divide the time array into.
+
+    Returns:
+        freq_idx_chunk (array_like):
+            The indices of the frequency array belonging to this worker.
+        time_idx_chunk (array_like):
+            The indices of the time array belonging to this worker.
+        worker_map (dict):
+            A dictionary containing the chunk indices and frequency and 
+            time indices for each worker. This is useful for cases where 
+            individual workers have to communicate with each other. The 
+            format of the dictionary entries is:
+            `worker_id: (freq_chunk_idx, time_chunk_idx, freq_idxs, time_idxs)`
+            where `freq_chunk_idx` and `time_chunk_idx` are indices in the 
+            grid of chunks for this worker, and `freq_idxs` and `time_idxs` 
+            are the actual indices in the `freqs` and `times` arrays belonging 
+            to this worker.
     """
-    assert myid < fchunks * tchunks, "There are more workers than time and frequency chunks"
+    myid = comm.Get_rank()
+    nworkers = comm.Get_size()
+    assert nworkers <= fchunks * tchunks, "There are more workers than time and frequency chunks"
 
     # Get chunk ID for this worker
     allidxs = np.arange(fchunks * tchunks).reshape((fchunks, tchunks))
@@ -316,9 +348,17 @@ def freqs_times_for_worker(myid, freqs, times, fchunks, tchunks=1):
     # Get chunk of freq/time idxs for each worker
     freq_idxs = np.arange(freqs.size)
     time_idxs = np.arange(times.size)
-    freq_idx_chunk = np.array_split(freq_idxs, fchunks)[fidx]
-    time_idx_chunk = np.array_split(time_idxs, tchunks)[tidx]
-    return freq_idx_chunk, time_idx_chunk
+    freq_idx_chunks = np.array_split(freq_idxs, fchunks)
+    time_idx_chunks = np.array_split(time_idxs, tchunks)
+
+    # Make map of freq. and time idxs for each worker
+    worker_map = {}
+    for i in range(nworkers):
+        _fidx, _tidx = np.where(allidxs == i)
+        _fidx, _tidx = int(_fidx[0]), int(_tidx[0])
+        worker_map[i] = (_fidx, _tidx, freq_idx_chunks[i], time_idx_chunks[i])
+
+    return freq_idx_chunks[fidx], time_idx_chunks[tidx], worker_map
 
 
 def build_hex_array(hex_spec=(3,4), ants_per_row=None, d=14.6):

@@ -27,6 +27,12 @@ def get_config():
     parser.add_argument("--beam", action="store_true",
                         required=False, dest="sample_beam",
                         help="Sample beams.")
+    parser.add_argument("--sh", action="store_true",
+                        required=False, dest="sample_sh",
+                        help="Sample spherical harmonic modes.")
+    parser.add_argument("--pspec", action="store_true",
+                        required=False, dest="sample_pspec",
+                        help="Sample 21cm power spectrum.")
 
     # Output options
     parser.add_argument("--stats", action="store_true",
@@ -172,6 +178,21 @@ def get_config():
                         default=np.sqrt(1-np.cos(np.pi * 23 / 45)),
                         required=False, dest="rho_const",
                         help="A constant to define the radial projection for the beam spatial basis")
+
+    # Spherical harmonic parameters
+    parser.add_argument("--sim-sh-lmax", type=int, action="store", default=8,
+                        required=False, dest="sim_sh_lmax",
+                        help="Maximum ell value to include for spherical harmonic simulation.")
+    parser.add_argument("--sim-sh-nside", type=int, action="store",
+                        default=16, required=False, dest="sim_sh_nside",
+                        help="Healpix nside used to construct simulated spherical harmonic response.")
+    parser.add_argument("--sh-lmax", type=int, action="store", default=8,
+                        required=False, dest="sh_lmax",
+                        help="Maximum ell value to include for spherical harmonic sampler.")
+    parser.add_argument("--sh-nside", type=int, action="store",
+                        default=16, required=False, dest="sh_nside",
+                        help="Healpix nside used to construct spherical harmonic response function.")
+
 
     args = parser.parse_args()
     return args

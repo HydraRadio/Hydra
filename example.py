@@ -38,21 +38,25 @@ if __name__ == '__main__':
     #SAMPLE_VIS = args.sample_vis
     SAMPLE_PTSRC_AMPS = args.sample_ptsrc
     SAMPLE_BEAM = args.sample_beam
+    SAMPLE_SH = args.sample_sh
+    SAMPLE_PSPEC = args.sample_pspec
     CALCULATE_STATS = args.calculate_stats
     SAVE_TIMING_INFO = args.save_timing_info
     PLOTTING = args.plotting
 
     # Print what's switched on
     if myid == 0:
-        print("    Gain sampler:       ", SAMPLE_GAINS)
+        print("    Gain perturbation sampler: ", SAMPLE_GAINS)
         #print("    Vis. sampler:       ", SAMPLE_VIS)
-        print("    Ptsrc. amp. sampler:", SAMPLE_PTSRC_AMPS)
-        print("    Beam sampler:       ", SAMPLE_BEAM)
+        print("    Ptsrc. amplitude sampler:  ", SAMPLE_PTSRC_AMPS)
+        print("    Primary beam sampler:      ", SAMPLE_BEAM)
+        print("    Sph. harmonic sampler:     ", SAMPLE_SH)
 
     # Check that at least one thing is being sampled
-    if not SAMPLE_GAINS and not SAMPLE_PTSRC_AMPS and not SAMPLE_BEAM:
+    if not SAMPLE_GAINS and not SAMPLE_PTSRC_AMPS and not SAMPLE_BEAM \
+       and not SAMPLE_SH:
         raise ValueError("No samplers were enabled. Must enable at least one "
-                         "of 'gains', 'ptsrc', 'beams'.")
+                         "of 'gains', 'ptsrc', 'beams', 'sh'.")
 
 
     ############
@@ -148,8 +152,12 @@ if __name__ == '__main__':
     tchunks = ngrid
 
     # Get frequency/time indices for this worker
-    freq_idxs, time_idxs = freqs_times_for_worker(myid, freqs=freqs, times=times, 
-                                                  fchunks=fchunks, tchunks=tchunks)
+    freq_idxs, time_idxs, worker_map = freqs_times_for_worker(
+                                                  comm=comm, 
+                                                  freqs=freqs, 
+                                                  times=times, 
+                                                  fchunks=fchunks, 
+                                                  tchunks=tchunks)
     freq_chunk = freqs[freq_idxs]
     time_chunk = times[time_idxs]
 
@@ -198,6 +206,16 @@ if __name__ == '__main__':
     ants, ant_pos, antpairs, ants1, ants2 = ant_info
     comm.barrier()
 
+    # Simulate diffuse emission from GSM (assumes fixed ref. frequency for now)
+    # FIXME: Needs to be optional
+    """
+    alm_sim = hydra.sh_sampler.get_alms_from_gsm(freq=100., 
+                                                 lmax=args.sim_sh_lmax, 
+                                                 nside=args.sim_sh_nside)
+    sh_model_chunk = sh_response_chunk @ alm_sim
+    # FIXME: Need to match sh_model_chunk axes to model0_chunk axes
+    assert model0_chunk.shape == sh_model_chunk.shape
+    """
 
     #--------------------------------------------------------------------------
     # Identify calibration source (brightest near beam)
@@ -310,6 +328,8 @@ if __name__ == '__main__':
     # Get initial visibility model guesses (use the actual baseline model for now)
     # This SHOULD NOT include gain factors of any kind
     current_data_model_chunk = model0_chunk.copy()
+    current_data_model_chunk_ptsrc = 0
+    current_data_model_chunk_sh = 0
 
     # Initial gain perturbation guesses
     current_delta_gain = np.zeros_like(delta_g_chunk0)
@@ -330,11 +350,26 @@ if __name__ == '__main__':
     if calsrc:
         amp_prior_std[calsrc_idx] = calsrc_std
 
+    # Spherical harmonic prior mean 
+    # FIXME
+    sh_prior_mean = 0 #np.random.randn(x_true.size)*np.sqrt(prior_cov) + x_true # gaussian centered on alms with S variance 
+    #sh_current = sh_prior_mean.copy()
+    sh_current = sh_prior_mean
+
     # Precompute gain perturbation projection operators
-    A_real, A_imag = hydra.gain_sampler.proj_operator(ants, antpairs)
+    A_real, A_imag = None, None
+    if SAMPLE_GAINS:
+        t0 = time.time()
+        A_real, A_imag = hydra.gain_sampler.proj_operator(ants, antpairs)
+        if myid == 0:
+            status(myid, "Precomp. gain proj. operator took %6.3f sec" \
+                         % (time.time() - t0), 'b')
 
     # Precompute point source projection operator
-    ptsrc_proj = hydra.ptsrc_sampler.calc_proj_operator(
+    ptsrc_proj = None
+    if SAMPLE_PTSRC_AMPS:
+        t0 = time.time()
+        ptsrc_proj = hydra.ptsrc_sampler.calc_proj_operator(
                                           ra=ra, 
                                           dec=dec, 
                                           fluxes=fluxes_chunk, 
@@ -344,6 +379,27 @@ if __name__ == '__main__':
                                           times=time_chunk, 
                                           beams=beams
                                         )
+        if myid == 0:
+            status(myid, "Precomp. ptsrc. proj. operator took %6.3f sec" \
+                         % (time.time() - t0), 'b')
+
+    
+    # Precompute spherical harmonic projection operator
+    sh_response_chunk = None
+    if SAMPLE_SH:
+        t0 = time.time()
+        sh_response_chunk, sh_autos, sh_ell, sh_m \
+                            = vis_proj_operator_no_rot(
+                                            freqs=freq_chunk, 
+                                            lsts=time_chunk, 
+                                            beams=beams, 
+                                            ant_pos=ant_pos, 
+                                            lmax=args.sh_lmax, 
+                                            nside=args.sh_nside,
+                                            latitude=array_latitude)
+        if myid == 0:
+            status(myid, "Precomp. sph. harmonic proj. operator took %6.3f sec" \
+                         % (time.time() - t0), 'b')
 
     # Iterate the Gibbs sampler
     if myid == 0:
@@ -388,7 +444,7 @@ if __name__ == '__main__':
                                                   A_imag=A_imag, 
                                                   model_vis=ggv_chunk, 
                                                   Fbasis=Fbasis, 
-                                                  realisation=True, 
+                                                  realisation=True,
                                                   seed=100000*myid+n)
             if myid == 0:
                 status(None, "Gain sampler construct RHS took %6.3f sec" 
@@ -419,10 +475,11 @@ if __name__ == '__main__':
             xgain = (  1.0*xgain[:xgain.size//2]
                      + 1.j*xgain[xgain.size//2:] ).reshape(delta_g_amps0.shape)
             xgain *= gain_pspec_sqrt[np.newaxis,:]
-            
-            status(myid, "    Example soln:" + str(xgain[1,:3]))
-            status(myid, "    True soln:   " + str(delta_g_amps0[1,:3]))
-            
+
+            # Print solution as sanity check
+            if myid == 0:
+                status(None, "Gain soln:" + str(xgain[1,:3]), 'y')
+                status(None, "True soln:" + str(delta_g_amps0[1,:3]), 'y')
 
             # Save solution as new sample
             if myid == 0:
@@ -432,7 +489,6 @@ if __name__ == '__main__':
 
             # Update current state of gain model
             current_delta_gain = np.tensordot(xgain, Fbasis, axes=((1,), (0,)))
-
 
             comm.barrier()
 
@@ -458,6 +514,11 @@ if __name__ == '__main__':
                                        gain_chunk=gains_chunk * (1. + current_delta_gain),
                                        amp_prior_std=amp_prior_std, 
                                        realisation=True)
+            
+            # FIXME: current_data_model_chunk=current_data_model_chunk
+            # This gets updated each time by this sampler. But we're also conditioning on it?
+            # So x_soln for ptsrcs means somethign different each time
+
             comm.barrier()
             if myid == 0:
                 status(None, "Ptsrc sampler linear system precompute took %6.3f sec" 
@@ -525,14 +586,121 @@ if __name__ == '__main__':
 
             # Update visibility model with latest solution (does not include any gains)
             # Applies projection operator to ptsrc amplitude vector
-            current_data_model_chunk = (  ptsrc_proj.reshape((-1, Nptsrc)) 
-                                     @ (1. + x_soln) ).reshape(current_data_model_chunk.shape)
+            # FIXME: Should gains be applied here?
+            current_data_model_chunk_ptsrc = (  ptsrc_proj.reshape((-1, Nptsrc)) 
+                                           @ (1. + x_soln) ).reshape(current_data_model_chunk.shape)
+            current_data_model_chunk = current_data_model_chunk_ptsrc \
+                                     + current_data_model_chunk_sh
 
+        #---------------------------------------------------------------------------
+        # (C) Spherical harmonic sampler
+        #---------------------------------------------------------------------------
+
+        if SAMPLE_SH:
+
+            if myid == 0:
+                status(None, "Spherical harmonic sampler iteration %d" % n, 'b')
+
+            # Current_data_model DOES NOT include gbar_i gbar_j^* factor, so we need
+            # to apply it here to calculate the residual
+            # NOTE: Only ptsrc model included here
+            ggv_chunk = hydra.apply_gains(current_data_model_chunk_ptsrc,
+                                          gains_chunk,
+                                          ants,
+                                          antpairs,
+                                          inline=False)
+            resid_chunk = data_chunk - ggv_chunk
+
+            # Define left hand side operator
+            # FIXME: Need to make MPI-enabled version of this function
+            sh_lhs_operator = lambda x: hydra.sh_solver.apply_lhs_no_rot( 
+                                                            x, 
+                                                            inv_noise_cov_chunk, 
+                                                            inv_prior_cov, 
+                                                            sh_response_chunk )
+
+            # Generate random maps for the realisations
+            omega_a = np.random.randn(sh_prior_mean.size)
+            omega_n = (  1.0*np.random.randn(model_true.size) 
+                       + 1.j*np.random.randn(model_true.size) ) / np.sqrt(2.)
+            
+
+            # Construct the right hand side
+            # FIXME: Need to make MPI-enabled version
+            sh_rhs = hydra.sh_solver.construct_rhs_no_rot(
+                                           resid_chunk,
+                                           inv_noise_cov_chunk, 
+                                           inv_prior_cov,
+                                           omega_a,
+                                           omega_n,
+                                           sh_prior_mean,
+                                           sh_response_chunk )
+
+            # Build linear operator object 
+            sh_lhs_shape = (sh_rhs.size, sh_rhs.size)
+            hs_lhs_linear_op = LinearOperator(matvec = sh_lhs_operator,
+                                              shape = sh_lhs_shape)
+
+            # Run and time solver
+            t0 = time.time()
+            sh_soln, convergence_info = cg(A=sh_lhs_linear_op,
+                                           b=sh_rhs,
+                                           # tol = 1e-07,
+                                           #maxiter=15000,
+                                           x0=sh_current) # initial guess
+            if myid == 0:
+                status(None, "Sph. harmonic sampler solve took %6.3f sec" \
+                             % (time.time() - t0), 'c')
+
+            # Update visibility model
+            sh_current = sh_soln
+            current_data_model_chunk_sh = sh_response_chunk @ sh_soln
+            current_data_model_chunk = current_data_model_chunk_ptsrc \
+                                     + current_data_model_chunk_sh
+
+
+        #---------------------------------------------------------------------------
+        # (D) 21cm field sampler
+        #---------------------------------------------------------------------------
+
+        """
+        # Set up arrays for sampling
+        signal_cr = np.zeros((Niter, Ntimes, Nfreqs), dtype=complex)
+        signal_S = np.zeros((Niter, Nfreqs, Nfreqs))
+        signal_ps = np.zeros((Niter, Nfreqs))
+        fg_amps = np.zeros((Niter, Ntimes, Nmodes), dtype=complex)
+        # Useful debugging statistics
+        chisq = np.zeros((Niter, Ntimes, Nfreqs))
+        ln_post = np.zeros(Niter)
+
+        # Set initial value for signal_S
+        signal_S = S_initial.copy()
+        """
+
+        if SAMPLE_PSPEC:
+
+            # FIXME: Need to do this for each baseline
+
+            # Do Gibbs iteration
+            signal_cr, signal_S, signal_ps, fg_amps, chisq, ln_post\
+                = gibbs_step_fgmodes(
+                    vis=vis * flags,
+                    flags=flags,
+                    signal_S=signal_S,
+                    fgmodes=fgmodes,
+                    Ninv=Ninv,
+                    ps_prior=ps_prior,
+                    f0=None,
+                    nproc=nproc,
+                    map_estimate=map_estimate,
+                    verbose=verbose
+                )
 
         #---------------------------------------------------------------------------
         # (P) Probability values and importance weights
         #---------------------------------------------------------------------------
         if CALCULATE_STATS:
+            raise NotImplementedError()
             # Calculate importance weights for this Gibbs sample
             # FIXME: Ignores priors for now! They will cancel anyway, unless the
             # prior terms also contain approximations

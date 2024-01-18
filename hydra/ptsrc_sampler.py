@@ -10,34 +10,7 @@ import time
 from .vis_simulator import simulate_vis_per_source
 
 
-def precompute_op(vis_proj_operator, inv_noise_var):
-    """
-    Precompute the real and imaginary blocks of the matrix operator
-    (v^T N^-1 v), which is the most expensive component of the LHS operator of
-    the linear system.
 
-    Parameters:
-        vis_proj_operator (array_like):
-            The projection operator from source amplitudes to visibilities,
-            from `calc_proj_operator`.
-        inv_noise_var (array_like):
-            Inverse noise variance array, with the same shape as the visibility
-            data.
-
-    Returns:
-        vsquared (array_like):
-            The sum of the real and imaginary blocks of the matrix operator
-            (v^T_re N^-1 v_re + v^T_im N^-1 v_im), which has shape
-            (Nsrcs, Nsrcs).
-    """
-    nsrcs = vis_proj_operator.shape[-1]
-    v = vis_proj_operator * np.sqrt(inv_noise_var)[:, :, :, np.newaxis]
-
-    # Treat real and imaginary separately, and get copies, to massively
-    # speed-up the matrix multiplication!
-    v_re = v.reshape((-1, nsrcs)).real.copy()
-    v_im = v.reshape((-1, nsrcs)).imag.copy()
-    return v_re.T @ v_re + v_im.T @ v_im
 
 
 
@@ -67,7 +40,7 @@ def precompute_mpi(comm,
     assert data_chunk.shape == (len(antpairs), freq_chunk.size, time_chunk.size)
     assert data_chunk.shape == inv_noise_var_chunk.shape
     assert data_chunk.shape == current_data_model_chunk.shape
-    proj = proj_chunk
+    proj = proj_chunk.copy() # make a copy so we don't alter the original proj!
 
     # FIXME: Check for unused args!
 
@@ -84,13 +57,13 @@ def precompute_mpi(comm,
     my_linear_op = np.zeros((nsrcs, nsrcs), dtype=proj.real.dtype)
 
     # inv_noise_var has shape (Nbls, Nfreqs, Ntimes)
-    v = proj * np.sqrt(inv_noise_var_chunk[...,np.newaxis])
+    v_re = (proj.real * np.sqrt(inv_noise_var_chunk[...,np.newaxis])).reshape((-1, nsrcs))
+    v_im = (proj.imag * np.sqrt(inv_noise_var_chunk[...,np.newaxis])).reshape(((-1, nsrcs)))
 
     # Treat real and imaginary separately, and get copies, to massively
     # speed-up the matrix multiplication!
-    v_re = v.reshape((-1, nsrcs)).real.copy()
-    v_im = v.reshape((-1, nsrcs)).imag.copy()
     my_linear_op[:,:] = v_re.T @ v_re + v_im.T @ v_im
+    del v_re, v_im
 
     # Do Reduce (sum) operation to get total operator on root node
     linear_op = np.zeros((1,1), dtype=my_linear_op.dtype) # dummy data for non-root workers
@@ -209,6 +182,53 @@ def calc_proj_operator(
         vis_ptsrc[i, :, :, :] = vis[:, :, idx1, idx2, :]
 
     return vis_ptsrc
+
+
+
+def legacy_precompute_op(vis_proj_operator, inv_noise_var):
+    """
+    Precompute the real and imaginary blocks of the matrix operator
+    (v^T N^-1 v), which is the most expensive component of the LHS operator of
+    the linear system.
+
+    Parameters:
+        vis_proj_operator (array_like):
+            The projection operator from source amplitudes to visibilities,
+            from `calc_proj_operator`.
+        inv_noise_var (array_like):
+            Inverse noise variance array, with the same shape as the visibility
+            data.
+
+    Returns:
+        vsquared (array_like):
+            The sum of the real and imaginary blocks of the matrix operator
+            (v^T_re N^-1 v_re + v^T_im N^-1 v_im), which has shape
+            (Nsrcs, Nsrcs).
+
+    Resource usage (iter 00001):
+    Max. RSS (MB):   18707.79
+    User time (sec):  2164.12
+
+    """
+    nsrcs = vis_proj_operator.shape[-1]
+
+    #v = vis_proj_operator * np.sqrt(inv_noise_var)[:, :, :, np.newaxis]
+    # Treat real and imaginary separately, and get copies, to massively
+    # speed-up the matrix multiplication!
+    #v_re = v.reshape((-1, nsrcs)).real.copy()
+    #v_im = v.reshape((-1, nsrcs)).imag.copy()
+    #return v_re.T @ v_re + v_im.T @ v_im
+
+    # Treat real and imaginary separately, and get copies, to massively
+    # speed-up the matrix multiplication!
+    v_re = vis_proj_operator.real * np.sqrt(inv_noise_var)[:, :, :, np.newaxis]
+    y = np.einsum('ji,ik->ik', v_re, v_re)
+    del v_re
+
+    v_im = vis_proj_operator.imag * np.sqrt(inv_noise_var)[:, :, :, np.newaxis]
+    y += np.einsum('ji,ik->ik', v_im, v_im)
+    del v_im
+    return y
 
 
 def legacy_apply_operator(x, amp_prior_std, vsquared):
