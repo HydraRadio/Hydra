@@ -271,9 +271,20 @@ if __name__ == '__main__':
     Nants = len(ants)
 
     # Define gains and gain perturbations
-    gains_chunk = (1. + 0.j) * np.ones((Nants, freq_chunk.size, time_chunk.size), 
+    gains_chunk = (1. + 1.j) * np.ones((Nants, freq_chunk.size, time_chunk.size), 
                                        dtype=model0_chunk.dtype)
     
+    # Make it so that gain amps aren't all the same
+    gain0_level = np.zeros(Nants, dtype=np.complex128)
+    if myid == 0:
+        gain0_level[:] = 0.05 * (np.random.randn(Nants) + 1.j*np.random.randn(Nants))
+    comm.Bcast(gain0_level, root=0)
+    for i in range(Nants):
+        gains_chunk[i] += gain0_level[i]
+    if myid == 0:
+        np.save(os.path.join(output_dir, "sim_gain0_level"), gain0_level)
+    status(myid, gain0_level, 'r')
+
     # Simple prior on gain perturbation modes
     prior_std_delta_g = sim_gain_amp_std * np.ones(Ngain_modes)
 
