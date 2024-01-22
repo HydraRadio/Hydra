@@ -121,6 +121,9 @@ def get_config():
     parser.add_argument("--gain-nmax-time", type=int, action="store", default=2,
                         required=False, dest="gain_nmaxtime",
                         help="Max. Fourier mode index for gain perturbations (time direction).")
+    parser.add_argument("--gain-only-positive-modes", type=bool, action="store", default=False,
+                        required=False, dest="gain_only_positive_modes",
+                        help="Whether to only permit positive wavenumber gain modes.")
 
     # parser.add_argument("--gain-prior-sigma-frate", type=float, action="store", default=None,
     #                     required=False, dest="gain_prior_sigma_frate",

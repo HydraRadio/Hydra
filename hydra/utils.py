@@ -641,15 +641,19 @@ def partial_fourier_basis_2d(freqs, times, nfreq, ntime, Lfreq, Ltime, freq0=Non
 
 
 def partial_fourier_basis_2d_from_nmax(freqs, times, nmaxfreq, nmaxtime, Lfreq, Ltime,
-                                       freq0=None, time0=None, shape0=None):
+                                       freq0=None, time0=None, shape0=None, positive_only=False):
     """
     Convenience function to construct a set of 2D Fourier modes with wavenumbers 
     between -nmax <= 0 < nmax.
     """
     # Make grid of wavenumber values for both frequency and time, in the range 
     # -nmax <= 0 < nmax (matches the modes you get from an FFT for 2*nmax points)
-    _nfreq = np.arange(-nmaxfreq, nmaxfreq)
-    _ntime = np.arange(-nmaxtime, nmaxtime)
+    if positive_only:
+        _nfreq = np.arange(0, nmaxfreq)
+        _ntime = np.arange(0, nmaxtime)
+    else:
+        _nfreq = np.arange(-nmaxfreq, nmaxfreq)
+        _ntime = np.arange(-nmaxtime, nmaxtime)
     nfreq, ntime = np.meshgrid(_nfreq, _ntime)
 
     # Use generic function to construct Fourier basis functions
