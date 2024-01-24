@@ -42,8 +42,8 @@ class sparse_beam(UVBeam):
         self.peak_normalize()
         
         self.az_array = self.axis1_array
-        self.rad_array = np.sqrt(1 - np.cos(self.axis2_array)) / alpha
-        #self.rad_array = np.sqrt(np.cos(self.axis2_array))
+        self.alpha = alpha
+        self.rad_array = self.get_rad_array()
         
         self.az_grid, self.rad_grid = np.meshgrid(self.az_array, self.rad_array)
         self.ncoord = self.az_grid.size
@@ -61,7 +61,54 @@ class sparse_beam(UVBeam):
         
         self.save_fn = save_fn
         self.bess_fits, self.bess_beam = self.get_fits(load=load)
-        self.bess_ps = np.abs(self.bess_fits)**2 
+        self.bess_ps = np.abs(self.bess_fits)**2
+
+    def get_rad_array(self, za_array=None):
+        """
+        Get the radial coordinates corresponding to the zenith angles in 
+        za_array, calculated according to the formula in Hydra Beam Paper I.
+
+        Parameters:
+            za_array (array):
+                The zenith angles in question.
+
+        Returns:
+            rad_array (array):
+                The radial coordinates corresponding to the zenith angles.
+        """
+        if za_array is None:
+            za_array = self.axis2_array
+        rad_array = np.sqrt(1 - np.cos(za_array)) / self.alpha
+        
+        return rad_array
+
+
+    def get_bzeros(self):
+        """
+        Get the zeros of the appropriate Bessel function based on the
+        desired basis specified by the 'bound' attribute, along with the 
+        associated normalization.
+
+        Returns:
+            zeros (array): 
+                The zeros of the appropriate Bessel function
+            norm (array): 
+                The normalization for the Bessel functions so that their L2 norm
+                on the unit disc is 1.
+
+        """
+        if self.bound == "Dirichlet":
+            zeros = jn_zeros(0, self.nmax)
+            norm = jn(1, zeros)
+        else:
+            zeros = jn_zeros(1, self.nmax - 1)
+            norm = jn(2, zeros)
+            
+            zeros = np.append(0, zeros)
+            norm = np.append(1, norm)
+        norm = norm / np.sqrt(2)
+
+        return zeros, norm 
         
         
     def get_dmatr(self):
@@ -79,24 +126,44 @@ class sparse_beam(UVBeam):
                 Has shape (Naz, Nm). Contains the azimuthal information of the
                 design matrix.
         """  
+        zeros, norm = self.get_bzeros()
         
-        if self.bound == "Dirichlet":
-            zeros = jn_zeros(0, self.nmax)
-            orth = jn(1, zeros)
-        else:
-            zeros = jn_zeros(1, self.nmax - 1)
-            orth = jn(2, zeros)
-            
-            zeros = np.append(0, zeros)
-            orth = np.append(1, orth)
-        orth = orth / np.sqrt(2)
         Naz = len(self.az_array)
                 
-        bess_matr = jn(0, zeros[np.newaxis] * self.rad_array[:, np.newaxis]) / orth
+        bess_matr = jn(0, zeros[np.newaxis] * self.rad_array[:, np.newaxis]) / norm
         # Assume a regular az spacing and just make a unitary DFT matrix; better for fitting later
         trig_matr = np.exp(1.0j * np.array(self.mmodes)[np.newaxis] * self.az_array[:, np.newaxis]) / np.sqrt(Naz)
         
         return bess_matr, trig_matr
+    
+    def get_dmatr_interp(self, az_array, za_array):
+        """
+        Get a design matrix specialized for interpolation rather than fitting.
+
+        Parameters:
+            az_array (array):
+                Azimuth angles to evaluate bassis functions at. Does not have to 
+                be on a uniform grid, unlike the fitting design matrix. Should
+                be 1-dimensional (i.e. flattened).
+            za_array (array):
+                Zenith angles to evaluate basis functions at. Should be 
+                1-dimensional (i.e. flattened)
+
+        Returns:
+            dmatr_interp (array, complex):
+                The design matrix in question.
+        """
+        rad_array = self.get_rad_array(za_array)
+        zeros, norm = self.get_bzeros()
+        Naz = len(self.az_array)
+
+        bess_matr = jn(0, zeros[np.newaxis] * rad_array[:, np.newaxis]) / norm
+        # Need to use the same normalization as in the dmatr used for fitting
+        trig_matr = np.exp(2.j * np.pi *  np.array(self.mmodes)[np.newaxis] * az_array[:, np.newaxis]) / np.sqrt(Naz)
+
+        dmatr_interp = bess_matr[:, :, np.newaxis] * trig_matr[:, np.newaxis]
+
+        return dmatr_interp
     
     
     def get_fits(self, load=False):
@@ -222,3 +289,28 @@ class sparse_beam(UVBeam):
                         fit_beam[vec_ind, 0, feed_ind, freq_ind] += np.outer(bess_matr_mmode @ fit_coeffs_mmode, trig_mode)
         
         return fit_coeffs, fit_beam
+    
+    def interp(self, sparse_fit=False, fit_coeffs=None, az_array=None, za_array=None, 
+               interpolation_function=None, freq_interp_kind=None, 
+               freq_array=None, **kwargs):
+        """
+        A very paired down override of UVBeam.interp that more resembles
+        pyuvsim.AnalyticBeam.interp. Any kwarg for UVBeam.interp that is not
+        explicitly listed in this version of interp will do nothing.
+        """
+        if az_array is None:
+            raise ValueError("Must specify an azimuth array.")
+        if za_array is None:
+            raise ValueError("Must specify a zenith-angle array.")
+
+        dmatr_interp = self.get_dmatr_interp(az_array, za_array)
+        if sparse_fit:
+            num_modes = fit_coeffs.shape[-1]
+            nmodes_comp, mmodes_comp = self.get_comp_inds(num_modes)
+            dmatr_interp = dmatr_interp[:, nmodes_comp, mmodes_comp]
+            beam_vals = fit_coeffs @ dmatr_interp.T
+        else:
+            beam_vals = np.tensordot(dmatr_interp.transpose(0, 2, 1), 
+                                     self.fit_coeffs, axes=2).transpose(1, 2, 3, 4, 0)
+            
+        return beam_vals
