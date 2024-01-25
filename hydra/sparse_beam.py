@@ -2,6 +2,7 @@ from pyuvdata import UVBeam
 import numpy as np
 from scipy.special import jn, jn_zeros
 from scipy.linalg import solve, lstsq
+from scipy.interpolate import interp1d
 
 
 class sparse_beam(UVBeam):
@@ -291,12 +292,35 @@ class sparse_beam(UVBeam):
         return fit_coeffs, fit_beam
     
     def interp(self, sparse_fit=False, fit_coeffs=None, az_array=None, za_array=None, 
-               interpolation_function=None, freq_interp_kind=None, 
-               freq_array=None, **kwargs):
+               freq_interp_kind="cubic", freq_array=None, **kwargs):
         """
         A very paired down override of UVBeam.interp that more resembles
         pyuvsim.AnalyticBeam.interp. Any kwarg for UVBeam.interp that is not
         explicitly listed in this version of interp will do nothing.
+
+        Parameters:
+            sparse_fit (bool): 
+                Whether a sparse fit is being supplied. If False (default), just
+                uses the full fit specified at instantiation.
+            fit_coeffs (bool):
+                The sparse fit coefficients being supplied if sparse_fit is 
+                True.
+            az_array (array): 
+                Flattened azimuth angles to interpolate to.
+            za_array (array):
+                Flattened zenith angles to interpolate to.
+            freq_interp_kind (str):
+                Type of spline to use for frequency interpolation. 
+                Default is cubic.
+            freq_array (array):
+                Frequencies to interpolate to. If None, skips frequency
+                interpolation.
+
+        Returns:
+            beam_vals (array, complex):
+                The values of the beam at the interpolated 
+                frequencies/spatial positions. Has shape 
+                (Naxes_vec, 1, Npols, Nfreqs, Npos).
         """
         if az_array is None:
             raise ValueError("Must specify an azimuth array.")
@@ -304,13 +328,23 @@ class sparse_beam(UVBeam):
             raise ValueError("Must specify a zenith-angle array.")
 
         dmatr_interp = self.get_dmatr_interp(az_array, za_array)
+
+        if freq_array is not None:
+            fit_coeffs_copy = np.copy(fit_coeffs) if sparse_fit else np.copy(self.fit_coeffs)
+            axis = 3 if sparse_fit else 5
+            freq_interp_func = interp1d(self.freq_array, fit_coeffs_copy, 
+                                        kind=freq_interp_kind, axis=axis)
+            fit_coeffs_use = freq_interp_func(freq_array)
+        else:
+            fit_coeffs_use = self.fit_coeffs
+        
         if sparse_fit:
-            num_modes = fit_coeffs.shape[-1]
+            num_modes = fit_coeffs_use.shape[-1]
             nmodes_comp, mmodes_comp = self.get_comp_inds(num_modes)
             dmatr_interp = dmatr_interp[:, nmodes_comp, mmodes_comp]
-            beam_vals = fit_coeffs @ dmatr_interp.T
+            beam_vals = fit_coeffs_use @ dmatr_interp.T
         else:
             beam_vals = np.tensordot(dmatr_interp.transpose(0, 2, 1), 
-                                     self.fit_coeffs, axes=2).transpose(1, 2, 3, 4, 0)
+                                     fit_coeffs_use, axes=2).transpose(1, 2, 3, 4, 0)
             
         return beam_vals
