@@ -151,8 +151,10 @@ class sparse_beam(UVBeam):
                 1-dimensional (i.e. flattened)
 
         Returns:
-            dmatr_interp (array, complex):
-                The design matrix in question.
+            bess_matr (array):
+                The Bessel part of the design matrix.
+            trig_matr (array, complex):
+                The Fourier part of the design matrix.
         """
         rad_array = self.get_rad_array(za_array)
         zeros, norm = self.get_bzeros()
@@ -162,9 +164,7 @@ class sparse_beam(UVBeam):
         # Need to use the same normalization as in the dmatr used for fitting
         trig_matr = np.exp(2.j * np.pi *  np.array(self.mmodes)[np.newaxis] * az_array[:, np.newaxis]) / np.sqrt(Naz)
 
-        dmatr_interp = bess_matr[:, :, np.newaxis] * trig_matr[:, np.newaxis]
-
-        return dmatr_interp
+        return bess_matr, trig_matr
     
     
     def get_fits(self, load=False):
@@ -286,13 +286,14 @@ class sparse_beam(UVBeam):
 
                         fit_coeffs_mmode = lstsq(bess_matr_mmode, az_fit_mmode)[0]
 
+                        # FIXME: This wraps the coefficients in a crazy order
                         fit_coeffs[vec_ind, 0, feed_ind, freq_ind, mmode_inds] = fit_coeffs_mmode
                         fit_beam[vec_ind, 0, feed_ind, freq_ind] += np.outer(bess_matr_mmode @ fit_coeffs_mmode, trig_mode)
         
         return fit_coeffs, fit_beam
     
-    def interp(self, sparse_fit=False, fit_coeffs=None, az_array=None, za_array=None, 
-               freq_interp_kind="cubic", freq_array=None, **kwargs):
+    def interp(self, sparse_fit=False, fit_coeffs=None, az_array=None, 
+               za_array=None, **kwargs):
         """
         A very paired down override of UVBeam.interp that more resembles
         pyuvsim.AnalyticBeam.interp. Any kwarg for UVBeam.interp that is not
@@ -309,12 +310,6 @@ class sparse_beam(UVBeam):
                 Flattened azimuth angles to interpolate to.
             za_array (array):
                 Flattened zenith angles to interpolate to.
-            freq_interp_kind (str):
-                Type of spline to use for frequency interpolation. 
-                Default is cubic.
-            freq_array (array):
-                Frequencies to interpolate to. If None, skips frequency
-                interpolation.
 
         Returns:
             beam_vals (array, complex):
@@ -327,21 +322,26 @@ class sparse_beam(UVBeam):
         if za_array is None:
             raise ValueError("Must specify a zenith-angle array.")
 
-        dmatr_interp = self.get_dmatr_interp(az_array, za_array)
-        fit_coeffs_use = np.copy(fit_coeffs) if sparse_fit else np.copy(self.bess_fits) 
-        if freq_array is not None:
-            axis = 3 if sparse_fit else 5
-            freq_interp_func = interp1d(self.freq_array, fit_coeffs_use, 
-                                        kind=freq_interp_kind, axis=axis)
-            fit_coeffs_use = freq_interp_func(freq_array)
-
-        
+        bess_matr, trig_matr = self.get_dmatr_interp(az_array, za_array)
+        Npos = len(az_array)
         if sparse_fit:
-            num_modes = fit_coeffs_use.shape[-1]
+            beam_vals = np.zeros([self.Naxes_vec, 
+                                  1, 
+                                  self.Nfeeds, 
+                                  self.Nfreqs, 
+                                  Npos],
+                                  dtype=complex)
+            num_modes = fit_coeffs.shape[-1]
             nmodes_comp, mmodes_comp = self.get_comp_inds(num_modes)
-            dmatr_interp = dmatr_interp[:, nmodes_comp, mmodes_comp].transpose(0, 2, 3, 4, 5, 1)
-            beam_vals = (fit_coeffs_use * dmatr_interp).sum(axis=-1).transpose(1, 2, 3, 4, 0)
+            for vec_ind in range(self.Naxes_vec):
+                for feed_ind in range(self.Nfeeds):
+                    for freq_ind in range(self.Nfreqs):
+                        for mode_ind in range(num_modes):
+                            nmode = nmodes_comp[mode_ind, vec_ind, 0, feed_ind, freq_ind]
+                            mmode = mmodes_comp[mode_ind, vec_ind, 0, feed_ind, freq_ind]
+                            beam_vals[vec_ind, 0, feed_ind, freq_ind] += bess_matr[:, nmode] * trig_matr[:, mmode] * fit_coeffs[vec_ind, 0, feed_ind, freq_ind, mode_ind]
         else:
+            fit_coeffs_use = self.bess_fits
             beam_vals = np.tensordot(dmatr_interp.transpose(0, 2, 1), 
                                      fit_coeffs_use, axes=2).transpose(1, 2, 3, 4, 0)
             
