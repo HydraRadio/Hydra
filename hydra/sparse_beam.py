@@ -328,21 +328,19 @@ class sparse_beam(UVBeam):
             raise ValueError("Must specify a zenith-angle array.")
 
         dmatr_interp = self.get_dmatr_interp(az_array, za_array)
-
+        fit_coeffs_use = np.copy(fit_coeffs) if sparse_fit else np.copy(self.bess_fits) 
         if freq_array is not None:
-            fit_coeffs_copy = np.copy(fit_coeffs) if sparse_fit else np.copy(self.fit_coeffs)
             axis = 3 if sparse_fit else 5
-            freq_interp_func = interp1d(self.freq_array, fit_coeffs_copy, 
+            freq_interp_func = interp1d(self.freq_array, fit_coeffs_use, 
                                         kind=freq_interp_kind, axis=axis)
             fit_coeffs_use = freq_interp_func(freq_array)
-        else:
-            fit_coeffs_use = self.fit_coeffs
+
         
         if sparse_fit:
             num_modes = fit_coeffs_use.shape[-1]
             nmodes_comp, mmodes_comp = self.get_comp_inds(num_modes)
-            dmatr_interp = dmatr_interp[:, nmodes_comp, mmodes_comp]
-            beam_vals = fit_coeffs_use @ dmatr_interp.T
+            dmatr_interp = dmatr_interp[:, nmodes_comp, mmodes_comp].transpose(0, 2, 3, 4, 5, 1)
+            beam_vals = (fit_coeffs_use * dmatr_interp).sum(axis=-1).transpose(1, 2, 3, 4, 0)
         else:
             beam_vals = np.tensordot(dmatr_interp.transpose(0, 2, 1), 
                                      fit_coeffs_use, axes=2).transpose(1, 2, 3, 4, 0)
