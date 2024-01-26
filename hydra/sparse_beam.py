@@ -162,7 +162,7 @@ class sparse_beam(UVBeam):
 
         bess_matr = jn(0, zeros[np.newaxis] * rad_array[:, np.newaxis]) / norm
         # Need to use the same normalization as in the dmatr used for fitting
-        trig_matr = np.exp(2.j * np.pi *  np.array(self.mmodes)[np.newaxis] * az_array[:, np.newaxis]) / np.sqrt(Naz)
+        trig_matr = np.exp(1.j *  np.array(self.mmodes)[np.newaxis] * az_array[:, np.newaxis]) / np.sqrt(Naz)
 
         return bess_matr, trig_matr
     
@@ -262,14 +262,62 @@ class sparse_beam(UVBeam):
         nmodes_comp, mmodes_comp = self.get_comp_inds(num_modes=num_modes)
         num_modes = nmodes_comp.shape[0]
 
+        
+        fit_coeffs, fit_beam = self.sparse_fit_loop(num_modes, nmodes_comp, mmodes_comp)
+        
+        return fit_coeffs, fit_beam
+
+    def sparse_fit_loop(self, num_modes, nmodes_comp, mmodes_comp, 
+                        fit_coeffs=None, do_fit=True, bess_matr=None,
+                        trig_matr=None):
+        """
+        Do a loop over all the axes and fit/evaluate fit in position space.
+
+        Parameters:
+            num_modes (int): 
+                Number of modes in the sparse fit.
+            nmodes_comp (array of int):
+                Which nmodes are being used in the sparse fit 
+                (output of get_comp_inds method).
+            mmodes_comp (array_of_int):
+                Which mmodes are being used in the sparse fit 
+                (output of get_comp_inds method).
+            fit_coeffs (array, complex):
+                Precomputed fit coefficients (if just evaluating).
+            do_fit (bool):
+                Whether to do the fit (set to False if fit_coeffs supplied).
+            bess_matr (array):
+                Bessel part of design matrix.
+            trig_matr (array, complex):
+                Fourier part of design matrix.
+        
+        Returns:
+            fit_coeffs (array, complex; if do_fit is True):
+                The newly calculated fit coefficients in the sparse basis.
+            fit_beam (array, complex):
+                The sparsely fit beam evaluated in position space.
+        """
         # nmodes might vary from pol to pol, freq to freq. The fit is fast, just do a big for loop.
-        fit_coeffs = np.zeros([self.Naxes_vec, 1, self.Nfeeds, self.Nfreqs, 
-                              num_modes], dtype=complex)
-        fit_beam = np.zeros_like(self.data_array)
+        interp_kwargs = [bess_matr, trig_matr, fit_coeffs]
+        if do_fit:
+            fit_coeffs = np.zeros([self.Naxes_vec, 1, self.Nfeeds, self.Nfreqs, 
+                                  num_modes], dtype=complex)
+            beam_shape = self.data_array.shape
+            bess_matr = self.bess_matr
+            trig_matr = self.trig_matr
+        elif any([item is None for item in interp_kwargs]):
+            raise ValueError("Must supply fit_coeffs, bess_matr, and trig_matr "
+                             "if not doing fit.")
+        else:
+            Npos = bess_matr.shape[0]
+            beam_shape = (self.Naxes_vec, 1, self.Nfeeds, self.Nfreqs, Npos)
+        fit_beam = np.zeros(beam_shape, dtype=complex)
+        
         for vec_ind in range(self.Naxes_vec):
             for feed_ind in range(self.Nfeeds):
                 for freq_ind in range(self.Nfreqs):
-                    dat_iter = self.data_array[vec_ind, 0, feed_ind, freq_ind]
+                    if do_fit:
+                        dat_iter = self.data_array[vec_ind, 0, feed_ind, freq_ind]
                     nmodes_iter = nmodes_comp[:, vec_ind, 0, feed_ind, freq_ind]
                     mmodes_iter = mmodes_comp[:, vec_ind, 0, feed_ind, freq_ind]
                     unique_mmodes_iter = np.unique(mmodes_iter)
@@ -279,18 +327,23 @@ class sparse_beam(UVBeam):
                         # Get the nmodes that this mmode is used for
                         nmodes_mmode = nmodes_iter[mmode_inds] 
 
-                        bess_matr_mmode = self.bess_matr[:, nmodes_mmode]
-                        trig_mode = self.trig_matr[:, mmode]
+                        bess_matr_mmode = bess_matr[:, nmodes_mmode]
+                        trig_mode = trig_matr[:, mmode]
 
-                        az_fit_mmode = dat_iter @ trig_mode.conj() # Nza
+                        if do_fit:
+                            az_fit_mmode = dat_iter @ trig_mode.conj() # Nza
 
-                        fit_coeffs_mmode = lstsq(bess_matr_mmode, az_fit_mmode)[0]
-
-                        # FIXME: This wraps the coefficients in a crazy order
-                        fit_coeffs[vec_ind, 0, feed_ind, freq_ind, mmode_inds] = fit_coeffs_mmode
-                        fit_beam[vec_ind, 0, feed_ind, freq_ind] += np.outer(bess_matr_mmode @ fit_coeffs_mmode, trig_mode)
-        
-        return fit_coeffs, fit_beam
+                            fit_coeffs_mmode = lstsq(bess_matr_mmode, az_fit_mmode)[0]
+                            fit_coeffs[vec_ind, 0, feed_ind, freq_ind, mmode_inds] = fit_coeffs_mmode
+                            fit_beam[vec_ind, 0, feed_ind, freq_ind] += np.outer(bess_matr_mmode @ fit_coeffs_mmode, trig_mode)
+                        else:
+                            fit_coeffs_mmode = fit_coeffs[vec_ind, 0, feed_ind, freq_ind, mmode_inds]
+                            fit_beam[vec_ind, 0, feed_ind, freq_ind] += (bess_matr_mmode @ fit_coeffs_mmode) * trig_mode
+                        
+        if do_fit:
+            return fit_coeffs,fit_beam
+        else:
+            return fit_beam
     
     def interp(self, sparse_fit=False, fit_coeffs=None, az_array=None, 
                za_array=None, **kwargs):
@@ -323,26 +376,15 @@ class sparse_beam(UVBeam):
             raise ValueError("Must specify a zenith-angle array.")
 
         bess_matr, trig_matr = self.get_dmatr_interp(az_array, za_array)
-        Npos = len(az_array)
         if sparse_fit:
-            beam_vals = np.zeros([self.Naxes_vec, 
-                                  1, 
-                                  self.Nfeeds, 
-                                  self.Nfreqs, 
-                                  Npos],
-                                  dtype=complex)
             num_modes = fit_coeffs.shape[-1]
             nmodes_comp, mmodes_comp = self.get_comp_inds(num_modes)
-            for vec_ind in range(self.Naxes_vec):
-                for feed_ind in range(self.Nfeeds):
-                    for freq_ind in range(self.Nfreqs):
-                        for mode_ind in range(num_modes):
-                            nmode = nmodes_comp[mode_ind, vec_ind, 0, feed_ind, freq_ind]
-                            mmode = mmodes_comp[mode_ind, vec_ind, 0, feed_ind, freq_ind]
-                            beam_vals[vec_ind, 0, feed_ind, freq_ind] += bess_matr[:, nmode] * trig_matr[:, mmode] * fit_coeffs[vec_ind, 0, feed_ind, freq_ind, mode_ind]
+            print("Getting beam_vals")
+            beam_vals = self.sparse_fit_loop(num_modes, nmodes_comp, 
+                                             mmodes_comp, fit_coeffs=fit_coeffs,
+                                             do_fit=False, bess_matr=bess_matr,
+                                             trig_matr=trig_matr)
         else:
-            fit_coeffs_use = self.bess_fits
-            beam_vals = np.tensordot(dmatr_interp.transpose(0, 2, 1), 
-                                     fit_coeffs_use, axes=2).transpose(1, 2, 3, 4, 0)
+            beam_vals = np.tensordot(trig_matr[:, :, np.newaxis] * bess_matr[:, np.newaxis], self.bess_fits, axes=2).transpose(1, 2, 3, 4, 0)
             
         return beam_vals
