@@ -385,6 +385,6 @@ class sparse_beam(UVBeam):
                                              do_fit=False, bess_matr=bess_matr,
                                              trig_matr=trig_matr)
         else:
-            beam_vals = np.tensordot(trig_matr[:, :, np.newaxis] * bess_matr[:, np.newaxis], self.bess_fits, axes=2).transpose(1, 2, 3, 4, 0)
+            beam_vals = np.tensordot(trig_matr[:, np.newaxis] * bess_matr[:, :, np.newaxis], self.bess_fits, axes=2).transpose(1, 2, 3, 4, 0)
             
         return beam_vals
