@@ -3,6 +3,7 @@ import numpy as np
 from scipy.special import jn, jn_zeros
 from scipy.linalg import solve, lstsq
 from scipy.interpolate import interp1d
+import hashlib
 
 
 class sparse_beam(UVBeam):
@@ -63,6 +64,11 @@ class sparse_beam(UVBeam):
         self.save_fn = save_fn
         self.bess_fits, self.bess_beam = self.get_fits(load=load)
         self.bess_ps = np.abs(self.bess_fits)**2
+
+        self.az_array_dict = {}
+        self.za_array_dict = {}
+        self.trig_matr_interp_dict = {}
+        self.bess_matr_interp_dict = {}
 
     def get_rad_array(self, za_array=None):
         """
@@ -346,7 +352,7 @@ class sparse_beam(UVBeam):
             return fit_beam
     
     def interp(self, sparse_fit=False, fit_coeffs=None, az_array=None, 
-               za_array=None, **kwargs):
+               za_array=None, reuse_spline=False, **kwargs):
         """
         A very paired down override of UVBeam.interp that more resembles
         pyuvsim.AnalyticBeam.interp. Any kwarg for UVBeam.interp that is not
@@ -363,6 +369,9 @@ class sparse_beam(UVBeam):
                 Flattened azimuth angles to interpolate to.
             za_array (array):
                 Flattened zenith angles to interpolate to.
+            reuse_spline (array):
+                Whether to reuse the design matrix for a particular az_array and
+                za_array (named to keep consistency with UVBeam).
 
         Returns:
             beam_vals (array, complex):
@@ -374,8 +383,20 @@ class sparse_beam(UVBeam):
             raise ValueError("Must specify an azimuth array.")
         if za_array is None:
             raise ValueError("Must specify a zenith-angle array.")
-
-        bess_matr, trig_matr = self.get_dmatr_interp(az_array, za_array)
+        
+        if reuse_spline:
+            az_hash = hashlib.sha1(az_array).hexdigest()
+            za_hash = hashlib.sha1(za_array).hexdigest()
+            if (az_hash in self.az_array_dict) and (za_hash in self.za_array_dict):
+                trig_matr = self.trig_matr_interp_dict[az_hash]
+                bess_matr = self.bess_matr_interp_dict[za_hash]
+            else:
+                self.az_array_dict[az_hash] = az_array
+                self.za_array_dict[za_hash] = za_array
+                bess_matr, trig_matr = self.get_dmatr_interp(az_array, za_array)
+                self.trig_matr_interp_dict[az_hash] = trig_matr
+                self.bess_matr_interp_dict[za_hash] = bess_matr
+        
         if sparse_fit:
             num_modes = fit_coeffs.shape[-1]
             nmodes_comp, mmodes_comp = self.get_comp_inds(num_modes)
