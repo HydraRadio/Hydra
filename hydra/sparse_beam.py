@@ -9,7 +9,7 @@ import hashlib
 class sparse_beam(UVBeam):
     
     def __init__(self, filename, nmax, mmodes, za_range=(0, 90), save_fn='', 
-                 load=False, bound="Dirichlet", 
+                 load=False, bound="Dirichlet", Nfeeds=None,
                  alpha=np.sqrt(1 - np.cos(46 * np.pi / 90)), **kwargs):
         """
         Construct the sparse_beam instance, which is a subclass of UVBeam
@@ -70,6 +70,10 @@ class sparse_beam(UVBeam):
         self.trig_matr_interp_dict = {}
         self.bess_matr_interp_dict = {}
         self.bt_matr_interp_dict = {}
+
+        if Nfeeds is not None:         # power beam may not have the Nfeeds set
+            assert self.Nfeeds is None, "Nfeeds already set on the beam"
+            self.Nfeeds = Nfeeds
 
     def get_rad_array(self, za_array=None):
         """
@@ -389,6 +393,11 @@ class sparse_beam(UVBeam):
                 frequencies/spatial positions. Has shape 
                 (Naxes_vec, 1, Npols, Nfreqs, Npos).
         """
+        if az_array is None and za_array is None and freq_array is not None:
+            # vis_cpu wants to get a new object with frequency freq_array. No can do. Return the whole thing.
+            # FIXME: Can make a new_sparse_beam_from_self method to accomplish this
+            return self
+    
         if az_array is None:
             raise ValueError("Must specify an azimuth array.")
         if za_array is None:
@@ -431,5 +440,14 @@ class sparse_beam(UVBeam):
                                              trig_matr=trig_matr)
         else:
             beam_vals = np.tensordot(bt_matr, bess_fits, axes=2).transpose(1, 2, 3, 4, 0)
+        if self.beam_type == "power":
+            # FIXME: This assumes you are reading in a power beam and is just to get rid of the imaginary component
+            beam_vals = np.abs(beam_vals)
             
-        return beam_vals
+        return beam_vals, None
+    
+    def efield_to_power(*args, **kwargs):
+        raise NotImplementedError("efield_to_power is not implemented yet.")
+    
+    def efield_to_pstokes(*args, **kwargs):
+        raise NotImplementedError("efield_to_pstokes is not implemented yet.")
