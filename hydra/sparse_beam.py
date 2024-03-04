@@ -69,6 +69,7 @@ class sparse_beam(UVBeam):
         self.za_array_dict = {}
         self.trig_matr_interp_dict = {}
         self.bess_matr_interp_dict = {}
+        self.bt_matr_interp_dict = {}
 
     def get_rad_array(self, za_array=None):
         """
@@ -352,7 +353,9 @@ class sparse_beam(UVBeam):
             return fit_beam
     
     def interp(self, sparse_fit=False, fit_coeffs=None, az_array=None, 
-               za_array=None, reuse_spline=False, **kwargs):
+               za_array=None, reuse_spline=False, freq_array=None,
+               freq_interp_kind="cubic",
+               **kwargs):
         """
         A very paired down override of UVBeam.interp that more resembles
         pyuvsim.AnalyticBeam.interp. Any kwarg for UVBeam.interp that is not
@@ -369,9 +372,16 @@ class sparse_beam(UVBeam):
                 Flattened azimuth angles to interpolate to.
             za_array (array):
                 Flattened zenith angles to interpolate to.
-            reuse_spline (array):
-                Whether to reuse the design matrix for a particular az_array and
-                za_array (named to keep consistency with UVBeam).
+            reuse_spline (bool):
+                Whether to reuse the spatial design matrix for a particular 
+                az_array and za_array (named to keep consistency with UVBeam).
+            freq_array (array):
+                Frequencies to interpolate to. If None (default), just computes
+                the beam at all frequencies in self.freq_array.
+            freq_interp_kind (str or int):
+                Type of frequency interpolation function to use. Default is a
+                cubic spline. See scipy.interpolate.interp1d 'kind' keyword
+                documentation for other options.
 
         Returns:
             beam_vals (array, complex):
@@ -390,22 +400,36 @@ class sparse_beam(UVBeam):
             if (az_hash in self.az_array_dict) and (za_hash in self.za_array_dict):
                 trig_matr = self.trig_matr_interp_dict[az_hash]
                 bess_matr = self.bess_matr_interp_dict[za_hash]
+                bt_matr = self.bt_matr_interp_dict[(az_hash, za_hash)]
             else:
                 self.az_array_dict[az_hash] = az_array
                 self.za_array_dict[za_hash] = za_array
+    
                 bess_matr, trig_matr = self.get_dmatr_interp(az_array, za_array)
+                bt_matr = trig_matr[:, np.newaxis] * bess_matr[:, :, np.newaxis]
+                
                 self.trig_matr_interp_dict[az_hash] = trig_matr
                 self.bess_matr_interp_dict[za_hash] = bess_matr
+                self.bt_matr_interp_dict[(az_hash, za_hash)] = bt_matr
+        
+        if freq_array is None:
+            bess_fits = self.bess_fits
+        else:
+            bess_fits_interp = interp1d(self.freq_array, self.bess_fits, axis=4,
+                                        kind=freq_interp_kind)
+            bess_fits = bess_fits_interp(freq_array)
         
         if sparse_fit:
+            if freq_array is not None:
+                raise NotImplementedError("Frequency interpolation is not "
+                                          "implemented for sparse_fit=True.")
             num_modes = fit_coeffs.shape[-1]
             nmodes_comp, mmodes_comp = self.get_comp_inds(num_modes)
-            print("Getting beam_vals")
             beam_vals = self.sparse_fit_loop(num_modes, nmodes_comp, 
                                              mmodes_comp, fit_coeffs=fit_coeffs,
                                              do_fit=False, bess_matr=bess_matr,
                                              trig_matr=trig_matr)
         else:
-            beam_vals = np.tensordot(trig_matr[:, np.newaxis] * bess_matr[:, :, np.newaxis], self.bess_fits, axes=2).transpose(1, 2, 3, 4, 0)
+            beam_vals = np.tensordot(bt_matr, bess_fits, axes=2).transpose(1, 2, 3, 4, 0)
             
         return beam_vals
