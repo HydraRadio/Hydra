@@ -420,11 +420,14 @@ class sparse_beam(UVBeam):
                 self.trig_matr_interp_dict[az_hash] = trig_matr
                 self.bess_matr_interp_dict[za_hash] = bess_matr
                 self.bt_matr_interp_dict[(az_hash, za_hash)] = bt_matr
+        else:
+            bess_matr, trig_matr = self.get_dmatr_interp(az_array, za_array)
+            bt_matr = trig_matr[:, np.newaxis] * bess_matr[:, :, np.newaxis]
         
         if freq_array is None:
             bess_fits = self.bess_fits
         else:
-            freq_array = np.atleast1d(freq_array)
+            freq_array = np.atleast_1d(freq_array)
             assert freq_array.ndim == 1, "Freq array for interp must be exactly 1d"
             
             # FIXME: More explicit and complete future_array_shapes compatibility throughout code base desired
@@ -432,7 +435,7 @@ class sparse_beam(UVBeam):
                 freq_array_knots = self.freq_array[0]
             else:
                 freq_array_knots = self.freq_array
-            bess_fits_interp = interp1d(freq_array_knots, self.bess_fits, axis=4,
+            bess_fits_interp = interp1d(freq_array_knots, self.bess_fits, axis=5,
                                         kind=freq_interp_kind)
             bess_fits = bess_fits_interp(freq_array)
         
