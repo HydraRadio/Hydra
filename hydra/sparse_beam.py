@@ -424,7 +424,15 @@ class sparse_beam(UVBeam):
         if freq_array is None:
             bess_fits = self.bess_fits
         else:
-            bess_fits_interp = interp1d(self.freq_array, self.bess_fits, axis=4,
+            freq_array = np.atleast1d(freq_array)
+            assert freq_array.ndim == 1, "Freq array for interp must be exactly 1d"
+            
+            # FIXME: More explicit and complete future_array_shapes compatibility throughout code base desired
+            if self.freq_array.ndim > 1:
+                freq_array_knots = self.freq_array[0]
+            else:
+                freq_array_knots = self.freq_array
+            bess_fits_interp = interp1d(freq_array_knots, self.bess_fits, axis=4,
                                         kind=freq_interp_kind)
             bess_fits = bess_fits_interp(freq_array)
         
