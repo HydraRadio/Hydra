@@ -251,6 +251,58 @@ def select_subarr(arr, ant_samp_ind, Nants):
     return subarr
 
 
+def get_bess_outer(bess_matr):
+
+    return bess_matr[:, :, np.newaxis] * bess_matr.conj()[:, :, :, np.newaxis]
+
+def get_bess_sky_contraction(bess_outer, ants, fluxes, ra, dec, freqs, lsts,
+                             polarized=False, 
+                             precision=1, latitude=-30.7215 * np.pi / 180.0, 
+                             use_feed="x", multiprocess=True):
+    
+    Npol = 2 if polarized else 1
+    Nfreqs = len(freqs)
+    Ncoeff = bess_matr.shape[-1]
+    Ntimes = len(lsts)
+    Nants = len(ants)
+    contract_shape = [Npol, Npol, Nfreqs, Ntimes, Nants, Nants, Ncoeff, Ncoeff]
+    
+    # tsb,qQftaAs,tsB -> qQftaAbB
+    # inner loop is already over frequency, so just loop over that to save mem
+    bess_sky_contraction = np.zeros(contract_shape, dtype=complex)
+    for freq_ind, freq in enumerate(freqs):
+        #FIXME: can do away with freq loop if we use sparse_beam here but it needs to be rewritten
+        beams = [AnalyticBeam("uniform") for ant_ind in range(len(ants))] 
+        sky_amp_phase = simulate_vis_per_source(ants, fluxes, ra, dec, [freq, ], lsts,
+                                                beams=beams, polarized=polarized,
+                                                precision=precision,
+                                                latitude=latitude,
+                                                use_feed=use_feed,
+                                                multiprocess=multiprocess)
+        
+        if not polarized:
+            sky_amp_phase = sky_amp_phase[np.newaxis, np.newaxis, :]
+
+        bess_sky_contraction[:, :, freq_ind] = np.einsum("tsbB,qQftaAs->qQftaAbB",
+                                                         bess_outer,
+                                                         sky_amp_phase,
+                                                         optimize=True)
+
+    return bess_sky_contraction
+
+def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
+                                     ant_samp_ind):
+    Nants = len(ants)
+    ant_inds = get_ant_inds(ant_samp_ind, nants)
+    beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds] # bfApQ -> ApfbQ
+    bess_trans = np.einsum("ApfbQ,qQftAbB->pqftAB", 
+                           beam_res, 
+                           sky_amp_phase[:, :, :, :, ant_samp_ind, ant_inds],
+                           optimize=True)
+    
+    return bess_trans
+
+
 def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
                     beam_coeffs, ant_samp_ind, polarized=False, precision=1,
                     latitude=-30.7215 * np.pi / 180.0, use_feed="x",
