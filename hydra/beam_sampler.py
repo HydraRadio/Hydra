@@ -262,7 +262,7 @@ def get_bess_sky_contraction(bess_outer, ants, fluxes, ra, dec, freqs, lsts,
     
     Npol = 2 if polarized else 1
     Nfreqs = len(freqs)
-    Ncoeff = bess_matr.shape[-1]
+    Ncoeff = bess_outer.shape[-1]
     Ntimes = len(lsts)
     Nants = len(ants)
     contract_shape = [Npol, Npol, Nfreqs, Ntimes, Nants, Nants, Ncoeff, Ncoeff]
@@ -270,9 +270,9 @@ def get_bess_sky_contraction(bess_outer, ants, fluxes, ra, dec, freqs, lsts,
     # tsb,qQftaAs,tsB -> qQftaAbB
     # inner loop is already over frequency, so just loop over that to save mem
     bess_sky_contraction = np.zeros(contract_shape, dtype=complex)
+    beams = [AnalyticBeam("uniform") for ant_ind in range(len(ants))] 
     for freq_ind, freq in enumerate(freqs):
         #FIXME: can do away with freq loop if we use sparse_beam here but it needs to be rewritten
-        beams = [AnalyticBeam("uniform") for ant_ind in range(len(ants))] 
         sky_amp_phase = simulate_vis_per_source(ants, fluxes, ra, dec, [freq, ], lsts,
                                                 beams=beams, polarized=polarized,
                                                 precision=precision,
@@ -293,11 +293,11 @@ def get_bess_sky_contraction(bess_outer, ants, fluxes, ra, dec, freqs, lsts,
 def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
                                      ant_samp_ind):
     Nants = len(ants)
-    ant_inds = get_ant_inds(ant_samp_ind, nants)
+    ant_inds = get_ant_inds(ant_samp_ind, Nants)
     beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds] # bfApQ -> ApfbQ
     bess_trans = np.einsum("ApfbQ,qQftAbB->pqftAB", 
                            beam_res, 
-                           sky_amp_phase[:, :, :, :, ant_samp_ind, ant_inds],
+                           bess_sky_contraction[:, :, :, :, ant_samp_ind, ant_inds],
                            optimize=True)
     
     return bess_trans
