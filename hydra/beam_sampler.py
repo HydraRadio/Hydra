@@ -134,7 +134,8 @@ def get_bess_matr(nmodes, mmodes, rho, phi):
     return bess_matr
 
 
-def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False):
+def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
+                     force_spw_index=False):
     """
     Get the best fit Fourier-Bessel coefficients for a beam based on its value at a
     a set direction cosines. A least-squares algorithm is used to perform the
@@ -178,13 +179,14 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False):
     rhs_full = beam.interp(az_array=phi.flatten(),
                            za_array=np.arccos(1 - rho**2).flatten(),
                            freq_array=freqs)[0]
+    
     if polarized:
-        if spw_axis_present:
+        if spw_axis_present or force_spw_index:
             rhs = rhs_full[:, 0] # Will have shape Nfeed, Naxes_vec, Nfreq, Nrho * Nphi
         else:
             rhs = rhs_full
     else:
-        if spw_axis_present:
+        if spw_axis_present or force_spw_index:
             rhs = rhs_full[1:, 0, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
         else:
             rhs = rhs_full[1:, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
@@ -193,7 +195,7 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False):
 
     # Loop over frequencies
     Nfreqs = len(freqs)
-    fit_beam = np.zeros((Nfreqs, ncoeff, Npol, Npol))
+    fit_beam = np.zeros((Nfreqs, ncoeff, Npol, Npol), dtype=complex)
 
     BT = (bess_matr.conj())
     lhs_op = np.tensordot(BT, bess_matr, axes=((0, 1), (0, 1)))
@@ -271,22 +273,28 @@ def get_bess_sky_contraction(bess_outer, ants, fluxes, ra, dec, freqs, lsts,
     # inner loop is already over frequency, so just loop over that to save mem
     bess_sky_contraction = np.zeros(contract_shape, dtype=complex)
     beams = [AnalyticBeam("uniform") for ant_ind in range(len(ants))] 
-    for freq_ind, freq in enumerate(freqs):
+    
+    #for freq_ind, freq in enumerate(freqs):
+        
         #FIXME: can do away with freq loop if we use sparse_beam here but it needs to be rewritten
-        sky_amp_phase = simulate_vis_per_source(ants, fluxes, ra, dec, [freq, ], lsts,
+    for time_ind in range(Ntimes):
+        sky_amp_phase = simulate_vis_per_source(ants, fluxes,
+                                                ra, dec, freqs, lsts[time_ind:time_ind + 1],
                                                 beams=beams, polarized=polarized,
                                                 precision=precision,
                                                 latitude=latitude,
                                                 use_feed=use_feed,
                                                 multiprocess=multiprocess)
-        
+
+            
+            
         if not polarized:
             sky_amp_phase = sky_amp_phase[np.newaxis, np.newaxis, :]
 
-        bess_sky_contraction[:, :, freq_ind] = np.einsum("tsbB,qQftaAs->qQftaAbB",
-                                                         bess_outer,
-                                                         sky_amp_phase,
-                                                         optimize=True)
+        bess_sky_contraction[:, :, :, time_ind] = np.tensordot(sky_amp_phase[:, :, :, 0],
+                                                               bess_outer[time_ind],
+                                                               axes=((-1, ), (0, )))
+
 
     return bess_sky_contraction
 
@@ -299,6 +307,7 @@ def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
                            beam_res, 
                            bess_sky_contraction[:, :, :, :, ant_samp_ind, ant_inds],
                            optimize=True)
+    print("done computing bess_trans")
     
     return bess_trans
 

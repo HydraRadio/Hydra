@@ -169,7 +169,7 @@ if __name__ == '__main__':
                         help="Which type of beam to use for the simulation. ['gaussian', 'polybeam']")
     parser.add_argument("--beam-prior-std", type=float, action="store", default=1,
                         required=False, dest="beam_prior_std",
-                        help="Std. dev. of beam coefficient prior, in units of Zernike coefficient")
+                        help="Std. dev. of beam coefficient prior, in units of FB coefficient")
     parser.add_argument("--beam-nmax", type=int, action="store",
                         default=16, required=False, dest="beam_nmax",
                         help="Maximum radial degree of the Fourier-Bessel basis for the beams.")
@@ -741,6 +741,7 @@ if __name__ == '__main__':
         #---------------------------------------------------------------------------
 
         if SAMPLE_BEAM:
+            print("Got to beam sampler")
             def plot_beam_cross(beam_coeffs, ant_ind, iter, tag='', type='cross'):
                 # Shape ncoeffs, Nfreqs, Nant -- just use a ref freq
                 coeff_use = beam_coeffs[:, 0, :]
@@ -813,9 +814,9 @@ if __name__ == '__main__':
                                                   1e6 * freqs,
                                                   beam_nmodes,
                                                   beam_mmodes,
-                                                  RHO, PHI)
-
-                beam_coeffs_fit = beam_coeffs_fit
+                                                  RHO, PHI,
+                                                  force_spw_index=True)
+                
                 print("Printing beam best fit dynamic range")
                 print(np.amax(np.abs(beam_coeffs_fit)), np.amin(np.abs(beam_coeffs_fit)))
                 print("Printing data dynamic range")
@@ -857,8 +858,21 @@ if __name__ == '__main__':
                 cho_tuple_0 = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
                 # Be lazy and just use the initial guess.
                 coeff_mean = beam_coeffs[:, :, 0]
+                bess_outer = hydra.beam_sampler.get_bess_outer(bess_matr)
 
             t0 = time.time()
+            print("Computing bess_sky_contraction")
+            bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(bess_outer, 
+                                                                               ant_pos, 
+                                                                               flux_use, 
+                                                                               ra,
+                                                                               dec, 
+                                                                               freqs*1e6, 
+                                                                               times,
+                                                                               polarized=False, 
+                                                                               latitude=hera_latitude, 
+                                                                               multiprocess=MULTIPROCESS)
+            
 
             # Round robin loop through the antennas
             for ant_samp_ind in range(Nants):
@@ -868,16 +882,22 @@ if __name__ == '__main__':
                 else:
                     cov_tuple_use = cov_tuple_0
                     cho_tuple_use = cho_tuple_0
-                bess_trans = hydra.beam_sampler.get_bess_to_vis(bess_matr, ant_pos,
-                                                                   flux_use, ra, dec,
-                                                                   freqs*1e6, times,
-                                                                   beam_coeffs,
-                                                                   ant_samp_ind,
-                                                                   polarized=False,
-                                                                   latitude=hera_latitude,
-                                                                   multiprocess=MULTIPROCESS)
 
+                print("Computing bess_trans")
+                bess_trans = hydra.beam_sampler.get_bess_to_vis_from_contraction(bess_sky_contraction,
+                                                                                 beam_coeffs, 
+                                                                                 ants, 
+                                                                                 ant_samp_ind)
+                #bess_trans = hydra.beam_sampler.get_bess_to_vis(bess_matr, ant_pos,
+                 #                                                  flux_use, ra, dec,
+                  #                                                 freqs*1e6, times,
+                   #                                                beam_coeffs,
+                    #                                               ant_samp_ind,
+                     #                                              polarized=False,
+                      #                                             latitude=hera_latitude,
+                       #                                            multiprocess=MULTIPROCESS)
 
+                print("Doing other per-iteration pre-compute")
                 inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var_beam,
                                                                ant_samp_ind, Nants)
                 data_use = hydra.beam_sampler.select_subarr(data_beam, ant_samp_ind, Nants)
@@ -890,7 +910,7 @@ if __name__ == '__main__':
                                                                  cov_tuple_use,
                                                                  cho_tuple_use)
                 bbeam = rhs_unflatten.flatten()
-                #print(rhs_unflatten.shape)
+                
 
                 shape = (Nfreqs, ncoeffs,  1, 1, 2)
                 cov_Qdag_Ninv_Q = hydra.beam_sampler.get_cov_Qdag_Ninv_Q(inv_noise_var_use,
@@ -920,8 +940,9 @@ if __name__ == '__main__':
 
                 # What the shape would be if the matrix were represented densely
                 beam_lhs_shape = (axlen, axlen)
-
+                print("Solving")
                 x_soln = np.linalg.solve(matr, bbeam)
+                print("Done solving")
 
                 test_close = False
                 if test_close:
