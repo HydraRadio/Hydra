@@ -291,14 +291,6 @@ class sparse_beam(UVBeam):
         Do a loop over all the axes and fit/evaluate fit in position space.
 
         Parameters:
-            num_modes (int): 
-                Number of modes in the sparse fit.
-            nmodes_comp (array of int):
-                Which nmodes are being used in the sparse fit 
-                (output of get_comp_inds method).
-            mmodes_comp (array_of_int):
-                Which mmodes are being used in the sparse fit 
-                (output of get_comp_inds method).
             fit_coeffs (array, complex):
                 Precomputed fit coefficients (if just evaluating).
             do_fit (bool):
@@ -431,36 +423,51 @@ class sparse_beam(UVBeam):
         else:
             bess_matr, trig_matr = self.get_dmatr_interp(az_array, za_array)
             bt_matr = trig_matr[:, np.newaxis] * bess_matr[:, :, np.newaxis]
-        
-        if freq_array is None:
-            bess_fits = self.bess_fits
-        else:
-            freq_array = np.atleast_1d(freq_array)
-            assert freq_array.ndim == 1, "Freq array for interp must be exactly 1d"
-            
-            # FIXME: More explicit and complete future_array_shapes compatibility throughout code base desired
-            if self.freq_array.ndim > 1:
-                freq_array_knots = self.freq_array[0]
-            else:
-                freq_array_knots = self.freq_array
-            bess_fits_interp = interp1d(freq_array_knots, self.bess_fits, axis=5,
-                                        kind=freq_interp_kind)
-            bess_fits = bess_fits_interp(freq_array)
+
         
         if sparse_fit:
-            if freq_array is not None:
-                raise NotImplementedError("Frequency interpolation is not "
-                                          "implemented for sparse_fit=True.")
-            self.comp_beam_vals = self.sparse_fit_loop(do_fit=False, 
+            if freq_array is None:
+                fit_coeffs = self.comp_fits
+            else:
+                for ind_ob in [self.nmodes_comp, self.mmodes_comp]:
+                    if not np.all(ind_ob == ind_ob[:, :, :, :1], axis=3):
+                        raise NotImplementedError("Basis is not constant in "
+                                                  "frequency. Cannot do "
+                                                  "frequency interpolation for "
+                                                  "sparse_fit=True")
+                freq_array, freq_array_knots = self.prep_freq_array_for_interp(freq_array)
+                    
+                fit_coeffs_interp = interp1d(freq_array_knots, self.comp_fits, axis=3)
+                fit_coeffs = fit_coeffs_interp(freq_array)
+            self.comp_beam_vals = self.sparse_fit_loop(do_fit=False,
+                                                       fit_coeffs=fit_coeffs, 
                                                        bess_matr=bess_matr,
                                                        trig_matr=trig_matr)
         else:
+            if freq_array is None:
+                bess_fits = self.bess_fits
+            else:
+                freq_array, freq_array_knots = self.prep_freq_array_for_interp(freq_array)
+                bess_fits_interp = interp1d(freq_array_knots, self.bess_fits, axis=5,
+                                            kind=freq_interp_kind)
+                bess_fits = bess_fits_interp(freq_array)
             beam_vals = np.tensordot(bt_matr, bess_fits, axes=2).transpose(1, 2, 3, 4, 0)
         if self.beam_type == "power":
             # FIXME: This assumes you are reading in a power beam and is just to get rid of the imaginary component
             beam_vals = np.abs(beam_vals)
             
         return beam_vals, None
+
+    def prep_freq_array_for_interp(self, freq_array):
+        freq_array = np.atleast_1d(freq_array)
+        assert freq_array.ndim == 1, "Freq array for interp must be exactly 1d"
+                
+                # FIXME: More explicit and complete future_array_shapes compatibility throughout code base desired
+        if self.freq_array.ndim > 1:
+            freq_array_knots = self.freq_array[0]
+        else:
+            freq_array_knots = self.freq_array
+        return freq_array,freq_array_knots
     
     def efield_to_power(*args, **kwargs):
         raise NotImplementedError("efield_to_power is not implemented yet.")
