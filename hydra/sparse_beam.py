@@ -244,14 +244,16 @@ class sparse_beam(UVBeam):
 
         return fit_coeffs, fit_beam
     
-    def get_comp_inds(self):
+    def get_comp_inds(self, make_const_in_freq=True):
         """
-        Get the indices for the num_modes most significant modes for each
+        Get the indices for the self.num_modes most significant modes for each
         feed, polarization, and frequency.
 
         Parameters:
-            num_modes (int): 
-                The number of modes to use for the compressed fit.
+            make_const_in_freq (bool):
+                Whether to use a frequency-dependent basis or not. Will use the
+                best basis for the middle of the observing band, which could
+                cause significant differences for wide bands.
 
         Returns:
             nmodes_comp (array, int):
@@ -273,6 +275,13 @@ class sparse_beam(UVBeam):
         sort_inds_flip = np.flip(ps_sort_inds, axis=0)[:self.num_sparse_modes]
         nmodes_comp, mmodes_comp = np.unravel_index(sort_inds_flip, 
                                                     (self.nmax, len(self.mmodes)))
+        if make_const_in_freq:
+            mid_freq_ind = self.Nfreqs // 2
+            nmodes_comp = np.repeat(nmodes_comp[:, :, :, mid_freq_ind:mid_freq_ind + 1],
+                                    self.Nfreqs, axis=3)
+            mmodes_comp = np.repeat(nmodes_comp[:, :, :, mid_freq_ind:mid_freq_ind + 1],
+                                    self.Nfreqs, axis=3)
+
         
         return nmodes_comp, mmodes_comp
     
