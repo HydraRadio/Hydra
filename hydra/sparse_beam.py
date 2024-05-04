@@ -12,7 +12,9 @@ class sparse_beam(UVBeam):
                  save_fn='', load=False, bound="Dirichlet", Nfeeds=None, 
                  do_fit=True, alpha=np.sqrt(1 - np.cos(46 * np.pi / 90)), 
                  num_modes_comp=64, nmodes_comp=None, mmodes_comp=None, 
-                 sparse_fit_coeffs=None,
+                 sparse_fit_coeffs=None, perturb=False, za_ml=np.deg2rad(18.),
+                 dza=np.deg2rad(3.), Nsin_pert=8, sin_pert_coeffs=None,
+                 cSL=0.2, gam=None,
                  **kwargs):
         """
         Construct the sparse_beam instance, which is a subclass of UVBeam
@@ -45,6 +47,24 @@ class sparse_beam(UVBeam):
         self.bound = bound
         self.read_beamfits(filename, za_range=za_range, **kwargs)
         self.peak_normalize()
+        if perturb:
+            self.za_ml = za_ml
+            self.dza = dza
+            self.Nsin_pert = Nsin_pert
+            self.gam = gam
+            for kwarg in ["Nsin_pert", "gam"]:
+                if getattr(self, kwarg) is None:
+                    raise ValueError("Must supply sin_pert_coeffs if perturb=True.")
+            self.sin_pert_coeffs = sin_pert_coeffs
+            self.cSL = cSL
+
+            self.data_array = self.data_array.swapaxes(-1, -2) * self.SL_pert() + self.ML_pert()
+            self.data_array = self.data_array.swapaxes(-1, -2)
+            
+
+        if Nfeeds is not None:         # power beam may not have the Nfeeds set
+            assert self.Nfeeds is None, "Nfeeds already set on the beam"
+            self.Nfeeds = Nfeeds
         
         
         self.alpha = alpha
@@ -93,9 +113,7 @@ class sparse_beam(UVBeam):
         self.bess_matr_interp_dict = {}
         self.bt_matr_interp_dict = {}
 
-        if Nfeeds is not None:         # power beam may not have the Nfeeds set
-            assert self.Nfeeds is None, "Nfeeds already set on the beam"
-            self.Nfeeds = Nfeeds
+
 
     def get_rad_array(self, za_array=None):
         """
@@ -475,3 +493,24 @@ class sparse_beam(UVBeam):
     
     def efield_to_pstokes(*args, **kwargs):
         raise NotImplementedError("efield_to_pstokes is not implemented yet.")
+    
+    def sigmoid_mod(self):
+        return 0.5 * (1 + np.tanh((self.axis2_array - self.za_ml) / self.dza))
+
+    def sin_perts(self):
+        L = np.pi / 2
+        dmatr = np.array([np.sin(2 * np.pi * m * self.axis2_array / L) for m in range(self.Nsin_pert)]).T
+        sin_pert_unnorm = dmatr @ self.sin_pert_coeffs
+        sp_range = np.amax(sin_pert_unnorm) - np.amin(sin_pert_unnorm)
+        return sin_pert_unnorm / sp_range
+
+    def SL_pert(self):
+        return 1 + self.cSL * self.sin_perts() * self.sigmoid_mod()
+
+    def ML_gauss_term(self, gam):
+        return np.exp(-0.5 * self.axis2_array**2/(gam * self.za_ml)**2)
+
+    def ML_pert(self):
+        sig_factor = (1 - self.sigmoid_mod())
+        gauss_diff = self.ML_gauss_term(gam=self.gam) -self. ML_gauss_term(gam=1)
+        return sig_factor * gauss_diff
