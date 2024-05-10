@@ -14,7 +14,9 @@ class sparse_beam(UVBeam):
                  num_modes_comp=64, nmodes_comp=None, mmodes_comp=None, 
                  sparse_fit_coeffs=None, perturb=False, za_ml=np.deg2rad(18.),
                  dza=np.deg2rad(3.), Nsin_pert=8, sin_pert_coeffs=None,
-                 cSL=0.2, gam=None,
+                 cSL=0.2, gam=None, sqrt=False, Naz_pert=2, 
+                 az_cos_pert_coeffs=None, az_sin_pert_coeffs=None,
+                 rot=0.,stretch_x=1.,stretch_y=1.,
                  **kwargs):
         """
         Construct the sparse_beam instance, which is a subclass of UVBeam
@@ -47,24 +49,34 @@ class sparse_beam(UVBeam):
         self.bound = bound
         self.read_beamfits(filename, za_range=za_range, **kwargs)
         self.peak_normalize()
+        perturb = self.perturb
         if perturb:
+            self.rot = rot
+            self.stretch_x = stretch_x
+            self.stretch_y = stretch_y
             self.za_ml = za_ml
             self.dza = dza
             self.Nsin_pert = Nsin_pert
+            self.Naz_pert = Naz_pert
             self.gam = gam
             for kwarg in ["Nsin_pert", "gam"]:
                 if getattr(self, kwarg) is None:
                     raise ValueError("Must supply sin_pert_coeffs if perturb=True.")
             self.sin_pert_coeffs = sin_pert_coeffs
             self.cSL = cSL
+            self.az_cos_pert_coeffs = az_cos_pert_coeffs
+            self.az_sin_pert_coeffs = az_sin_pert_coeffs
 
             self.data_array = self.data_array.swapaxes(-1, -2) * self.SL_pert() + self.ML_pert()
-            self.data_array = self.data_array.swapaxes(-1, -2)
+            self.data_array = self.data_array.swapaxes(-1, -2) 
             
 
         if Nfeeds is not None:         # power beam may not have the Nfeeds set
             assert self.Nfeeds is None, "Nfeeds already set on the beam"
             self.Nfeeds = Nfeeds
+
+        if sqrt:
+            self.data_array = np.sqrt(self.data_array)
         
         
         self.alpha = alpha
@@ -207,7 +219,17 @@ class sparse_beam(UVBeam):
             trig_matr (array, complex):
                 The Fourier part of the design matrix.
         """
+        
         rad_array = self.get_rad_array(za_array)
+        if self.perturb:
+            if self.rot > 0:
+                az_array = az_array - self.rot
+            if (self.stretch_x != 1) or (self.stretch_y != 1):
+                if self.stretch_x == self.stretch_y:
+                    rad_array /= self.stretch_x
+                else:
+                    rad_array *= np.sqrt((np.cos(az_array) / self.stretch_x)**2 + (np.sin(az_array) / self.stretch_y)**2)
+
         zeros, norm = self.get_bzeros()
         Naz = len(self.az_array)
 
@@ -514,3 +536,14 @@ class sparse_beam(UVBeam):
         sig_factor = (1 - self.sigmoid_mod())
         gauss_diff = self.ML_gauss_term(gam=self.gam) -self. ML_gauss_term(gam=1)
         return sig_factor * gauss_diff
+    
+    def az_pert(self):
+        dmatr_cos = np.array([np.cos(m * self.axis1_array) for m in range(1, 1 + self.Naz_pert)]).T
+        dmatr_sin = np.array([np.sin(m * self.axis1_array) for m in range(1, 1 + self.Naz_pert)]).T
+
+        cos_modes = dmatr_cos @ self.az_cos_pert_coeffs 
+        sin_modes = dmatr_sin @ self.az_sin_pert_coeffs
+
+        az_pert_unnorm = cos_modes + sin_modes
+        az_pert_range = np.amax(az_pert_unnorm) - np.amin(az_pert_unnorm)
+        return az_pert_unnorm / az_pert_range
