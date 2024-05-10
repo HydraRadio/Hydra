@@ -16,7 +16,7 @@ class sparse_beam(UVBeam):
                  dza=np.deg2rad(3.), Nsin_pert=8, sin_pert_coeffs=None,
                  cSL=0.2, gam=None, sqrt=False, Naz_pert=2, 
                  az_cos_pert_coeffs=None, az_sin_pert_coeffs=None,
-                 rot=0.,stretch_x=1.,stretch_y=1.,
+                 rot=0.,stretch_x=1.,stretch_y=1., trans_x=0., trans_y=0.,
                  **kwargs):
         """
         Construct the sparse_beam instance, which is a subclass of UVBeam
@@ -49,17 +49,20 @@ class sparse_beam(UVBeam):
         self.bound = bound
         self.read_beamfits(filename, za_range=za_range, **kwargs)
         self.peak_normalize()
-        perturb = self.perturb
+        self.perturb = perturb
         if perturb:
             self.rot = rot
             self.stretch_x = stretch_x
             self.stretch_y = stretch_y
+            self.trans_x = trans_x
+            self.trans_y = trans_y
             self.za_ml = za_ml
             self.dza = dza
             self.Nsin_pert = Nsin_pert
             self.Naz_pert = Naz_pert
             self.gam = gam
             for kwarg in ["Nsin_pert", "gam"]:
+                break
                 if getattr(self, kwarg) is None:
                     raise ValueError("Must supply sin_pert_coeffs if perturb=True.")
             self.sin_pert_coeffs = sin_pert_coeffs
@@ -67,8 +70,8 @@ class sparse_beam(UVBeam):
             self.az_cos_pert_coeffs = az_cos_pert_coeffs
             self.az_sin_pert_coeffs = az_sin_pert_coeffs
 
-            self.data_array = self.data_array.swapaxes(-1, -2) * self.SL_pert() + self.ML_pert()
-            self.data_array = self.data_array.swapaxes(-1, -2) 
+            #self.data_array = self.data_array.swapaxes(-1, -2) * self.SL_pert() + self.ML_pert()
+            #self.data_array = self.data_array.swapaxes(-1, -2) 
             
 
         if Nfeeds is not None:         # power beam may not have the Nfeeds set
@@ -229,6 +232,11 @@ class sparse_beam(UVBeam):
                     rad_array /= self.stretch_x
                 else:
                     rad_array *= np.sqrt((np.cos(az_array) / self.stretch_x)**2 + (np.sin(az_array) / self.stretch_y)**2)
+            if self.trans_x != 0 or self.trans_y != 0:
+                xtrans = rad_array * np.cos(az_array) - self.trans_x
+                ytrans = rad_array * np.sin(az_array) - self.trans_y
+                rad_array = np.sqrt(xtrans**2 + ytrans**2)
+                az_array = np.arctan2(ytrans, xtrans)
 
         zeros, norm = self.get_bzeros()
         Naz = len(self.az_array)
