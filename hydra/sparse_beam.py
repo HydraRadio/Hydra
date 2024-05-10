@@ -516,18 +516,20 @@ class sparse_beam(UVBeam):
     def efield_to_pstokes(*args, **kwargs):
         raise NotImplementedError("efield_to_pstokes is not implemented yet.")
     
-    def sigmoid_mod(self):
+    def sigmoid_mod(self, rad_array=None, za_ml=None):
         return 0.5 * (1 + np.tanh((self.axis2_array - self.za_ml) / self.dza))
 
-    def sin_perts(self):
-        L = np.pi / 2
-        dmatr = np.array([np.sin(2 * np.pi * m * self.axis2_array / L) for m in range(self.Nsin_pert)]).T
+    def sin_perts(self, rad_array=None):
+        if rad_array is None:
+            rad_array = self.rad_array
+        L = self.rad_array[-1] # Always make this zero-out at the horizon in unstretched coordinates
+        dmatr = np.array([np.sin(2 * np.pi * m * rad_array / L) for m in range(self.Nsin_pert)]).T
         sin_pert_unnorm = dmatr @ self.sin_pert_coeffs
         sp_range = np.amax(sin_pert_unnorm) - np.amin(sin_pert_unnorm)
         return sin_pert_unnorm / sp_range
 
-    def SL_pert(self):
-        return 1 + self.cSL * self.sin_perts() * self.sigmoid_mod()
+    def SL_pert(self, rad_array=None):
+        return 1 + self.cSL * self.sin_perts(rad_array=rad_array) * self.sigmoid_mod(rad_array=rad_array)
 
     def ML_gauss_term(self, gam):
         return np.exp(-0.5 * self.axis2_array**2/(gam * self.za_ml)**2)
