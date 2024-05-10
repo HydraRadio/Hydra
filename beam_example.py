@@ -208,6 +208,8 @@ if __name__ == '__main__':
     np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
     np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
 
-
-    true_beam = hydra.sparse_beam.sparse_beam(args.beam_file, args.nmax, 
-                                              args.mmax, alpha=args.rho_const)
+    mmodes = np.arange(-args.mmax, args.mmax + 1)
+    input_beam = hydra.sparse_beam.sparse_beam(args.beam_file, args.nmax, 
+                                               mmodes, alpha=args.rho_const)
+    
+    
