@@ -1,12 +1,10 @@
 import numpy as np
-from scipy.linalg import lstsq, toeplitz, cholesky, inv, LinAlgError, solve
+from scipy.linalg import toeplitz, cholesky, inv, LinAlgError, solve
 from scipy.special import comb, hyp2f1, jn_zeros, jn
 import matplotlib.pyplot as plt
 from matplotlib.colors import SymLogNorm
 
 from pyuvsim import AnalyticBeam
-from pyuvsim.analyticbeam import diameter_to_sigma
-from vis_cpu import conversions
 
 from .vis_simulator import simulate_vis_per_source
 from . import utils
