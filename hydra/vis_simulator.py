@@ -7,7 +7,7 @@ import warnings
 from astropy.constants import c
 from pyuvdata import UVBeam
 from typing import Optional, Sequence
-from vis_cpu import conversions
+from matvis import conversions
 import healpy as hp
 from multiprocessing import Pool, cpu_count
 import os, warnings, time
