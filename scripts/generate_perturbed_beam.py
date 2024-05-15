@@ -27,7 +27,7 @@ args = parser.parse_args()
 np.random.seed(args.seed)
 trans_x, trans_y = np.random.normal(scale=args.trans_std, size=2)
 rot = np.random.normal(scale=np.deg2rad(args.rot_std_deg))
-stretch_x, stretch_y = np.random.normal(scale=args.stretch_std, size=2)
+stretch_x, stretch_y = np.random.normal(loc=1, scale=args.stretch_std, size=2)
 sin_pert_coeffs = np.random.normal(size=8)
 
 mmodes = np.arange(-args.mmax, args.mmax + 1)
@@ -42,8 +42,8 @@ Azg, Zag = np.meshgrid(pow_sb.axis1_array, pow_sb.axis2_array)
 pert_beam, _ = pow_sb.interp(az_array=Azg.flatten(), za_array=Zag.flatten())
 fit_coeffs, _ = pow_sb.get_fits(data_array=pert_beam.reshape(pow_sb.data_array.shape))
 
-np.save(fit_coeffs, 
-        f"{args.outdir}/perturbed_beam_fit_coeffs_seed_{args.seed}.npy")
+np.save(f"{args.outdir}/perturbed_beam_fit_coeffs_seed_{args.seed}.npy", 
+        fit_coeffs)
 
 
 
