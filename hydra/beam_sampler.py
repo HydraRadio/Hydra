@@ -3,6 +3,7 @@ from scipy.linalg import toeplitz, cholesky, inv, LinAlgError, solve
 from scipy.special import comb, hyp2f1, jn_zeros, jn
 import matplotlib.pyplot as plt
 from matplotlib.colors import SymLogNorm
+from hydra.sparse_beam import sparse_beam
 
 from pyuvsim import AnalyticBeam
 
@@ -787,3 +788,64 @@ def get_zernike_matrix(nmax, theta, r):
             ind += 1
 
     return zern_matr.transpose((1, 2, 0))
+
+def get_pert_beam(seed, beam_file, trans_std=1e-2, rot_std_deg=1., 
+                  stretch_std=1e-2, mmax=45, nmax=80, sqrt=True, Nfeeds=2,
+                  num_modes_comp=32, save=False, outdir=""):
+    """
+    Get a perturbed sparse_beam instance.
+
+    Parameters:
+        seed (int):
+            The random seed.
+        beam_file (str):
+            Path to unperturbed beam file.
+        trans_std (float):
+            Standard deviation for random tilt of beam, in units of FB radial coordinate.
+        rot_std_std (float):
+            Standard deviation for random beam rotation, in degrees.
+        stretch_std (float):
+            Standard deviation for random beam stretching.
+        mmax (int):
+            The maximum azimuthal mode number to use.
+        nmax (int):
+            The maximum radial mode number to use in the FB basis.
+        sqrt (bool):
+            Whether to take the square root of the unperturbed beam before 
+            fitting. Used for power beams.
+        Nfeeds (int):
+            Number of feeds. Set to None if using E-field beam, 2 for power beam.
+        num_modes_comp (int):
+            Does nothing, but will slow down the code if set to a high number.
+        save (bool):
+            Whether to save the fit coefficients to the perturbed beam.
+        outdir (str):
+            Path to directory to save output.
+
+    Returns:
+        sb (sparse_beam):
+            Perturbed sparse_beam instance.
+    """
+    np.random.seed(seed)
+    trans_x, trans_y = np.random.normal(scale=trans_std, size=2)
+    rot = np.random.normal(scale=np.deg2rad(rot_std_deg))
+    stretch_x, stretch_y = np.random.normal(loc=1, scale=stretch_std, size=2)
+    sin_pert_coeffs = np.random.normal(size=8)
+
+    mmodes = np.arange(-mmax, mmax + 1)
+    sb = sparse_beam.sparse_beam(beam_file, nmax, mmodes, Nfeeds=Nfeeds, 
+                                 num_modes_comp=num_modes_comp, sqrt=sqrt, 
+                                 perturb=True, trans_x=trans_x, trans_y=trans_y, 
+                                 rot=rot, stretch_x=stretch_x, 
+                                 stretch_y=stretch_y, 
+                                 sin_pert_coeffs=sin_pert_coeffs)
+
+    Azg, Zag = np.meshgrid(sb.axis1_array, sb.axis2_array)
+    pert_beam, _ = sb.interp(az_array=Azg.flatten(), za_array=Zag.flatten())
+    fit_coeffs, _ = sb.get_fits(data_array=pert_beam.reshape(sb.data_array.shape))
+
+    if save:
+        np.save(f"{outdir}/perturbed_beam_fit_coeffs_seed_{seed}.npy", 
+                fit_coeffs)
+    
+    return sb
