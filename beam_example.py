@@ -27,7 +27,7 @@ if __name__ == '__main__':
     description = "Example Gibbs sampling of the joint posterior of beam "  \
                   "parameters from a simulated visibility data set " 
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--seed", type=int, action="store", default=0,
+    parser.add_argument("--seed", type=int, action="store", default=1001,
                         required=False, dest="seed",
                         help="Set the random seed.")
     
@@ -121,10 +121,21 @@ if __name__ == '__main__':
     parser.add_argument("--rho-const", type=float, action="store", 
                         default=np.sqrt(1-np.cos(np.pi * 23 / 45)),
                         required=False, dest="rho_const",
-                        help="A constant to define the radial projection for the beam spatial basis")
+                        help="A constant to define the radial projection for the"
+                             " beam spatial basis")
+    parser.add_argument("--trans-std", required=False, type=float,
+                    default=1e-2, dest="trans_std",
+                    help="Standard deviation for random tilt of beam")
+    parser.add_argument("--rot-std-deg", required=False, type=float, 
+                        dest="rot_std_deg", default=1., 
+                        help="Standard deviation for random beam rotation, in degrees.")
+    parser.add_argument("--stretch-std", required=False, type=float, 
+                        dest="stretch_std", default=1e-2, 
+                        help="Standard deviation for random beam stretching.")
     
     args = parser.parse_args()
 
+    hex_array = tuple(args.hex_array)
     assert len(args.hex_array) == 2, "hex-array argument must have length 2."
 
     # In case these are passed out of order, also shorter names
@@ -193,23 +204,34 @@ if __name__ == '__main__':
 
     # Generate random point source locations
     # RA goes from [0, 2 pi] and Dec from [-pi / 2, +pi / 2].
-    ra = np.random.uniform(low=ra_low, high=ra_high, size=Nptsrc)
+    ra = np.random.uniform(low=ra_low, high=ra_high, size=args.Nptsrc)
     
     # inversion sample to get them uniform on the sphere, in case wide bounds are used
-    U = np.random.uniform(low=0, high=1, size=Nptsrc)
+    U = np.random.uniform(low=0, high=1, size=args.Nptsrc)
     dsin = np.sin(dec_high) - np.sin(dec_low)
     dec = np.arcsin(U * dsin + np.sin(dec_low)) # np.arcsin returns on [-pi / 2, +pi / 2]
 
     # Generate fluxes
     beta_ptsrc = -2.7
-    ptsrc_amps = 10.**np.random.uniform(low=-1., high=2., size=Nptsrc)
+    ptsrc_amps = 10.**np.random.uniform(low=-1., high=2., size=args.Nptsrc)
     fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc)
     print("pstrc amps (input):", ptsrc_amps[:5])
     np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
     np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
 
-    mmodes = np.arange(-args.mmax, args.mmax + 1)
-    input_beam = hydra.sparse_beam.sparse_beam(args.beam_file, args.nmax, 
-                                               mmodes, alpha=args.rho_const)
+
+    beams = []
+    for ant_ind in range(Nants):
+        pow_sb = hydra.beam_sampler.get_pert_beam(args.seed + ant_ind,
+                                                  args.beam_file, 
+                                                  trans_std=args.trans_std,
+                                                  rot_std_deg=args.rot_std_deg,
+                                                  stretch_std=args.stretch_std,
+                                                  mmax=args.mmax, 
+                                                  nmax=args.nmax,
+                                                  sqrt=True, Nfeeds=2, 
+                                                  num_modes_comp=32, save=True,
+                                                  outdir=args.output_dir)
+        beams.append(pow_sb)
     
     
