@@ -1,28 +1,17 @@
 #!/usr/bin/env python
 
 import numpy as np
-import pylab as plt
 import hydra
 
-import numpy.fft as fft
-import scipy.linalg
-from scipy.sparse.linalg import cg, gmres, LinearOperator, bicgstab
-from scipy.signal import blackmanharris
-from scipy.sparse import coo_matrix
-import pyuvsim
-from hera_sim.beams import PolyBeam
-import time, os, resource
+from scipy.sparse.linalg import cg, gmres, bicgstab
+import time, os
 import multiprocessing
-from hydra.utils import flatten_vector, reconstruct_vector, timing_info, \
-                            build_hex_array, get_flux_from_ptsrc_amp, \
-                            convert_to_tops, gain_prior_pspec_sqrt
+from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
+                         convert_to_tops
 
 import argparse
 
 if __name__ == '__main__':
-
-    # Don't use fork! It duplicates the memory used.
-    #multiprocessing.set_start_method('forkserver', force=True)
 
     description = "Example Gibbs sampling of the joint posterior of beam "  \
                   "parameters from a simulated visibility data set " 
@@ -31,11 +20,14 @@ if __name__ == '__main__':
                         required=False, dest="seed",
                         help="Set the random seed.")
     
-    # Samplers
+    # Misc
     parser.add_argument("--recalc-sc-op", action="store_true", required=False,
                         dest="recalc_sc_op", 
                         help="Recalculate a large operator in between iterations" \
                             "despite that it is constant; useful for profiling")
+    parser.add_argument("--test-close", action="store_true", required=False,
+                        dest="test_close",
+                        help="Test whether linear solver solutions are close or not.")
     
     # Output options
     parser.add_argument("--stats", action="store_true",
@@ -370,9 +362,9 @@ if __name__ == '__main__':
             x_soln = np.linalg.solve(matr, bbeam)
             print("Done solving")
 
-            test_close = False
-            if test_close:
-                btest = beam_linear_op(x_soln)
+
+            if args.test_close:
+                btest = matr @ x_soln
                 allclose = np.allclose(btest, bbeam)
                 if not allclose:
                     abs_diff = np.abs(btest-bbeam)
