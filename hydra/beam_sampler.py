@@ -791,7 +791,7 @@ def get_zernike_matrix(nmax, theta, r):
 
 def get_pert_beam(seed, beam_file, trans_std=1e-2, rot_std_deg=1., 
                   stretch_std=1e-2, mmax=45, nmax=80, sqrt=True, Nfeeds=2,
-                  num_modes_comp=32, save=False, outdir=""):
+                  num_modes_comp=32, save=False, outdir="", load=False):
     """
     Get a perturbed sparse_beam instance.
 
@@ -833,18 +833,23 @@ def get_pert_beam(seed, beam_file, trans_std=1e-2, rot_std_deg=1.,
     sin_pert_coeffs = np.random.normal(size=8)
 
     mmodes = np.arange(-mmax, mmax + 1)
-    sb = sparse_beam.sparse_beam(beam_file, nmax, mmodes, Nfeeds=Nfeeds, 
-                                 num_modes_comp=num_modes_comp, sqrt=sqrt, 
-                                 perturb=True, trans_x=trans_x, trans_y=trans_y, 
-                                 rot=rot, stretch_x=stretch_x, 
-                                 stretch_y=stretch_y, 
-                                 sin_pert_coeffs=sin_pert_coeffs)
-
-    Azg, Zag = np.meshgrid(sb.axis1_array, sb.axis2_array)
-    pert_beam, _ = sb.interp(az_array=Azg.flatten(), za_array=Zag.flatten())
+    sb = sparse_beam(beam_file, nmax, mmodes, Nfeeds=Nfeeds,
+                     num_modes_comp=num_modes_comp, sqrt=sqrt, 
+                     perturb=True, trans_x=trans_x, trans_y=trans_y, 
+                     rot=rot, stretch_x=stretch_x, 
+                     stretch_y=stretch_y, 
+                     sin_pert_coeffs=sin_pert_coeffs)
+    
+    beam_outfile = f"{outdir}/perturbed_beam_beamvals_seed_{seed}.npy"
+    if load:
+        pert_beam = np.load(beam_outfile)
+    else:
+        Azg, Zag = np.meshgrid(sb.axis1_array, sb.axis2_array)
+        pert_beam, _ = sb.interp(az_array=Azg.flatten(), za_array=Zag.flatten())
     fit_coeffs, _ = sb.get_fits(data_array=pert_beam.reshape(sb.data_array.shape))
 
     if save:
+        np.save(beam_outfile, pert_beam)
         np.save(f"{outdir}/perturbed_beam_fit_coeffs_seed_{seed}.npy", 
                 fit_coeffs)
     

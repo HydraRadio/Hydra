@@ -65,7 +65,7 @@ if __name__ == '__main__':
     
     # Instrumental parameters for noise estimation
     parser.add_argument("--integration-depth", type=float, action="store",
-                        default=10., required=False, dest="sigma_noise",
+                        default=10., required=False, dest="integration_depth",
                         help="Integration time, in seconds")
     parser.add_argument("--ch-wid", type=float, action="store",
                         default=200e6 / 2048, required=False, dest="ch_wid",
@@ -103,8 +103,7 @@ if __name__ == '__main__':
     parser.add_argument("--beam-prior-std", type=float, action="store", default=1.,
                         required=False, dest="beam_prior_std",
                         help="Std. dev. of beam coefficient prior, in units of FB coefficient")
-    parser.add_argument("--Nbasis", type=str, action="store",
-                        required=True,
+    parser.add_argument("--Nbasis", type=int, action="store", required=False, default=32,
                         help="Number of basis functions to use for beam estimation.")
     parser.add_argument("--nmax", type=int, action="store", default=80,
                         required=False, help="Maximum radial mode for beam modeling.")
@@ -216,6 +215,8 @@ if __name__ == '__main__':
 
     beams = []
     for ant_ind in range(Nants):
+        load = os.path.exists(f"{output_dir}/perturbed_beam_beamvals_seed_{args.seed + ant_ind}.npy")
+        save = not load
         pow_sb = hydra.beam_sampler.get_pert_beam(args.seed + ant_ind,
                                                   args.beam_file, 
                                                   trans_std=args.trans_std,
@@ -224,8 +225,8 @@ if __name__ == '__main__':
                                                   mmax=args.mmax, 
                                                   nmax=args.nmax,
                                                   sqrt=True, Nfeeds=2, 
-                                                  num_modes_comp=32, save=True,
-                                                  outdir=args.output_dir)
+                                                  num_modes_comp=32, save=save,
+                                                  outdir=args.output_dir, load=load)
         beams.append(pow_sb)
     mmodes = np.arange(-args.mmax, args.mmax + 1)
     unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
@@ -234,26 +235,30 @@ if __name__ == '__main__':
                                               num_modes_comp=32,
                                               sqrt=True)
 
-    # Run a simulation
-    t0 = time.time()
-    _sim_vis = hydra.vis_simulator.simulate_vis(
-            ants=ant_pos,
-            fluxes=fluxes,
-            ra=ra,
-            dec=dec,
-            freqs=freqs, # Make sure this is in Hz!
-            lsts=times,
-            beams=beams,
-            polarized=False,
-            precision=2,
-            latitude=args.array_lat,
-            use_feed="x",
-            multiprocess=args.multiprocess
-        )
-    timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
-    np.save(os.path.join(output_dir, "model0"), _sim_vis)
+    sim_outpath = os.path.join(output_dir, "model0.npy")
+    if not os.path.exists(sim_outpath):
+        # Run a simulation
+        t0 = time.time()
+        _sim_vis = hydra.vis_simulator.simulate_vis(
+                ants=ant_pos,
+                fluxes=fluxes,
+                ra=ra,
+                dec=dec,
+                freqs=freqs, # Make sure this is in Hz!
+                lsts=times,
+                beams=beams,
+                polarized=False,
+                precision=2,
+                latitude=args.array_lat,
+                use_feed="x",
+                multiprocess=args.multiprocess
+            )
+        timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
+        np.save(sim_outpath, _sim_vis)
+    else:
+        _sim_vis = np.load(sim_outpath)
 
-    autos = _sim_vis[:, :, np.arange(Nants), np.arange(Nants)]
+    autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
 
     noise = (np.random.normal(scale=np.sqrt(noise_var)) + 1.j * np.random.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
@@ -269,36 +274,36 @@ if __name__ == '__main__':
 
     bess_matr, trig_matr = unpert_sb.get_dmatr_interp(np.arctan2(tys, txs).flatten(), 
                                                       np.arccos(tzs).flatten())
-    bess_matr = bess_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax, 2 * args.mmax + 1)
-    trig_matr = trig_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax, 2 * args.mmax + 1)
+    bess_matr = bess_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax)
+    trig_matr = trig_matr.reshape(args.Ntimes, args.Nptsrc, 2 * args.mmax + 1)
 
     mid_freq = freqs[args.Nfreqs // 2]
     closest_chan = np.argmin(np.abs(mid_freq - pow_sb.freq_array))
     mean_mode = pow_sb.bess_fits[:, :, 0, 0, 0, closest_chan]
     mean_mode = mean_mode / np.sum(np.abs(mean_mode)**2) 
-    pca_modes = np.load(args.pca_modes) # nmax,2*mmax + 1, Nmodes - 1
+    pca_modes = np.load(args.pca_modes)[:, :args.Nbasis - 1].reshape(args.nmax, 2 * args.mmax + 1, args.Nbasis - 1) 
 
     
-    Pmatr = np.concatenate(mean_mode[:, :, None], pca_modes, axis=2)
-    Ncoeff = Pmatr.shape[-1]
+    Pmatr = np.concatenate([mean_mode[:, :, None], pca_modes], axis=2)
 
-    BPmatr = (bess_matr @ Pmatr).transpose(3, 0, 1, 2) # Ncoeff, Ntimes, Nsrc, Naz
-    Dmatr = np.sum(BPmatr * trig_matr, axis=3).transpose(1, 2, 0) # Ntimes, Nsrc, Ncoeff
+    BPmatr = np.tensordot(bess_matr, Pmatr, axes=1).transpose(3, 0, 1, 2) # Nbasis, Ntimes, Nsrc, Naz
+    Dmatr = np.sum(BPmatr * trig_matr, axis=3).transpose(1, 2, 0) # Ntimes, Nsrc, Nbasis
     Dmatr_outer = hydra.beam_sampler.get_bess_outer(Dmatr)
     
-    beam_coeffs = np.zeros([Nants, args.Nfreqs, Ncoeff, 1, 1])
+    beam_coeffs = np.zeros([Nants, args.Nfreqs, args.Nbasis, 1, 1])
     beam_coeffs[:, :, 0] = 1
-    # Want shape Ncoeff, Nfreqs, Nants, Npol, Npol
+    # Want shape Nbasis, Nfreqs, Nants, Npol, Npol
     beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
 
     sig_freq = 0.5 * (freqs[-1] - freqs[0])
-    cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, Ncoeff,
+    cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, args.Nbasis,
                                                   args.beam_prior_std, sig_freq,
                                                   ridge=1e-6)
     cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
     # Be lazy and just use the initial guess.
     coeff_mean = beam_coeffs[:, :, 0]
-
+    
+    t0 = time.time()
     bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
                                                                        ant_pos, 
                                                                        fluxes, 
@@ -309,14 +314,18 @@ if __name__ == '__main__':
                                                                        polarized=False, 
                                                                        latitude=args.array_lat, 
                                                                        multiprocess=args.multiprocess)
+    tsc = time.time() - t0
+    timing_info(ftime, 0, "(0) bess_sky_contraction", tsc)
+    print(f"bess_sky_contraction took {tsc} seconds")
+    
 
     # Iterate the Gibbs sampler
     print("="*60)
-    print("Starting Gibbs sampler (%d iterations)" % Niters)
+    print("Starting Gibbs sampler (%d iterations)" % args.Niters)
     print("="*60)
     for n in range(args.Niters):
         print("-"*60)
-        print(">>> Iteration %4d / %4d" % (n+1, Niters))
+        print(">>> Iteration %4d / %4d" % (n+1, args.Niters))
         print("-"*60)
         t0iter = time.time()
 
@@ -326,10 +335,10 @@ if __name__ == '__main__':
                                                                              ants, 
                                                                              ant_samp_ind)
             
-            inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var,
+            inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var[None, None], # add pol axes of length 1
                                                                  ant_samp_ind, 
                                                                  Nants)
-            data_use = hydra.beam_sampler.select_subarr(data, ant_samp_ind, Nants)
+            data_use = hydra.beam_sampler.select_subarr(data[None, None], ant_samp_ind, Nants)
 
             # Construct RHS vector
             rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
@@ -341,7 +350,7 @@ if __name__ == '__main__':
             bbeam = rhs_unflatten.flatten()
                 
 
-            shape = (args.Nfreqs, Ncoeff,  1, 1, 2)
+            shape = (args.Nfreqs, args.Nbasis,  1, 1, 2)
             cov_Qdag_Ninv_Q = hydra.beam_sampler.get_cov_Qdag_Ninv_Q(inv_noise_var_use,
                                                                      bess_trans,
                                                                      cov_tuple)
@@ -374,8 +383,8 @@ if __name__ == '__main__':
                     raise AssertionError(f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}")
             x_soln_res = np.reshape(x_soln, shape)
 
-            # Has shape Nfreqs, ncoeff, Npol, Npol, ncomp
-            # Want shape ncoeff, Nfreqs, Npol, Npol, ncomp
+            # Has shape Nfreqs, Nbasis, Npol, Npol, ncomp
+            # Want shape Nbasis, Nfreqs, Npol, Npol, ncomp
             x_soln_swap = np.swapaxes(x_soln_res, 0, 1)
 
             # Update the coeffs between rounds
