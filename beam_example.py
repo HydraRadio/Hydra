@@ -280,8 +280,8 @@ if __name__ == '__main__':
 
     mid_freq = freqs[args.Nfreqs // 2]
     closest_chan = np.argmin(np.abs(mid_freq - pow_sb.freq_array))
-    mean_mode = pow_sb.bess_fits[:, :, 0, 0, 0, closest_chan]
-    mean_mode = mean_mode / np.sum(np.abs(mean_mode)**2) 
+    mean_mode = unpert_sb.bess_fits[:, :, 0, 0, 0, closest_chan]
+    mean_mode = mean_mode / np.sqrt(np.sum(np.abs(mean_mode)**2))
     pca_modes = np.load(args.pca_modes)[:, :args.Nbasis - 1].reshape(args.nmax, 2 * args.mmax + 1, args.Nbasis - 1) 
 
     
