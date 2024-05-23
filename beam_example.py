@@ -251,7 +251,8 @@ if __name__ == '__main__':
                 precision=2,
                 latitude=args.array_lat,
                 use_feed="x",
-                multiprocess=args.multiprocess
+                multiprocess=args.multiprocess,
+                force_no_beam_sqrt=True,
             )
         timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
         np.save(sim_outpath, _sim_vis)

@@ -465,6 +465,7 @@ def simulate_vis_per_source(
                                   precision=precision,
                                   polarized=polarized,
                                   subarr_ant=subarr_ant,
+                                  force_no_beam_sqrt=force_no_beam_sqrt,
                                  )
     
         # Set up parallel loop
@@ -487,6 +488,7 @@ def simulate_vis_per_source(
                                   precision=precision,
                                   polarized=polarized,
                                   subarr_ant=subarr_ant,
+                                  force_no_beam_sqrt=force_no_beam_sqrt,
                                  )
 
     # Assign returned values to array
