@@ -5,10 +5,7 @@ band by frequency indices.
 """
 import numpy as np
 from pyuvdata import UVData
-import argparse, os, sys
-
 import argparse, os, sys, time
-import pyuvsim
 
 #sys.path.insert(0,'/home/phil/hera/Hydra/')
 sys.path.insert(0,'/cosma/home/dp270/dc-bull2/software/Hydra/')
@@ -26,6 +23,7 @@ parser.add_argument("idx_max", type=int, action="store",
 parser.add_argument("--compress", type=str, action="store", default="none", 
                     required=False, dest="compress",
                     help="Compress by redundancy. Options are 'none', 'select', or 'average'.")
+
 args = parser.parse_args()
 
 # Extract args
@@ -33,6 +31,7 @@ fname = args.filename
 idx_min = args.idx_min
 idx_max = args.idx_max
 compress = args.compress
+max_bl_length = args.max_bl_length
 assert compress in ['none', 'select', 'average']
 
 print("Input file:", fname)
