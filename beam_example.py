@@ -211,7 +211,7 @@ if __name__ == '__main__':
     # Generate fluxes
     beta_ptsrc = -2.7
     ptsrc_amps = 10.**np.random.uniform(low=-1., high=2., size=args.Nptsrc)
-    fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc)
+    fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs * 1e-6, beta_ptsrc) # Have to put this in MHz...
     print("pstrc amps (input):", ptsrc_amps[:5])
     np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
     np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
@@ -276,7 +276,7 @@ if __name__ == '__main__':
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
 
     noise = (np.random.normal(scale=np.sqrt(noise_var)) + 1.j * np.random.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
-    data = _sim_vis + noise
+    data = _sim_vis + _sim_vis.swapaxes(-1,-2).conj() + noise # fix some zeros
     del _sim_vis # Save some memory
     del noise
 
