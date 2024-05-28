@@ -87,7 +87,8 @@ if __name__ == '__main__':
     parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 1),
                         nargs=2, required=False, dest="ra_bounds",
                         help="Bounds for the Right Ascension of the randomly simulated sources")
-    parser.add_argument("--dec-bounds", type=float, action="store", default=(-0.6, 0.4),
+    parser.add_argument("--dec-bounds", type=float, action="store", 
+                        default=(-np.pi/2, 1.),
                         nargs=2, required=False, dest="dec_bounds",
                         help="Bounds for the Declination of the randomly simulated sources")
     parser.add_argument("--lst-bounds", type=float, action="store", default=(0.2, 0.5),
