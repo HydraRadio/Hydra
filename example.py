@@ -266,7 +266,8 @@ if __name__ == '__main__':
                                                 Ltime=Ltime,
                                                 freq0=freqs[0],
                                                 time0=times[0],
-                                                shape0=(freqs.size, times.size))
+                                                shape0=(freqs.size, times.size),
+                                                positive_only=args.gain_only_positive_modes)
     Ngain_modes = k_freq.size
     Nants = len(ants)
 
