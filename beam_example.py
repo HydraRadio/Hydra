@@ -8,6 +8,7 @@ import time, os
 import multiprocessing
 from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
                          convert_to_tops
+import pyuvsim
 
 import argparse
 
@@ -123,7 +124,9 @@ if __name__ == '__main__':
     parser.add_argument("--stretch-std", required=False, type=float, 
                         dest="stretch_std", default=1e-2, 
                         help="Standard deviation for random beam stretching.")
-    parser.add_argument("--pca-modes", required=True, type=str,
+    parser.add_argument("--beam-type", required=False, type=str,
+                        dest="beam_type", default="gaussian")
+    parser.add_argument("--pca-modes", required=False, type=str,
                         dest="pca_modes", help="Path to saved PCA eigenvectors.")
     
     args = parser.parse_args()
@@ -215,19 +218,28 @@ if __name__ == '__main__':
 
     beams = []
     for ant_ind in range(Nants):
-        load = os.path.exists(f"{output_dir}/perturbed_beam_beamvals_seed_{args.seed + ant_ind}.npy")
-        save = not load
-        pow_sb = hydra.beam_sampler.get_pert_beam(args.seed + ant_ind,
-                                                  args.beam_file, 
-                                                  trans_std=args.trans_std,
-                                                  rot_std_deg=args.rot_std_deg,
-                                                  stretch_std=args.stretch_std,
-                                                  mmax=args.mmax, 
-                                                  nmax=args.nmax,
-                                                  sqrt=True, Nfeeds=2, 
-                                                  num_modes_comp=32, save=save,
-                                                  outdir=args.output_dir, load=load)
-        beams.append(pow_sb)
+        if args.beam_type == "pert_sim":
+            load = os.path.exists(f"{output_dir}/perturbed_beam_beamvals_seed_{args.seed + ant_ind}.npy")
+            save = not load
+            pow_sb = hydra.beam_sampler.get_pert_beam(args.seed + ant_ind,
+                                                      args.beam_file, 
+                                                      trans_std=args.trans_std,
+                                                      rot_std_deg=args.rot_std_deg,
+                                                      stretch_std=args.stretch_std,
+                                                      mmax=args.mmax, 
+                                                      nmax=args.nmax,
+                                                      sqrt=True, Nfeeds=2, 
+                                                      num_modes_comp=32, save=save,
+                                                      outdir=args.output_dir, load=load)        
+            beams.append(pow_sb)
+        elif args.beam_type == "gaussian":
+            np.random.seed(args.seed + ant_ind)
+            beam = pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14. + np.random.normal(loc=0, scale=0.1))
+            beams.append(beam)
+            
+        else:
+            raise ValueError("beam-type arg must be 'gaussian' or 'pert_sim'")
+            
     mmodes = np.arange(-args.mmax, args.mmax + 1)
     unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
                                               mmodes=mmodes, Nfeeds=2, 
@@ -278,17 +290,20 @@ if __name__ == '__main__':
     bess_matr = bess_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax)
     trig_matr = trig_matr.reshape(args.Ntimes, args.Nptsrc, 2 * args.mmax + 1)
 
-    mid_freq = freqs[args.Nfreqs // 2]
-    closest_chan = np.argmin(np.abs(mid_freq - pow_sb.freq_array))
-    mean_mode = unpert_sb.bess_fits[:, :, 0, 0, 0, closest_chan]
-    mean_mode = mean_mode / np.sqrt(np.sum(np.abs(mean_mode)**2))
-    pca_modes = np.load(args.pca_modes)[:, :args.Nbasis - 1].reshape(args.nmax, 2 * args.mmax + 1, args.Nbasis - 1) 
+    if args.beam_type == "pert_sim":
+        mid_freq = freqs[args.Nfreqs // 2]
+        closest_chan = np.argmin(np.abs(mid_freq - pow_sb.freq_array))
+        mean_mode = unpert_sb.bess_fits[:, :, 0, 0, 0, closest_chan]
+        mean_mode = mean_mode / np.sqrt(np.sum(np.abs(mean_mode)**2))
+        pca_modes = np.load(args.pca_modes)[:, :args.Nbasis - 1].reshape(args.nmax, 2 * args.mmax + 1, args.Nbasis - 1) 
 
-    
-    Pmatr = np.concatenate([mean_mode[:, :, None], pca_modes], axis=2)
 
-    BPmatr = np.tensordot(bess_matr, Pmatr, axes=1).transpose(3, 0, 1, 2) # Nbasis, Ntimes, Nsrc, Naz
-    Dmatr = np.sum(BPmatr * trig_matr, axis=3).transpose(1, 2, 0) # Ntimes, Nsrc, Nbasis
+        Pmatr = np.concatenate([mean_mode[:, :, None], pca_modes], axis=2)
+
+        BPmatr = np.tensordot(bess_matr, Pmatr, axes=1).transpose(3, 0, 1, 2) # Nbasis, Ntimes, Nsrc, Naz
+        Dmatr = np.sum(BPmatr * trig_matr, axis=3).transpose(1, 2, 0) # Ntimes, Nsrc, Nbasis
+    else:
+        Dmatr = bess_matr[:, :, :args.Nbasis]              
     Dmatr_outer = hydra.beam_sampler.get_bess_outer(Dmatr)
     
     beam_coeffs = np.zeros([Nants, args.Nfreqs, args.Nbasis, 1, 1])
