@@ -289,6 +289,10 @@ def get_bess_sky_contraction(bess_outer, ants, fluxes, ra, dec, freqs, lsts,
             
         if not polarized:
             sky_amp_phase = sky_amp_phase[np.newaxis, np.newaxis, :]
+        # Need this conjugation since only lower half of array is filled
+        # less memory efficient but this isn't the dominant term
+        # makes compute later easier to think about
+        sky_amp_phase = sky_amp_phase + sky_amp_phase.swapaxes(4, 5).conj()
 
         bess_sky_contraction[:, :, :, time_ind] = np.tensordot(sky_amp_phase[:, :, :, 0],
                                                                bess_outer[time_ind],
@@ -303,8 +307,8 @@ def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
     ant_inds = get_ant_inds(ant_samp_ind, Nants)
     beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds] # bfApQ -> ApfbQ
     bess_trans = np.einsum("ApfbQ,qQftAbB->pqftAB", 
-                           beam_res, 
-                           bess_sky_contraction[:, :, :, :, ant_samp_ind, ant_inds],
+                           beam_res.conj(), 
+                           bess_sky_contraction[:, :, :, :,  ant_inds, ant_samp_ind],
                            optimize=True)
     print("done computing bess_trans")
     
