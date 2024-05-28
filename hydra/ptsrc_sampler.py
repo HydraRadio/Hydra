@@ -3,7 +3,7 @@ from mpi4py.MPI import SUM as MPI_SUM
 import numpy as np
 import numpy.fft as fft
 
-import vis_cpu
+import matvis
 import pyuvsim
 import time
 

@@ -1,12 +1,11 @@
 import numpy as np
-from scipy.linalg import lstsq, toeplitz, cholesky, inv, LinAlgError, solve
+from scipy.linalg import toeplitz, cholesky, inv, LinAlgError, solve
 from scipy.special import comb, hyp2f1, jn_zeros, jn
 import matplotlib.pyplot as plt
 from matplotlib.colors import SymLogNorm
+from hydra.sparse_beam import sparse_beam
 
 from pyuvsim import AnalyticBeam
-from pyuvsim.analyticbeam import diameter_to_sigma
-from vis_cpu import conversions
 
 from .vis_simulator import simulate_vis_per_source
 from . import utils
@@ -134,7 +133,8 @@ def get_bess_matr(nmodes, mmodes, rho, phi):
     return bess_matr
 
 
-def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False):
+def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
+                     force_spw_index=False):
     """
     Get the best fit Fourier-Bessel coefficients for a beam based on its value at a
     a set direction cosines. A least-squares algorithm is used to perform the
@@ -178,13 +178,14 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False):
     rhs_full = beam.interp(az_array=phi.flatten(),
                            za_array=np.arccos(1 - rho**2).flatten(),
                            freq_array=freqs)[0]
+    
     if polarized:
-        if spw_axis_present:
+        if spw_axis_present or force_spw_index:
             rhs = rhs_full[:, 0] # Will have shape Nfeed, Naxes_vec, Nfreq, Nrho * Nphi
         else:
             rhs = rhs_full
     else:
-        if spw_axis_present:
+        if spw_axis_present or force_spw_index:
             rhs = rhs_full[1:, 0, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
         else:
             rhs = rhs_full[1:, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
@@ -193,7 +194,7 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False):
 
     # Loop over frequencies
     Nfreqs = len(freqs)
-    fit_beam = np.zeros((Nfreqs, ncoeff, Npol, Npol))
+    fit_beam = np.zeros((Nfreqs, ncoeff, Npol, Npol), dtype=complex)
 
     BT = (bess_matr.conj())
     lhs_op = np.tensordot(BT, bess_matr, axes=((0, 1), (0, 1)))
@@ -249,6 +250,68 @@ def select_subarr(arr, ant_samp_ind, Nants):
     ant_inds = get_ant_inds(ant_samp_ind, Nants)
     subarr = arr[:, :, :, :, ant_inds, ant_samp_ind]
     return subarr
+
+
+def get_bess_outer(bess_matr):
+
+    return bess_matr[:, :, np.newaxis] * bess_matr.conj()[:, :, :, np.newaxis]
+
+def get_bess_sky_contraction(bess_outer, ants, fluxes, ra, dec, freqs, lsts,
+                             polarized=False, 
+                             precision=1, latitude=-30.7215 * np.pi / 180.0, 
+                             use_feed="x", multiprocess=True):
+    
+    Npol = 2 if polarized else 1
+    Nfreqs = len(freqs)
+    Ncoeff = bess_outer.shape[-1]
+    Ntimes = len(lsts)
+    Nants = len(ants)
+    contract_shape = [Npol, Npol, Nfreqs, Ntimes, Nants, Nants, Ncoeff, Ncoeff]
+    
+    # tsb,qQftaAs,tsB -> qQftaAbB
+    # inner loop is already over frequency, so just loop over that to save mem
+    bess_sky_contraction = np.zeros(contract_shape, dtype=complex)
+    beams = [AnalyticBeam("uniform") for ant_ind in range(len(ants))] 
+    
+    #for freq_ind, freq in enumerate(freqs):
+        
+        #FIXME: can do away with freq loop if we use sparse_beam here but it needs to be rewritten
+    for time_ind in range(Ntimes):
+        sky_amp_phase = simulate_vis_per_source(ants, fluxes,
+                                                ra, dec, freqs, lsts[time_ind:time_ind + 1],
+                                                beams=beams, polarized=polarized,
+                                                precision=precision,
+                                                latitude=latitude,
+                                                use_feed=use_feed,
+                                                multiprocess=multiprocess)
+
+            
+            
+        if not polarized:
+            sky_amp_phase = sky_amp_phase[np.newaxis, np.newaxis, :]
+        # Need this conjugation since only lower half of array is filled
+        # less memory efficient but this isn't the dominant term
+        # makes compute later easier to think about
+        sky_amp_phase = sky_amp_phase + sky_amp_phase.swapaxes(4, 5).conj()
+
+        bess_sky_contraction[:, :, :, time_ind] = np.tensordot(sky_amp_phase[:, :, :, 0],
+                                                               bess_outer[time_ind],
+                                                               axes=((-1, ), (0, )))
+
+
+    return bess_sky_contraction
+
+def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
+                                     ant_samp_ind):
+    Nants = len(ants)
+    ant_inds = get_ant_inds(ant_samp_ind, Nants)
+    beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds] # bfApQ -> ApfbQ
+    bess_trans = np.einsum("ApfbQ,qQftAbB->pqftAB", 
+                           beam_res.conj(), 
+                           bess_sky_contraction[:, :, :, :,  ant_inds, ant_samp_ind],
+                           optimize=True)
+    
+    return bess_trans
 
 
 def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
@@ -629,9 +692,8 @@ def get_beam_from_FB_coeff(beam_coeffs, za, az, nmodes, mmodes):
     return beam
 
 
-def plot_FB_beam(beam, za, az,
-                 vmin=-1, vmax=1, norm=SymLogNorm, linthresh=1e-3, cmap="Spectral",
-                  **kwargs):
+def plot_FB_beam(beam, za, az, vmin=-1, vmax=1, norm=SymLogNorm, linthresh=1e-3, 
+                 cmap="Spectral", save=False, **kwargs):
     """
     Plots a Fourier_Bessel beam at specified zenith angles and azimuths.
 
@@ -656,7 +718,7 @@ def plot_FB_beam(beam, za, az,
     cax = ax[0].pcolormesh(Az, Za, beam.real,
                            norm=norm(vmin=vmin, vmax=vmax, linthresh=linthresh, **kwargs), cmap=cmap)
     ax[0].set_title("Real Component")
-    ax[1].pcolormesh(Theta, ZA, beam.imag,
+    ax[1].pcolormesh(Az, Za, beam.imag,
                      norm=norm(vmin=vmin, vmax=vmax, linthresh=linthresh, **kwargs), cmap=cmap)
     ax[1].set_title("Imaginary Component")
     fig.colorbar(cax, ax=ax.ravel().tolist())
@@ -729,3 +791,69 @@ def get_zernike_matrix(nmax, theta, r):
             ind += 1
 
     return zern_matr.transpose((1, 2, 0))
+
+def get_pert_beam(seed, beam_file, trans_std=1e-2, rot_std_deg=1., 
+                  stretch_std=1e-2, mmax=45, nmax=80, sqrt=True, Nfeeds=2,
+                  num_modes_comp=32, save=False, outdir="", load=False):
+    """
+    Get a perturbed sparse_beam instance.
+
+    Parameters:
+        seed (int):
+            The random seed.
+        beam_file (str):
+            Path to unperturbed beam file.
+        trans_std (float):
+            Standard deviation for random tilt of beam, in units of FB radial coordinate.
+        rot_std_std (float):
+            Standard deviation for random beam rotation, in degrees.
+        stretch_std (float):
+            Standard deviation for random beam stretching.
+        mmax (int):
+            The maximum azimuthal mode number to use.
+        nmax (int):
+            The maximum radial mode number to use in the FB basis.
+        sqrt (bool):
+            Whether to take the square root of the unperturbed beam before 
+            fitting. Used for power beams.
+        Nfeeds (int):
+            Number of feeds. Set to None if using E-field beam, 2 for power beam.
+        num_modes_comp (int):
+            Does nothing, but will slow down the code if set to a high number.
+        save (bool):
+            Whether to save the fit coefficients to the perturbed beam.
+        outdir (str):
+            Path to directory to save output.
+
+    Returns:
+        sb (sparse_beam):
+            Perturbed sparse_beam instance.
+    """
+    np.random.seed(seed)
+    trans_x, trans_y = np.random.normal(scale=trans_std, size=2)
+    rot = np.random.normal(scale=np.deg2rad(rot_std_deg))
+    stretch_x, stretch_y = np.random.normal(loc=1, scale=stretch_std, size=2)
+    sin_pert_coeffs = np.random.normal(size=8)
+
+    mmodes = np.arange(-mmax, mmax + 1)
+    sb = sparse_beam(beam_file, nmax, mmodes, Nfeeds=Nfeeds,
+                     num_modes_comp=num_modes_comp, sqrt=sqrt, 
+                     perturb=True, trans_x=trans_x, trans_y=trans_y, 
+                     rot=rot, stretch_x=stretch_x, 
+                     stretch_y=stretch_y, 
+                     sin_pert_coeffs=sin_pert_coeffs)
+    
+    beam_outfile = f"{outdir}/perturbed_beam_beamvals_seed_{seed}.npy"
+    if load:
+        pert_beam = np.load(beam_outfile)
+    else:
+        Azg, Zag = np.meshgrid(sb.axis1_array, sb.axis2_array)
+        pert_beam, _ = sb.interp(az_array=Azg.flatten(), za_array=Zag.flatten())
+    fit_coeffs, _ = sb.get_fits(data_array=pert_beam.reshape(sb.data_array.shape))
+
+    if save:
+        np.save(beam_outfile, pert_beam)
+        np.save(f"{outdir}/perturbed_beam_fit_coeffs_seed_{seed}.npy", 
+                fit_coeffs)
+    
+    return sb

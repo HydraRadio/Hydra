@@ -7,7 +7,7 @@ import warnings
 from astropy.constants import c
 from pyuvdata import UVBeam
 from typing import Optional, Sequence
-from vis_cpu import conversions
+from matvis import conversions
 import healpy as hp
 from multiprocessing import Pool, cpu_count
 import os, warnings, time
@@ -107,7 +107,8 @@ def vis_sim_per_source(
     precision: int = 2,
     polarized: bool = False,
     beam_idx: Optional[np.ndarray] = None,
-    subarr_ant=None
+    subarr_ant=None,
+    force_no_beam_sqrt=False
 ):
     """
     Calculate visibility from an input intensity map and beam model. This is
@@ -156,8 +157,11 @@ def vis_sim_per_source(
             Optional length-NANT array specifying a beam index for each antenna.
             By default, either a single beam is assumed to apply to all
             antennas or each antenna gets its own beam.
-        subarr_ant (int): Used to calculate only those visibilities associated
+        subarr_ant (int): 
+            Used to calculate only those visibilities associated
             with a particular antenna.
+        force_no_beam_sqrt (bool):
+            Do not take the square root of a beam even if it's a power beam.
 
     Returns:
         vis (array_like):
@@ -254,9 +258,15 @@ def vis_sim_per_source(
                 # Here we have already asserted that the beam is a power beam and
                 # has only one polarization, so we just evaluate that one.
                 if spw_axis_present:
-                    interp_beam = np.sqrt(interp_beam[0, 0, 0, 0, :])
+                    if force_no_beam_sqrt:
+                        interp_beam = interp_beam[0, 0, 0, 0, :]
+                    else:
+                        interp_beam = np.sqrt(interp_beam[0, 0, 0, 0, :])
                 else:
-                    interp_beam = np.sqrt(interp_beam[0, 0, 0, :])
+                    if force_no_beam_sqrt:
+                        interp_beam = interp_beam[0, 0, 0, :]
+                    else:
+                        interp_beam = np.sqrt(interp_beam[0, 0, 0, :])
 
             A_s[:, :, i] = interp_beam
 
@@ -321,6 +331,7 @@ def simulate_vis_per_source(
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
     subarr_ant=None,
+    force_no_beam_sqrt=False
 ):
     """
     Run a basic simulation, returning the visibility for each source
@@ -359,6 +370,8 @@ def simulate_vis_per_source(
             the HERA latitude = -30.7215 * pi / 180.
         subarr_ant (int): Used to calculate only those visibilities associated
             with a particular antenna.
+        force_no_beam_sqrt (bool):
+            Do not take the square root of a beam even if it's a power beam.
 
     Returns:
         vis (array_like):
@@ -436,6 +449,7 @@ def simulate_vis_per_source(
                               precision=precision,
                               polarized=polarized,
                               subarr_ant=subarr_ant,
+                              force_no_beam_sqrt=force_no_beam_sqrt
                              )
 
     # Assign returned values to array
@@ -488,6 +502,8 @@ def simulate_vis(
             the HERA latitude = -30.7215 * pi / 180.
         multiprocess (bool): Whether to use multiprocessing to speed up the
             calculation
+        force_no_beam_sqrt (bool):
+            Do not take the square root of a beam even if it's a power beam.
 
     Returns:
         vis (array_like):

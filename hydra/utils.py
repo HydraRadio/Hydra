@@ -1,6 +1,6 @@
 
 import numpy as np
-from vis_cpu import conversions
+from matvis import conversions
 import pyuvdata
 from pyuvsim import AnalyticBeam
 
