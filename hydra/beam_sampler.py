@@ -310,7 +310,6 @@ def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
                            beam_res.conj(), 
                            bess_sky_contraction[:, :, :, :,  ant_inds, ant_samp_ind],
                            optimize=True)
-    print("done computing bess_trans")
     
     return bess_trans
 
