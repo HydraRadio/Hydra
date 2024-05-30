@@ -30,169 +30,8 @@ if __name__ == '__main__':
     nworkers = comm.Get_size()
     myid = comm.Get_rank()
 
-<<<<<<< HEAD
     # Parse commandline arguments
     args = hydra.config.get_config()
-=======
-    description = "Example Gibbs sampling of the joint posterior of several analysis " \
-                  "parameters in 21-cm power spectrum estimation from a simulated " \
-                  "visibility data set"
-    parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--seed", type=int, action="store", default=0,
-                        required=False, dest="seed",
-                        help="Set the random seed.")
-    
-    # Samplers
-    parser.add_argument("--gains", action="store_true",
-                        required=False, dest="sample_gains",
-                        help="Sample gains.")
-    parser.add_argument("--vis", action="store_true",
-                        required=False, dest="sample_vis",
-                        help="Sample visibilities in general.")
-    parser.add_argument("--ptsrc", action="store_true",
-                        required=False, dest="sample_ptsrc",
-                        help="Sample point source amplitudes.")
-    parser.add_argument("--beam", action="store_true",
-                        required=False, dest="sample_beam",
-                        help="Sample beams.")
-    
-    # Output options
-    parser.add_argument("--stats", action="store_true",
-                        required=False, dest="calculate_stats",
-                        help="Calcultae statistics about the sampling results.")
-    parser.add_argument("--diagnostics", action="store_true",
-                        required=False, dest="output_diagnostics",
-                        help="Output diagnostics.") # This will be ignored
-    parser.add_argument("--timing", action="store_true", required=False,
-                        dest="save_timing_info", help="Save timing info.")
-    parser.add_argument("--plotting", action="store_true",
-                        required=False, dest="plotting",
-                        help="Output plots.")
-    
-    # Array and data shape options
-    parser.add_argument('--hex-array', type=int, action="store", default=(3,4),
-                        required=False, nargs='+', dest="hex_array",
-                        help="Hex array layout, specified as the no. of antennas "
-                             "in the 1st and middle rows, e.g. '--hex-array 3 4'.")
-    parser.add_argument("--Nptsrc", type=int, action="store", default=100,
-                        required=False, dest="Nptsrc",
-                        help="Number of point sources to use in simulation (and model).")
-    parser.add_argument("--Ntimes", type=int, action="store", default=30,
-                        required=False, dest="Ntimes",
-                        help="Number of times to use in the simulation.")
-    parser.add_argument("--Nfreqs", type=int, action="store", default=60,
-                        required=False, dest="Nfreqs",
-                        help="Number of frequencies to use in the simulation.")
-    parser.add_argument("--Niters", type=int, action="store", default=100,
-                        required=False, dest="Niters",
-                        help="Number of joint samples to gather.")
-    
-    # Noise level
-    parser.add_argument("--sigma-noise", type=float, action="store",
-                        default=0.05, required=False, dest="sigma_noise",
-                        help="Standard deviation of the noise, in the same units "
-                             "as the visibility data.")
-    
-    parser.add_argument("--solver", type=str, action="store",
-                        default='cg', required=False, dest="solver_name",
-                        help="Which sparse matrix solver to use for linear systems ('cg' or 'gmres').")
-    parser.add_argument("--output-dir", type=str, action="store",
-                        default="./output", required=False, dest="output_dir",
-                        help="Output directory.")
-    parser.add_argument("--multiprocess", action="store_true", dest="multiprocess",
-                        required=False,
-                        help="Whether to use multiprocessing in vis sim calls.")
-    
-    # Point source sim params
-    parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 1),
-                        nargs=2, required=False, dest="ra_bounds",
-                        help="Bounds for the Right Ascension of the randomly simulated sources")
-    parser.add_argument("--dec-bounds", type=float, action="store", default=(-0.6, 0.4),
-                        nargs=2, required=False, dest="dec_bounds",
-                        help="Bounds for the Declination of the randomly simulated sources")
-    parser.add_argument("--lst-bounds", type=float, action="store", default=(0.2, 0.5),
-                        nargs=2, required=False, dest="lst_bounds",
-                        help="Bounds for the LST range of the simulation, in radians.")
-    parser.add_argument("--freq-bounds", type=float, action="store", default=(100., 120.),
-                        nargs=2, required=False, dest="freq_bounds",
-                        help="Bounds for the frequency range of the simulation, in MHz.")
-    parser.add_argument("--ptsrc-amp-prior-level", type=float, action="store", default=0.1,
-                        required=False, dest="ptsrc_amp_prior_level",
-                        help="Fractional prior on point source amplitudes")
-    parser.add_argument("--vis-prior-level", type=float, action="store", default=0.1,
-                        required=False, dest="vis_prior_level",
-                        help="Prior on visibility values")
-
-    parser.add_argument("--calsrc-std", type=float, action="store", default=-1.,
-                        required=False, dest="calsrc_std",
-                        help="Define a different std. dev. for the amplitude prior of a calibration source. If -1, do not use a calibration source.")
-    parser.add_argument("--calsrc-radius", type=float, action="store", default=10.,
-                        required=False, dest="calsrc_radius",
-                        help="Radius around declination of the zenith in which to search for brightest source, which is then identified as the calibration source.")
-                        
-    # Gain prior
-    parser.add_argument("--gain-prior-amp", type=float, action="store", default=0.1,
-                        required=False, dest="gain_prior_amp",
-                        help="Overall amplitude of gain prior.")
-    parser.add_argument("--gain-prior-sigma-frate", type=float, action="store", default=None,
-                        required=False, dest="gain_prior_sigma_frate",
-                        help="Width of a Gaussian prior in fringe rate, in units of mHz.")
-    parser.add_argument("--gain-prior-sigma-delay", type=float, action="store", default=None,
-                        required=False, dest="gain_prior_sigma_delay",
-                        help="Width of a Gaussian prior in delay, in units of ns.")
-    parser.add_argument("--gain-prior-zeropoint-std", type=float, action="store", default=None,
-                        required=False, dest="gain_prior_zeropoint_std",
-                        help="If specified, fix the std. dev. of the (0,0) mode to some value.")
-    parser.add_argument("--gain-prior-frate0", type=float, action="store", default=0.,
-                        required=False, dest="gain_prior_frate0",
-                        help="The central fringe rate of the Gaussian taper (mHz).")
-    parser.add_argument("--gain-prior-delay0", type=float, action="store", default=0.,
-                        required=False, dest="gain_prior_delay0",
-                        help="The central delay of the Gaussian taper (ns).")
-    parser.add_argument("--gain-mode-cut-level", type=float, action="store", default=None,
-                        required=False, dest="gain_mode_cut_level",
-                        help="If specified, gain modes with (prior power spectrum) < (gain-mode-cut-level) * max(prior power spectrum) will be excluded from the linear solve (i.e. set to zero).")
-    parser.add_argument("--gain-always-linear", type=bool, action="store", default=False,
-                        required=False, dest="gain_always_linear",
-                        help="If True, the gain perturbations are always applied under the linear approximation (the x_i x_j^* term is neglected everywhere)")
-
-    # Gain simulation
-    parser.add_argument("--sim-gain-amp-std", type=float, action="store", default=0.05,
-                        required=False, dest="sim_gain_amp_std",
-                        help="Std. dev. of amplitude of simulated gain.")
-    parser.add_argument("--sim-gain-sigma-frate", type=float, action="store", default=None,
-                        required=False, dest="sim_gain_sigma_frate",
-                        help="Width of a Gaussian in fringe rate, in units of mHz.")
-    parser.add_argument("--sim-gain-sigma-delay", type=float, action="store", default=None,
-                        required=False, dest="sim_gain_sigma_delay",
-                        help="Width of a Gaussian in delay, in units of ns.")
-    parser.add_argument("--sim-gain-frate0", type=float, action="store", default=0.,
-                        required=False, dest="sim_gain_frate0",
-                        help="The central fringe rate of the Gaussian taper (mHz).")
-    parser.add_argument("--sim-gain-delay0", type=float, action="store", default=0.,
-                        required=False, dest="sim_gain_delay0",
-                        help="The central delay of the Gaussian taper (ns).")
-    
-    # Beam parameters
-    parser.add_argument("--beam-sim-type", type=str, action="store", default="gaussian",
-                        required=False, dest="beam_sim_type",
-                        help="Which type of beam to use for the simulation. ['gaussian', 'polybeam']")
-    parser.add_argument("--beam-prior-std", type=float, action="store", default=1,
-                        required=False, dest="beam_prior_std",
-                        help="Std. dev. of beam coefficient prior, in units of FB coefficient")
-    parser.add_argument("--beam-nmax", type=int, action="store",
-                        default=16, required=False, dest="beam_nmax",
-                        help="Maximum radial degree of the Fourier-Bessel basis for the beams.")
-    parser.add_argument("--beam-mmax", type=int, action="store",
-                        default=0, required=False, dest="beam_mmax",
-                        help="Maximum azimuthal degree of the Fourier-Bessel basis for the beams.")
-    parser.add_argument("--rho-const", type=float, action="store", 
-                        default=np.sqrt(1-np.cos(np.pi * 23 / 45)),
-                        required=False, dest="rho_const",
-                        help="A constant to define the radial projection for the beam spatial basis")
-    
-    args = parser.parse_args()
->>>>>>> main
 
     # Set switches
     SAMPLE_GAINS = args.sample_gains
@@ -1228,7 +1067,9 @@ if True == False:
         #---------------------------------------------------------------------------
 
         if SAMPLE_BEAM:
-            print("Got to beam sampler")
+            print("(D) Beam sampler")
+            t0b = time.time()
+
             def plot_beam_cross(beam_coeffs, ant_ind, iter, tag='', type='cross'):
                 # Shape ncoeffs, Nfreqs, Nant -- just use a ref freq
                 coeff_use = beam_coeffs[:, 0, :]
@@ -1268,14 +1109,18 @@ if True == False:
             
             # Have to have an initial guess and do some precompute
             if n == 0:
-                beam_nmodes, beam_mmodes = np.meshgrid(np.arange(1, beam_nmax + 1), np.arange(-beam_mmax, beam_mmax + 1))
+                beam_nmodes, beam_mmodes = np.meshgrid(
+                                                np.arange(1, beam_nmax + 1), 
+                                                np.arange(-beam_mmax, beam_mmax + 1))
                 beam_nmodes = beam_nmodes.flatten()
                 beam_mmodes = beam_mmodes.flatten()
+
                 # Make a copy of the data that is more convenient for the beam calcs.
                 data_beam = hydra.beam_sampler.reshape_data_arr(data[np.newaxis, np.newaxis],
                                                                 Nfreqs,
                                                                 Ntimes,
                                                                 Nants, 1)
+                
                 # Doubles the autos, but we don't use them so it doesn't matter.
                 # This makes it so we do not have to keep track of whether we are sampling
                 # The beam coeffs or their conjugate!
@@ -1304,10 +1149,10 @@ if True == False:
                                                   RHO, PHI,
                                                   force_spw_index=True)
                 
-                print("Printing beam best fit dynamic range")
-                print(np.amax(np.abs(beam_coeffs_fit)), np.amin(np.abs(beam_coeffs_fit)))
-                print("Printing data dynamic range")
-                print(np.amax(np.abs(data_beam)), np.amin(np.abs(data_beam)))
+                print("\tBeam best fit dynamic range:")
+                print("\t", np.amax(np.abs(beam_coeffs_fit)), np.amin(np.abs(beam_coeffs_fit)))
+                print("\tData dynamic range:")
+                print("\t", np.amax(np.abs(data_beam)), np.amin(np.abs(data_beam)))
                 txs, tys, tzs = convert_to_tops(ra, dec, times, array_latitude)
 
                 # area-preserving
@@ -1327,7 +1172,6 @@ if True == False:
                 if PLOTTING:
                     plot_beam_cross(beam_coeffs, 0, 0, '_best_fit')
 
-
                 amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
                 flux_use = get_flux_from_ptsrc_amp(amp_use, freqs, beta_ptsrc)
 
@@ -1343,12 +1187,12 @@ if True == False:
                                                               constrain_phase=True,
                                                               constraint=1)
                 cho_tuple_0 = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
+                
                 # Be lazy and just use the initial guess.
                 coeff_mean = beam_coeffs[:, :, 0]
                 bess_outer = hydra.beam_sampler.get_bess_outer(bess_matr)
 
             t0 = time.time()
-            print("Computing bess_sky_contraction")
             bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(bess_outer, 
                                                                                ant_pos, 
                                                                                flux_use, 
@@ -1359,7 +1203,7 @@ if True == False:
                                                                                polarized=False, 
                                                                                latitude=hera_latitude, 
                                                                                multiprocess=MULTIPROCESS)
-            
+            timing_info(ftime, n, "(D) Computed beam bess_sky_contraction", time.time() - t0)
 
             # Round robin loop through the antennas
             for ant_samp_ind in range(Nants):
@@ -1369,7 +1213,9 @@ if True == False:
                 else:
                     cov_tuple_use = cov_tuple_0
                     cho_tuple_use = cho_tuple_0
-<<<<<<< HEAD
+
+                # Construct beam projection operator
+                t0 = time.time()
                 bess_trans = hydra.beam_sampler.get_bess_to_vis(bess_matr, ant_pos,
                                                                    flux_use, ra, dec,
                                                                    freqs*1e6, times,
@@ -1377,15 +1223,17 @@ if True == False:
                                                                    ant_samp_ind,
                                                                    polarized=False,
                                                                    latitude=array_latitude,
-                                                                   multiprocess=MULTIPROCESS)
-=======
->>>>>>> main
+                                                                   multiprocess=False)
 
-                print("Computing bess_trans")
+                timing_info(ftime, n, "(D) Computed beam get_bess_to_vis", time.time() - t0)
+                
+                t0 = time.time()
                 bess_trans = hydra.beam_sampler.get_bess_to_vis_from_contraction(bess_sky_contraction,
                                                                                  beam_coeffs, 
                                                                                  ants, 
                                                                                  ant_samp_ind)
+                timing_info(ftime, n, "(D) Computed beam get_bess_to_vis_from_contraction", time.time() - t0)
+
                 #bess_trans = hydra.beam_sampler.get_bess_to_vis(bess_matr, ant_pos,
                  #                                                  flux_use, ra, dec,
                   #                                                 freqs*1e6, times,
@@ -1395,7 +1243,7 @@ if True == False:
                       #                                             latitude=hera_latitude,
                        #                                            multiprocess=MULTIPROCESS)
 
-                print("Doing other per-iteration pre-compute")
+                print("\tDoing other per-iteration pre-compute")
                 inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var_beam,
                                                                ant_samp_ind, Nants)
                 data_use = hydra.beam_sampler.select_subarr(data_beam, ant_samp_ind, Nants)
@@ -1438,9 +1286,10 @@ if True == False:
 
                 # What the shape would be if the matrix were represented densely
                 beam_lhs_shape = (axlen, axlen)
-                print("Solving")
+                print("\tSolving")
+                t0 = time.time()
                 x_soln = np.linalg.solve(matr, bbeam)
-                print("Done solving")
+                timing_info(ftime, n, "(D) Solved for beam", time.time() - t0)
 
                 test_close = False
                 if test_close:
@@ -1467,7 +1316,7 @@ if True == False:
 
             if PLOTTING:
                 plot_beam_cross(beam_coeffs, ant_samp_ind, n, '')
-            timing_info(ftime, n, "(D) Beam sampler", time.time() - t0)
+            timing_info(ftime, n, "(D) Beam sampler", time.time() - t0b)
             np.save(os.path.join(output_dir, "beam_%05d" % n), beam_coeffs)
 
         #---------------------------------------------------------------------------
