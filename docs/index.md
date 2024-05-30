@@ -71,6 +71,10 @@ At present, Hydra is parallelised in a basic way, meaning that it can only run o
 a single HPC node). There are plans to make a distributed version that can scale to much larger problem 
 sizes, but for now the main limitation is the amount of RAM available on each node.
 
+## Learn about the code and different 'heads' of Hydra
+
+* Run the example script, [example.py](example.md)
+
 ## Who is behind Hydra?
 
 Hydra is a project based out of Phil Bull's research group at the Jodrell Bank Centre for Astrophysics 
