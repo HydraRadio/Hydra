@@ -1,7 +1,7 @@
 # Hydra
 An ultra-high dimensional Bayesian sampler code for 21cm arrays
 
-<img src="../hydra_logo.png" alt="Hydra logo" width="200px"/>
+<img src="hydra_logo.png" alt="Hydra logo" width="200px"/>
 
 ## What is Hydra?
 
