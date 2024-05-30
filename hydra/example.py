@@ -1,7 +1,7 @@
 
 import numpy as np
 
-from scipy.signal import blackmanharris
+from scipy.signal.windows import blackmanharris
 import pyuvsim
 from hera_sim.beams import PolyBeam
 import time, os, resource
