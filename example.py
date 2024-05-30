@@ -8,7 +8,7 @@ import hydra
 import numpy.fft as fft
 import scipy.linalg
 from scipy.sparse.linalg import cg, gmres, LinearOperator, bicgstab
-from scipy.signal import blackmanharris
+from scipy.signal.windows import blackmanharris
 from scipy.sparse import coo_matrix
 import pyuvsim
 from hera_sim.beams import PolyBeam
