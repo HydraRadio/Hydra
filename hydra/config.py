@@ -24,6 +24,9 @@ def get_config():
     parser.add_argument("--ptsrc", action="store_true",
                         required=False, dest="sample_ptsrc",
                         help="Sample point source amplitudes.")
+    parser.add_argument("--regions", action="store_true",
+                        required=False, dest="sample_regions",
+                        help="Sample amplitudes of regions of a diffuse map.")
     parser.add_argument("--beam", action="store_true",
                         required=False, dest="sample_beam",
                         help="Sample beams.")
@@ -196,6 +199,20 @@ def get_config():
                         default=16, required=False, dest="sh_nside",
                         help="Healpix nside used to construct spherical harmonic response function.")
 
+    # Region parameters
+    parser.add_argument("--region-nregions", type=int, action="store", default=10,
+                        required=False, dest="region_nregions",
+                        help="No. of regions to break up a diffuse map into.")
+    parser.add_argument("--region-smoothing-fwhm", type=float, action="store",
+                        default=None, required=False, dest="region_smoothing_fwhm",
+                        help="Smoothing FWHM to apply to segmented diffuse map, to smooth "
+                        "sharp edges.")
+    parser.add_argument("--region-nside", type=int, action="store",
+                        default=8, required=False, dest="region_nside",
+                        help="Healpix nside to use for the region maps.")
+    parser.add_argument("--region-amp-prior-level", type=float, action="store", default=0.1,
+                        required=False, dest="region_amp_prior_level",
+                        help="Fractional prior on diffuse region amplitudes")
 
     args = parser.parse_args()
     return args

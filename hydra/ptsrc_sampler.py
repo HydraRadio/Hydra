@@ -11,15 +11,11 @@ from .vis_simulator import simulate_vis_per_source
 
 
 
-
-
-
 def precompute_mpi(comm,
                    ants, 
                    antpairs, 
                    freq_chunk, 
                    time_chunk,
-                   fluxes_chunk,
                    proj_chunk,
                    data_chunk,
                    inv_noise_var_chunk,

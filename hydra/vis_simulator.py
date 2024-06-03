@@ -1,5 +1,5 @@
 """
-Trimmed-down version of vis_cpu that can be modified to return fragments of the
+Trimmed-down version of matvis that can be modified to return fragments of the
 visibilities.
 """
 import numpy as np
@@ -112,7 +112,7 @@ def vis_sim_per_source(
 ):
     """
     Calculate visibility from an input intensity map and beam model. This is
-    a trimmed-down version of vis_cpu that only uses UVBeam beams (not gridded
+    a trimmed-down version of matvis that only uses UVBeam beams (not gridded
     beams).
 
     Parameters:
@@ -335,7 +335,7 @@ def simulate_vis_per_source(
 ):
     """
     Run a basic simulation, returning the visibility for each source
-    separately. Based on ``vis_cpu``.
+    separately. Based on ``matvis``.
 
     This wrapper handles the necessary coordinate conversions etc.
 
@@ -362,7 +362,7 @@ def simulate_vis_per_source(
             polarized visibilities, e.g. V_nn, V_ne, V_en, V_ee.
             Default: False (only uses the 'ee' polarization).
         precision (int):
-            Which precision setting to use for :func:`~vis_cpu`. If set to
+            Which precision setting to use for :func:`~matvis`. If set to
             ``1``, uses the (``np.float32``, ``np.complex64``) dtypes. If set
             to ``2``, uses the (``np.float64``, ``np.complex128``) dtypes.
         latitude (float):
@@ -436,7 +436,7 @@ def simulate_vis_per_source(
         vis_shape = (freqs.size, lsts.size, nants, nants, nsrcs)
     vis = np.zeros(vis_shape, dtype=complex_dtype)
 
-    # Loop over frequencies that calls vis_cpu for UVBeam
+    # Loop over frequencies that calls matvis for UVBeam
     vv = np.zeros_like(vis)
     for i in range(len(freqs)):
         vv[i] = vis_sim_per_source(
@@ -467,7 +467,7 @@ def simulate_vis(
     *args, **kwargs
 ):
     """
-    Run a basic simulation, based on ``vis_cpu``.
+    Run a basic simulation, based on ``matvis``.
 
     This wrapper handles the necessary coordinate conversions etc.
 
@@ -494,7 +494,7 @@ def simulate_vis(
             polarized visibilities, e.g. V_nn, V_ne, V_en, V_ee.
             Default: False (only uses the 'ee' polarization).
         precision (int):
-            Which precision setting to use for :func:`~vis_cpu`. If set to
+            Which precision setting to use for :func:`~matvis`. If set to
             ``1``, uses the (``np.float32``, ``np.complex64``) dtypes. If set
             to ``2``, uses the (``np.float64``, ``np.complex128``) dtypes.
         latitude (float):
@@ -535,7 +535,7 @@ def simulate_vis_per_alm(
 ):
     """
     Run a basic simulation, returning the visibility for each spherical harmonic mode
-    separately. Based on ``vis_cpu``.
+    separately. Based on ``matvis``.
 
     This wrapper handles the necessary coordinate conversions etc.
 
@@ -564,7 +564,7 @@ def simulate_vis_per_alm(
             polarized visibilities, e.g. V_nn, V_ne, V_en, V_ee.
             Default: False (only uses the 'ee' polarization).
         precision (int):
-            Which precision setting to use for :func:`~vis_cpu`. If set to
+            Which precision setting to use for :func:`~matvis`. If set to
             ``1``, uses the (``np.float32``, ``np.complex64``) dtypes. If set
             to ``2``, uses the (``np.float64``, ``np.complex128``) dtypes.
         latitude (float):
@@ -681,6 +681,172 @@ def simulate_vis_per_alm(
     return ell, m, vis
 
 
+
+def simulate_vis_per_region(
+    lmax,
+    nside,
+    ants,
+    freqs,
+    lsts,
+    beams,
+    polarized=False,
+    precision=2,
+    latitude=-30.7215 * np.pi / 180.0,
+    use_feed="x",
+    multiprocess=True,
+    amplitude=1.,
+    logfile=None
+):
+    """
+    Run a basic simulation, returning the visibility for each spherical harmonic mode
+    separately. Based on ``matvis``.
+
+    This wrapper handles the necessary coordinate conversions etc.
+
+    NOTE: The spherical harmonic modes are defined in the equatorial (RA, Dec)
+    coordinate system.
+
+    Parameters:
+        lmax (int):
+            Maximum ell value to simulate.
+        nside (int):
+            Healpix map nside used to generate the simulations. Higher values
+            will give more accurate results.
+        ants (dict):
+            Dictionary of antenna positions. The keys are the antenna names
+            (integers) and the values are the Cartesian x,y,z positions of the
+            antennas (in meters) relative to the array center.
+        freqs (array_like):
+            Frequency channels for the simulation, in Hz.
+        lsts (array_like):
+            Local sidereal times for the simulation, in radians. Range is
+            [0, 2 pi].
+        beams (list of ``UVBeam`` objects):
+            Beam objects to use for each antenna.
+        polarized (bool):
+            If True, use polarized beams and calculate all available linearly-
+            polarized visibilities, e.g. V_nn, V_ne, V_en, V_ee.
+            Default: False (only uses the 'ee' polarization).
+        precision (int):
+            Which precision setting to use for :func:`~matvis`. If set to
+            ``1``, uses the (``np.float32``, ``np.complex64``) dtypes. If set
+            to ``2``, uses the (``np.float64``, ``np.complex128``) dtypes.
+        latitude (float):
+            The latitude of the center of the array, in radians. The default is
+            the HERA latitude = -30.7215 * pi / 180.
+        multiprocess (bool): Whether to use multiprocessing to speed up the
+            calculation.
+        amplitude (float):
+            The amplitude to use for the spherical harmonic modes when running
+            the simulation.
+        logfile (str):
+            Path to log file.
+
+    Returns:
+        ell, m (array_like):
+            Arrays of integer values of ell, m modes, with the same ordering as
+            the modes in the last dimensions of `vis`. This uses the default
+            healpy ordering and convention (+ve m modes only).
+
+        vis (array_like):
+            Complex, shape (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS, NMODES)
+            if ``polarized == True``, or (NFREQS, NTIMES, NANTS, NANTS, NMODES)
+            otherwise. This is the visibility response of the interferometer
+            to each spherical harmonic (ell, m) mode.
+
+            The final dimension has size `NMODES == 2*ell.size`. The first half
+            of this dimensions (i.e. of length `ell.size`) corresponds to real
+            spherical harmonic coefficients, with the same ordering as the `ell`
+            and `m` arrays. The second set is for imaginary SH coefficients, again
+            with the same ordering.
+    """
+    # Make sure these are array_like
+    freqs = np.atleast_1d(freqs)
+    lsts = np.atleast_1d(lsts)
+
+    # Array of ell, m values in healpy ordering
+    ell, m = hp.Alm().getlm(lmax=lmax)
+
+    # Get Healpix pixel coords
+    npix = hp.nside2npix(nside)
+    pix_area = 4.*np.pi / npix # steradians per pixel
+    dec, ra = hp.pix2ang(nside=nside, ipix=np.arange(npix), lonlat=False)
+    # RA must be in range [0, 2 pi] and Dec in range [-pi, +pi]
+    dec = dec - 0.5*np.pi # shift Dec coords
+
+    # Dummy fluxes (one everywhere)
+    fluxes = np.ones((npix, freqs.size))
+
+    # Run simulation using the per-source simulation function, to get
+    # visibility contrib. from each pixel
+    if logfile is not None:
+        t0 = time.time()
+        with open(logfile, 'a') as f:
+            f.write("%s Starting simulate_vis_per_source\n" % (datetime.now()))
+
+    vis_pix = simulate_vis_per_source(ants=ants,
+                                      fluxes=fluxes,
+                                      ra=ra,
+                                      dec=dec,
+                                      freqs=freqs,
+                                      lsts=lsts,
+                                      beams=beams,
+                                      polarized=polarized,
+                                      precision=precision,
+                                      latitude=latitude,
+                                      use_feed=use_feed,
+                                      multiprocess=multiprocess)
+
+    if logfile is not None:
+        with open(logfile, 'a') as f:
+            f.write("%s Finished simulate_vis_per_source in %5.2f sec\n" \
+                     % (datetime.now(), time.time() - t0))
+
+    # Empty array with the right shape (no. visibilities times no. l,m modes)
+    shape = list(vis_pix.shape)
+    shape[-1] = 2*ell.size # replace last dim. with Nmodes (real + imag.)
+    vis = np.zeros(shape, dtype=np.complex128)
+
+    # Loop over (ell, m) modes, weighting the precomputed visibility sim
+    # by the value of each spherical harmonic mode in each pixel
+    alm = np.zeros(ell.size, dtype=np.complex128)
+    for n in range(ell.size):
+
+        if logfile is not None:
+            with open(logfile, 'a') as f:
+                f.write("%s ell %d / %d\n" % (datetime.now(), n, ell.size))
+
+        # Start with zero vector for all modes
+        alm *= 0
+
+        # Loop over real, imaginary values for this mode only
+        for j, val in enumerate([1., 1.j]):
+
+            # Make healpix map for this mode only
+            alm[n] = val
+            skymap = hp.alm2map(alm, nside=nside) * pix_area * amplitude
+            # multiply by pixel area to get 'integrated' quantity
+            # (results will be in Jy units)
+
+            # Multiply visibility for each pixel by the pixel value for this mode
+            if polarized:
+                # vis_pix: (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS, NSRCS)
+                vis[:,:,:,:,:,:,n + j*ell.size] = np.sum(vis_pix * skymap, axis=-1)
+                # Last dim. of vis is in blocks of real (first ell.size modes) and
+                # imaginary (last ell.size modes)
+            else:
+                # vis_pix: (NFREQS, NTIMES, NANTS, NANTS, NSRCS)
+                vis[:,:,:,:,n + j*ell.size] = np.sum(vis_pix * skymap, axis=-1)
+
+    if logfile is not None:
+        with open(logfile, 'a') as f:
+            f.write("%s Finished all.\n" % (datetime.now()))
+
+    return ell, m, vis
+
+
+
+
 def vis_sim_per_source_new(
     antpos: np.ndarray,
     freq: float,
@@ -695,7 +861,7 @@ def vis_sim_per_source_new(
 ):
     """
     Calculate visibility from an input intensity map and beam model. This is
-    a trimmed-down version of vis_cpu that only uses UVBeam beams (not gridded
+    a trimmed-down version of matvis that only uses UVBeam beams (not gridded
     beams).
 
     Parameters:

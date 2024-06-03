@@ -1,14 +1,16 @@
 import numpy as np
 from scipy.linalg import toeplitz, cholesky, inv, LinAlgError, solve
 from scipy.special import comb, hyp2f1, jn_zeros, jn
+
 import matplotlib.pyplot as plt
 from matplotlib.colors import SymLogNorm
-from hydra.sparse_beam import sparse_beam
 
 from pyuvsim import AnalyticBeam
 
+from .sparse_beam import sparse_beam
 from .vis_simulator import simulate_vis_per_source
 from . import utils
+from .utils import status
 
 
 def split_real_imag(arr, kind):
@@ -857,3 +859,73 @@ def get_pert_beam(seed, beam_file, trans_std=1e-2, rot_std_deg=1.,
                 fit_coeffs)
     
     return sb
+
+
+def init_beam_sampler(beams, freqs, beam_mmax, beam_nmax):
+    """
+
+    """
+    beam_nmodes, beam_mmodes = np.meshgrid(
+                                    np.arange(1, beam_nmax + 1), 
+                                    np.arange(-beam_mmax, beam_mmax + 1))
+    beam_nmodes = beam_nmodes.flatten()
+    beam_mmodes = beam_mmodes.flatten()
+
+    za_fit = np.arange(91) * np.pi / 180
+    rho_fit = np.sqrt(1 - np.cos(za_fit)) / args.rho_const
+    phi_fit = np.linspace(0, 2 * np.pi, num=360)
+    PHI, RHO = np.meshgrid(phi_fit, rho_fit)
+
+    bess_matr_fit = get_bess_matr(beam_nmodes,
+                                                     beam_mmodes,
+                                                     RHO, PHI)
+
+    beam_coeffs_fit = fit_bess_to_beam(
+                                      beams[0],
+                                      1e6 * freqs,
+                                      beam_nmodes,
+                                      beam_mmodes,
+                                      RHO, PHI,
+                                      force_spw_index=True)
+    
+    print("\tBeam best fit dynamic range:")
+    print("\t", np.amax(np.abs(beam_coeffs_fit)), np.amin(np.abs(beam_coeffs_fit)))
+    
+    txs, tys, tzs = convert_to_tops(ra, dec, times, array_latitude)
+
+    # area-preserving
+    rho = np.sqrt(1 - tzs) / args.rho_const
+    phi = np.arctan2(tys, txs)
+    bess_matr = hydra.beam_sampler.get_bess_matr(beam_nmodes,
+                                                 beam_mmodes,
+                                                 rho, phi)
+
+    # All the same, so just repeat (for now)
+    beam_coeffs = np.array(Nants * [beam_coeffs_fit])
+    # Want shape ncoeff, Nfreqs, Nants, Npol, Npol
+    beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
+    np.save(os.path.join(output_dir, "best_fit_beam"), beam_coeffs)
+    ncoeffs = beam_coeffs.shape[0]
+
+    if PLOTTING:
+        plot_beam_cross(beam_coeffs, 0, 0, '_best_fit')
+
+    amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
+    flux_use = get_flux_from_ptsrc_amp(amp_use, freqs, beta_ptsrc)
+
+    # Hardcoded parameters. Make variations smooth in time/freq.
+    sig_freq = 0.5 * (freqs[-1] - freqs[0])
+    cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
+                                                  args.beam_prior_std, sig_freq,
+                                                  ridge=1e-6)
+    cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
+    cov_tuple_0 = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs,
+                                                  args.beam_prior_std, sig_freq,
+                                                  ridge=1e-6,
+                                                  constrain_phase=True,
+                                                  constraint=1)
+    cho_tuple_0 = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
+    
+    # Be lazy and just use the initial guess.
+    coeff_mean = beam_coeffs[:, :, 0]
+    bess_outer = hydra.beam_sampler.get_bess_outer(bess_matr)

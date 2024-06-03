@@ -20,7 +20,6 @@ from hydra.utils import flatten_vector, reconstruct_vector, timing_info, \
                             status
 from hydra.example import generate_random_ptsrc_catalogue, run_example_simulation
 import hydra.linear_solver as linsolver
-import hydra
 
 
 if __name__ == '__main__':
@@ -37,6 +36,7 @@ if __name__ == '__main__':
     SAMPLE_GAINS = args.sample_gains
     #SAMPLE_VIS = args.sample_vis
     SAMPLE_PTSRC_AMPS = args.sample_ptsrc
+    SAMPLE_REGION_AMPS = args.sample_regions
     SAMPLE_BEAM = args.sample_beam
     SAMPLE_SH = args.sample_sh
     SAMPLE_PSPEC = args.sample_pspec
@@ -46,17 +46,18 @@ if __name__ == '__main__':
 
     # Print what's switched on
     if myid == 0:
-        print("    Gain perturbation sampler: ", SAMPLE_GAINS)
+        print("    Gain perturbation sampler:    ", SAMPLE_GAINS)
         #print("    Vis. sampler:       ", SAMPLE_VIS)
-        print("    Ptsrc. amplitude sampler:  ", SAMPLE_PTSRC_AMPS)
-        print("    Primary beam sampler:      ", SAMPLE_BEAM)
-        print("    Sph. harmonic sampler:     ", SAMPLE_SH)
+        print("    Ptsrc. amplitude sampler:     ", SAMPLE_PTSRC_AMPS)
+        print("    Diffuse region amp. sampler:  ", SAMPLE_REGION_AMPS)
+        print("    Primary beam sampler:         ", SAMPLE_BEAM)
+        print("    Sph. harmonic sampler:        ", SAMPLE_SH)
 
     # Check that at least one thing is being sampled
     if not SAMPLE_GAINS and not SAMPLE_PTSRC_AMPS and not SAMPLE_BEAM \
        and not SAMPLE_SH:
         raise ValueError("No samplers were enabled. Must enable at least one "
-                         "of 'gains', 'ptsrc', 'beams', 'sh'.")
+                         "of 'gains', 'ptsrc', 'regions', 'beams', 'sh'.")
 
 
     ############
@@ -91,8 +92,9 @@ if __name__ == '__main__':
     # Prior settings
     #--------------------------------------------------------------------------
 
-    # Ptsrc and vis prior settings
+    # Ptsrc, region, and vis prior settings
     ptsrc_amp_prior_level = args.ptsrc_amp_prior_level
+    region_amp_prior_level = args.region_amp_prior_level
 
     # Gain prior settings
     gain_prior_amp = args.gain_prior_amp
@@ -341,6 +343,7 @@ if __name__ == '__main__':
     # This SHOULD NOT include gain factors of any kind
     current_data_model_chunk = model0_chunk.copy()
     current_data_model_chunk_ptsrc = 0
+    current_data_model_chunk_region = 0
     current_data_model_chunk_sh = 0
 
     # Initial gain perturbation guesses
@@ -357,7 +360,7 @@ if __name__ == '__main__':
     gain_pspec_sqrt = gain_prior_amp * np.ones(Fbasis.shape[0])
 
     # Ptsrc priors
-    amp_prior_std = ptsrc_amp_prior_level * np.ones(Nptsrc)
+    ptsrc_amp_prior_std = ptsrc_amp_prior_level * np.ones(Nptsrc)
     status(myid, "(0) Ptsrc amp. prior level: %s" % ptsrc_amp_prior_level, colour='b')
     if calsrc:
         amp_prior_std[calsrc_idx] = calsrc_std
@@ -371,11 +374,56 @@ if __name__ == '__main__':
     # Precompute gain perturbation projection operators
     A_real, A_imag = None, None
     if SAMPLE_GAINS:
+
         t0 = time.time()
         A_real, A_imag = hydra.gain_sampler.proj_operator(ants, antpairs)
         if myid == 0:
             status(myid, "Precomp. gain proj. operator took %6.3f sec" \
                          % (time.time() - t0), 'b')
+
+    # Precompute sky region projection operator
+    region_proj = None
+    if SAMPLE_REGION_AMPS:
+        t0 = time.time()
+
+        # Build segmented sky model (per worker)
+        Nregions = args.region_nregions
+        region_ra, region_dec, region_fluxes_chunk \
+                = hydra.region_sampler.get_diffuse_sky_model_pixels(
+                                                freq_chunk, 
+                                                nside=args.region_nside)
+        
+        region_idxs = hydra.region_sampler.segmented_diffuse_sky_model_pixels(
+                                                region_ra, 
+                                                region_dec, 
+                                                region_fluxes_chunk, 
+                                                freq_chunk, 
+                                                Nregions, 
+                                                smoothing_fwhm=args.region_smoothing_fwhm)
+
+        # Update Nregions in case it changed
+        Nregions = len(region_idxs)
+
+        # Calculate projection operator for each region
+        region_proj = hydra.region_sampler.calc_proj_operator(
+                                          region_pixel_ra=region_ra, 
+                                          region_pixel_dec=region_dec, 
+                                          region_fluxes=region_fluxes_chunk,
+                                          region_idxs=region_idxs, 
+                                          ant_pos=ant_pos, 
+                                          antpairs=antpairs, 
+                                          freqs=freq_chunk, 
+                                          times=time_chunk, 
+                                          beams=beams
+                                        )
+
+        # Region priors
+        region_amp_prior_std = region_amp_prior_level * np.ones(Nregions)
+
+        if myid == 0:
+            status(myid, "Precomp. region proj. operator took %6.3f sec" \
+                         % (time.time() - t0), 'b')
+
 
     # Precompute point source projection operator
     ptsrc_proj = None
@@ -395,6 +443,19 @@ if __name__ == '__main__':
             status(myid, "Precomp. ptsrc. proj. operator took %6.3f sec" \
                          % (time.time() - t0), 'b')
 
+
+    # Combine ptsrc and region amp projection operators and priors
+    if SAMPLE_PTSRC_AMPS or SAMPLE_REGION_AMPS:
+        if SAMPLE_PTSRC_AMPS and SAMPLE_REGION_AMPS:
+            source_proj = np.concatenate((ptsrc_proj, region_proj), axis=-1) # join along last dimension
+            amp_prior_std = np.concatenate((ptsrc_amp_prior_std, region_amp_prior_std))
+        elif SAMPLE_REGION_AMPS:
+            source_proj = region_proj
+            amp_prior_std = region_amp_prior_std
+        else:
+            source_proj = ptsrc_proj
+            amp_prior_std = ptsrc_amp_prior_std
+
     
     # Precompute spherical harmonic projection operator
     sh_response_chunk = None
@@ -413,6 +474,37 @@ if __name__ == '__main__':
             status(myid, "Precomp. sph. harmonic proj. operator took %6.3f sec" \
                          % (time.time() - t0), 'b')
 
+
+    if SAMPLE_BEAM:
+
+        # FIXME: Need to add MPI compatibility
+
+        # Make a copy of the data that is more convenient for the beam calcs.
+        data_beam = reshape_data_arr(data[np.newaxis, np.newaxis],
+                                     Nfreqs,
+                                     Ntimes,
+                                     Nants, 1)
+        
+        # Doubles the autos, but we don't use them so it doesn't matter.
+        # This makes it so we do not have to keep track of whether we are sampling
+        # The beam coeffs or their conjugate!
+        data_beam = data_beam + np.swapaxes(data_beam, -1, -2).conj()
+
+        # Reshape inverse noise variance array
+        inv_noise_var_beam = reshape_data_arr(inv_noise_var[np.newaxis, np.newaxis],
+                                                             Nfreqs,
+                                                             Ntimes,
+                                                             Nants, 1)
+        inv_noise_var_beam = inv_noise_var_beam + np.swapaxes(inv_noise_var_beam, -1, -2)
+
+        # Output info about dynamic range
+        _ddmax, _ddmin = np.amax(np.abs(data_beam)), np.amin(np.abs(data_beam))
+        status(None, "Data dynamic range: %8.6e -- %8.6e" % (_ddmin, _ddmax), 'c' )
+
+
+    #--------------------------------------------------------------------------
+    # Gibbs sampler
+    #--------------------------------------------------------------------------
     # Iterate the Gibbs sampler
     if myid == 0:
         print("="*60)
@@ -506,20 +598,19 @@ if __name__ == '__main__':
 
 
         #---------------------------------------------------------------------------
-        # (B) Ptsrc sampler
+        # (B) Source sampler (ptsrc, regions, or both)
         #---------------------------------------------------------------------------
-        if SAMPLE_PTSRC_AMPS:
+        if SAMPLE_PTSRC_AMPS or SAMPLE_REGION_AMPS:
 
             # Get LHS and RHS operators for linear system
             t0 = time.time()
-            ptsrc_op, ptsrc_rhs = hydra.ptsrc_sampler.precompute_mpi(
+            source_op, source_rhs = hydra.ptsrc_sampler.precompute_mpi(
                                        comm,
                                        ants=ants, 
                                        antpairs=antpairs, 
                                        freq_chunk=freq_chunk, 
                                        time_chunk=time_chunk,
-                                       fluxes_chunk=fluxes_chunk, 
-                                       proj_chunk=ptsrc_proj,
+                                       proj_chunk=source_proj,
                                        data_chunk=data_chunk,
                                        inv_noise_var_chunk=inv_noise_var_chunk,
                                        current_data_model_chunk=current_data_model_chunk,
@@ -533,7 +624,7 @@ if __name__ == '__main__':
 
             comm.barrier()
             if myid == 0:
-                status(None, "Ptsrc sampler linear system precompute took %6.3f sec" 
+                status(None, "Source sampler linear system precompute took %6.3f sec" 
                              % (time.time() - t0), 'c')
 
             # Solve linear system
@@ -543,12 +634,12 @@ if __name__ == '__main__':
                 # Use MPI solver, which will distribute the linear system across workers
 
                 # Get shape of ptsrc linear operator from root node
-                ptsrc_op_shape = comm.bcast(ptsrc_op.shape, root=0)
+                source_op_shape = comm.bcast(source_op.shape, root=0)
 
                 # Determine which workers get which blocks
                 comm_groups, block_map, block_shape \
                     = linsolver.setup_mpi_blocks(comm, 
-                                                 matrix_shape=ptsrc_op_shape, 
+                                                 matrix_shape=source_op_shape, 
                                                  split=ngrid)
 
                 # Collect matrix/vector blocks on each worker
@@ -558,8 +649,8 @@ if __name__ == '__main__':
                     my_Amat, my_bvec = linsolver.collect_linear_sys_blocks(comm_active, 
                                                                            block_map, 
                                                                            block_shape, 
-                                                                           Amat=ptsrc_op, 
-                                                                           bvec=ptsrc_rhs)
+                                                                           Amat=source_op, 
+                                                                           bvec=source_rhs)
                 comm.barrier()
 
                 # Run MPI CG solver
@@ -567,11 +658,11 @@ if __name__ == '__main__':
                 _xsoln = linsolver.cg_mpi(comm_groups, 
                                           my_Amat, 
                                           my_bvec, 
-                                          ptsrc_op_shape[0], 
+                                          source_op_shape[0], 
                                           block_map)
                 if myid == 0:
                     x_soln = _xsoln # only root worker has complete x_soln
-                    status(None, "Ptsrc sampler MPI CG solve took %6.3f sec" \
+                    status(None, "Source sampler MPI CG solve took %6.3f sec" \
                                  % (time.time() - t0), 'c')
 
                 comm.barrier()
@@ -580,8 +671,8 @@ if __name__ == '__main__':
                 # Use serial CG solver on root worker
                 if myid == 0:
                     t0 = time.time()
-                    x_soln = scipy.linalg.solve(ptsrc_op, ptsrc_rhs, assume_a='her')
-                    status(None, "Ptsrc sampler serial CG solve took %6.3f sec" \
+                    x_soln = scipy.linalg.solve(source_op, source_rhs, assume_a='her')
+                    status(None, "Source sampler serial CG solve took %6.3f sec" \
                                  % (time.time() - t0), 'c')
                 comm.barrier()
 
@@ -589,19 +680,35 @@ if __name__ == '__main__':
             if myid == 0:
                 x_soln *= amp_prior_std # we solved for x = S^-1/2 s, so recover s
                 # this is fractional deviation from assumed amplitude; should be close to 0
-                np.save(os.path.join(output_dir, "ptsrc_amp_%05d" % n), x_soln)
+                np.save(os.path.join(output_dir, "src_amp_%05d" % n), x_soln)
 
             # Broadcast x_soln to all workers and update model
             comm.Bcast(x_soln, root=0)
             comm.barrier()
-            status(myid, "    Example soln:" + str(x_soln[:3]))
+            status(myid, "    Example ptsrc soln:" + str(x_soln[:3]))
+            status(myid, "    Example region soln:" + str(x_soln[Nptsrc:Nptsrc+3]))
 
             # Update visibility model with latest solution (does not include any gains)
             # Applies projection operator to ptsrc amplitude vector
-            # FIXME: Should gains be applied here?
-            current_data_model_chunk_ptsrc = (  ptsrc_proj.reshape((-1, Nptsrc)) 
-                                           @ (1. + x_soln) ).reshape(current_data_model_chunk.shape)
+            # Gains should not be applied here (see)
+            if SAMPLE_PTSRC_AMPS and not SAMPLE_REGION_AMPS:
+                x_soln_ptsrc = x_soln[:]
+            if SAMPLE_REGION_AMPS and not SAMPLE_PTSRC_AMPS:
+                x_soln_regions = x_soln[:]
+            if SAMPLE_PTSRC_AMPS and SAMPLE_REGION_AMPS:
+                x_soln_ptsrc = x_soln[:Nptsrc]
+                x_soln_regions = x_soln[Nptsrc:]
+            
+            if SAMPLE_PTSRC_AMPS:
+                current_data_model_chunk_ptsrc = (  ptsrc_proj.reshape((-1, Nptsrc)) 
+                                               @ (1. + x_soln_ptsrc) ).reshape(
+                                                            current_data_model_chunk.shape)
+            if SAMPLE_REGION_AMPS:
+                current_data_model_chunk_region = (  region_proj.reshape((-1, Nregions)) 
+                                               @ (1. + x_soln_regions) ).reshape(
+                                                            current_data_model_chunk.shape)
             current_data_model_chunk = current_data_model_chunk_ptsrc \
+                                     + current_data_model_chunk_region \
                                      + current_data_model_chunk_sh
 
         #---------------------------------------------------------------------------
@@ -668,11 +775,142 @@ if __name__ == '__main__':
             sh_current = sh_soln
             current_data_model_chunk_sh = sh_response_chunk @ sh_soln
             current_data_model_chunk = current_data_model_chunk_ptsrc \
+                                     + current_data_model_chunk_region \
                                      + current_data_model_chunk_sh
 
 
         #---------------------------------------------------------------------------
-        # (D) 21cm field sampler
+        # (D) E-field beam sampler
+        #---------------------------------------------------------------------------
+
+        if SAMPLE_BEAM:
+            if myid == 0:
+                status(None, "Beam sampler iteration %d" % n, 'b')
+
+            t0b = time.time()
+            t0 = time.time()
+            bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(bess_outer, 
+                                                                               ant_pos, 
+                                                                               flux_use, 
+                                                                               ra,
+                                                                               dec, 
+                                                                               freqs*1e6, 
+                                                                               times,
+                                                                               polarized=False, 
+                                                                               latitude=hera_latitude, 
+                                                                               multiprocess=False)
+            timing_info(ftime, n, "(D) Computed beam bess_sky_contraction", time.time() - t0)
+
+            # Round robin loop through the antennas
+            for ant_samp_ind in range(Nants):
+                if ant_samp_ind > 0:
+                    cov_tuple_use = cov_tuple
+                    cho_tuple_use = cho_tuple
+                else:
+                    cov_tuple_use = cov_tuple_0
+                    cho_tuple_use = cho_tuple_0
+
+                # Construct beam projection operator
+                t0 = time.time()
+                bess_trans = hydra.beam_sampler.get_bess_to_vis(bess_matr, ant_pos,
+                                                                   flux_use, ra, dec,
+                                                                   freqs*1e6, times,
+                                                                   beam_coeffs,
+                                                                   ant_samp_ind,
+                                                                   polarized=False,
+                                                                   latitude=array_latitude,
+                                                                   multiprocess=False)
+
+                timing_info(ftime, n, "(D) Computed beam get_bess_to_vis", time.time() - t0)
+                
+                t0 = time.time()
+                bess_trans = hydra.beam_sampler.get_bess_to_vis_from_contraction(bess_sky_contraction,
+                                                                                 beam_coeffs, 
+                                                                                 ants, 
+                                                                                 ant_samp_ind)
+                timing_info(ftime, n, "(D) Computed beam get_bess_to_vis_from_contraction", time.time() - t0)
+
+                #bess_trans = hydra.beam_sampler.get_bess_to_vis(bess_matr, ant_pos,
+                 #                                                  flux_use, ra, dec,
+                  #                                                 freqs*1e6, times,
+                   #                                                beam_coeffs,
+                    #                                               ant_samp_ind,
+                     #                                              polarized=False,
+                      #                                             latitude=hera_latitude,
+                       #                                            multiprocess=MULTIPROCESS)
+
+                status(None, "\tDoing other per-iteration pre-compute", 'c')
+                inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var_beam,
+                                                               ant_samp_ind, Nants)
+                data_use = hydra.beam_sampler.select_subarr(data_beam, ant_samp_ind, Nants)
+
+                # Construct RHS vector
+                rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
+                                                                 inv_noise_var_use,
+                                                                 coeff_mean,
+                                                                 bess_trans,
+                                                                 cov_tuple_use,
+                                                                 cho_tuple_use)
+                bbeam = rhs_unflatten.flatten()
+                
+
+                shape = (Nfreqs, ncoeffs,  1, 1, 2)
+                cov_Qdag_Ninv_Q = hydra.beam_sampler.get_cov_Qdag_Ninv_Q(inv_noise_var_use,
+                                                                         bess_trans,
+                                                                         cov_tuple_use)
+
+                axlen = np.prod(shape)
+
+                # fPbpQBcCF->fbQcFBpPC
+                matr = cov_Qdag_Ninv_Q.transpose((0,2,4,6,8,5,3,1,7)).reshape([axlen, axlen]) + np.eye(axlen)
+                if PLOTTING:
+
+                    print(f"Condition number for LHS {np.linalg.cond(matr)}")
+                    plt.figure()
+                    mx = np.amax(np.abs(matr))
+                    plt.matshow(np.log10(np.abs(matr) / mx), vmax=0, vmin=-8)
+                    plt.colorbar(label="$log_{10}$(|LHS|)")
+                    plt.savefig(f"{output_dir}/beam_LHS_matrix_iter_{n}_ant_{ant_samp_ind}.pdf")
+                    plt.close()
+
+
+                def beam_lhs_operator(x):
+                    y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),
+                                                          cov_Qdag_Ninv_Q)
+                    return(y.flatten())
+
+                # What the shape would be if the matrix were represented densely
+                beam_lhs_shape = (axlen, axlen)
+                print("\tSolving")
+                t0 = time.time()
+                x_soln = np.linalg.solve(matr, bbeam)
+                timing_info(ftime, n, "(D) Solved for beam", time.time() - t0)
+
+                test_close = False
+                if test_close:
+                    btest = beam_linear_op(x_soln)
+                    allclose = np.allclose(btest, bbeam)
+                    if not allclose:
+                        abs_diff = np.abs(btest-bbeam)
+                        wh_max_diff = np.argmax(abs_diff)
+                        max_diff = abs_diff[wh_max_diff]
+                        max_val = bbeam[wh_max_diff]
+                        raise AssertionError(f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}")
+                x_soln_res = np.reshape(x_soln, shape)
+
+                # Has shape Nfreqs, ncoeff, Npol, Npol, ncomp
+                # Want shape ncoeff, Nfreqs, Npol, Npol, ncomp
+                x_soln_swap = np.swapaxes(x_soln_res, 0, 1)
+
+                # Update the coeffs between rounds
+                beam_coeffs[:, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, :, :, 0] \
+                                                   + 1.j * x_soln_swap[:, :, :, :, 1]
+        
+                # FIXME: Must update sky models!
+
+
+        #---------------------------------------------------------------------------
+        # (E) 21cm field sampler
         #---------------------------------------------------------------------------
 
         """
