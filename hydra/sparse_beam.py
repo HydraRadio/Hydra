@@ -513,6 +513,15 @@ class sparse_beam(UVBeam):
             freq_array_knots = self.freq_array
         return freq_array,freq_array_knots
     
+    def clear_cache(self):
+        self.az_array_dict.clear()
+        self.za_array_dict.clear()
+        self.trig_matr_interp_dict.clear()
+        self.bess_matr_interp_dict.clear()
+        self.bt_matr_interp_dict.clear()
+
+        return
+    
     def efield_to_power(*args, **kwargs):
         raise NotImplementedError("efield_to_power is not implemented yet.")
     
