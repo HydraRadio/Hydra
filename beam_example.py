@@ -20,6 +20,9 @@ if __name__ == '__main__':
     parser.add_argument("--seed", type=int, action="store", default=1001,
                         required=False, dest="seed",
                         help="Set the random seed.")
+    parser.add_argument("--chain-seed", type=str, action="store", default="None",
+                        required=False, dest="chain_seed", 
+                        help="Set a separate seed for initializing the Gibbs chain")
     
     # Misc
     parser.add_argument("--recalc-sc-op", action="store_true", required=False,
@@ -131,6 +134,11 @@ if __name__ == '__main__':
                         dest="pca_modes", help="Path to saved PCA eigenvectors.")
     
     args = parser.parse_args()
+    
+    if args.chain_seed == "None":
+        chain_seed = None
+    else:
+        chain_seed = int(args.chain_seed)
 
     hex_array = tuple(args.hex_array)
     assert len(args.hex_array) == 2, "hex-array argument must have length 2."
@@ -275,6 +283,7 @@ if __name__ == '__main__':
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
 
+    #FIXME: technically we need the conjugate noise rzn on conjugate baselines...
     noise = (np.random.normal(scale=np.sqrt(noise_var)) + 1.j * np.random.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
     data = _sim_vis + _sim_vis.swapaxes(-1,-2).conj() + noise # fix some zeros
     del _sim_vis # Save some memory
@@ -319,6 +328,10 @@ if __name__ == '__main__':
     cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
     # Be lazy and just use the initial guess.
     coeff_mean = beam_coeffs[:, :, 0]
+    
+    if chain_seed is not None: # shuffle the initial position
+        np.random.seed(chain_seed)
+        beam_coeffs = (np.random.normal(size=beam_coeffs.shape) + 1.j * np.random.normal(size=beam_coeffs.shape)) / np.sqrt(2)
     
     t0 = time.time()
     bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
