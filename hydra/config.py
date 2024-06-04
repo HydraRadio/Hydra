@@ -207,8 +207,13 @@ def get_config():
                         default=None, required=False, dest="region_smoothing_fwhm",
                         help="Smoothing FWHM to apply to segmented diffuse map, to smooth "
                         "sharp edges.")
+    parser.add_argument("--region-sky-model", type=str, action="store",
+                        default="gsm2016", required=False, dest="region_sky_model",
+                        help="Which global sky model to use to define diffuse regions. "
+                             "The options all come from pyGDSM: 'gsm2008', 'gsm2016', 'haslam', "
+                             "'lfss'.")
     parser.add_argument("--region-nside", type=int, action="store",
-                        default=8, required=False, dest="region_nside",
+                        default=16, required=False, dest="region_nside",
                         help="Healpix nside to use for the region maps.")
     parser.add_argument("--region-amp-prior-level", type=float, action="store", default=0.1,
                         required=False, dest="region_amp_prior_level",

@@ -8,7 +8,7 @@ import astropy.units as u
 import healpy as hp
 
 
-def get_diffuse_sky_model_pixels(freqs, nside=32):
+def get_diffuse_sky_model_pixels(freqs, nside=32, sky_model='gsm2016'):
     """
     Returns arrays of the pixel RA, Dec locations and per-pixel frequency 
     spectra from a given sky model. By default this is GSM, as implemented 
@@ -17,6 +17,13 @@ def get_diffuse_sky_model_pixels(freqs, nside=32):
     Parameters:
         freqs (array_like):
             Frequencies, in MHz.
+
+        nside (int):
+            Healpix nside to use when constructing the sky model.
+
+        sky_model (str):
+            Which sky modle to use, from pyGDSM. One of: 
+            'gsm2008', 'gsm2016', 'haslam', 'lfss'.
 
     Returns:
         ra, dec (array_like):
@@ -29,28 +36,39 @@ def get_diffuse_sky_model_pixels(freqs, nside=32):
     freqs_MHz = freqs
     
     # Initialise sky model and extract data cube
-    gsm = pygdsm.GlobalSkyModel()
-    gsm.generate(freqs_MHz)
-    sky_maps = gsm.generated_map_data # (Nfreqs, Npix)
+    assert sky_model in ['gsm2008', 'gsm2016', 'haslam', 'lfsm'], \
+        "Available sky models: 'gsm2008', 'gsm2016', 'haslam', 'lfsm'"
+    if sky_model == 'gsm2008':
+        model = pygdsm.GlobalSkyModel(freq_unit='MHz', include_cmb=False)
+    if sky_model == 'gsm2016':
+        model = pygdsm.GlobalSkyModel16(freq_unit='MHz', include_cmb=False)
+    if sky_model == 'haslam':
+        model = pygdsm.HaslamSkyModel(freq_unit='MHz', include_cmb=False)
+    if sky_model == 'lfsm':
+        model = pygdsm.LowFrequencySkyModel(freq_unit='MHz', include_cmb=False)
+    
+    model.generate(freqs_MHz)
+    sky_maps = model.generated_map_data # (Nfreqs, Npix), should be in Kelvin
     
     # Must change nside to make compute practical
     nside_gsm = hp.npix2nside(sky_maps[0].size)
     sky_maps = hp.ud_grade(sky_maps, nside_out=nside)
+
+    # Convert from Kelvin to Jy/sr
+    equiv = u.brightness_temperature(freqs_MHz * u.MHz, beam_area=1 * u.sr)
+    Ksr_per_Jy = ((1 * u.Jy).to(u.K, equivalencies=equiv) * u.sr / u.Jy).value
+    for i in range(Ksr_per_Jy.size):
+        sky_maps[i] /= Ksr_per_Jy[i] # converts K to Jy/sr
     
     # Get pixel RA/Dec coords (assumes Galactic coords for sky map data)
     idxs = np.arange(sky_maps[0].size)
-    pix_lon, pix_lat = hp.pix2ang(nside_gsm, idxs, lonlat=True)
+    pix_lon, pix_lat = hp.pix2ang(nside, idxs, lonlat=True)
     gal_coords = Galactic(l=pix_lon*u.deg, b=pix_lat*u.deg)
     
     icrs_frame = ICRS()
     eq_coords = gal_coords.transform_to(icrs_frame)
     ra = eq_coords.ra.rad
     dec = eq_coords.dec.rad
-
-    print("*** RA range:", ra.max(), ra.min())
-    print("*** Dec range:", dec.max(), dec.min())
-
-    # FIXME: Fix map units!
     
     # Returns list of pixels with spectra as effective point sources
     return ra, dec, sky_maps.T

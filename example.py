@@ -208,16 +208,7 @@ if __name__ == '__main__':
     ants, ant_pos, antpairs, ants1, ants2 = ant_info
     comm.barrier()
 
-    # Simulate diffuse emission from GSM (assumes fixed ref. frequency for now)
-    # FIXME: Needs to be optional
-    """
-    alm_sim = hydra.sh_sampler.get_alms_from_gsm(freq=100., 
-                                                 lmax=args.sim_sh_lmax, 
-                                                 nside=args.sim_sh_nside)
-    sh_model_chunk = sh_response_chunk @ alm_sim
-    # FIXME: Need to match sh_model_chunk axes to model0_chunk axes
-    assert model0_chunk.shape == sh_model_chunk.shape
-    """
+    
 
     #--------------------------------------------------------------------------
     # Identify calibration source (brightest near beam)
@@ -391,7 +382,8 @@ if __name__ == '__main__':
         region_ra, region_dec, region_fluxes_chunk \
                 = hydra.region_sampler.get_diffuse_sky_model_pixels(
                                                 freq_chunk, 
-                                                nside=args.region_nside)
+                                                nside=args.region_nside,
+                                                sky_model=args.region_sky_model)
         
         region_idxs = hydra.region_sampler.segmented_diffuse_sky_model_pixels(
                                                 region_ra, 

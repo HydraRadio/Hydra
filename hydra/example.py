@@ -14,7 +14,28 @@ from .utils import flatten_vector, reconstruct_vector, timing_info, \
 
 def generate_random_ptsrc_catalogue(Nptsrc, ra_bounds, dec_bounds, logflux_bounds=(-1., 2.)):
     """
-    xx
+    Generate a catalogue of point sources with random positions and log(flux) 
+    values.
+
+    Parameters:
+        Nptsrc (int):
+            Number of point sources in catalogue.
+        ra_bounds, dec_bounds (tuple of float):
+            Tuples with the lower and upper bounds of the RA and Dec ranges. 
+            Sources will be placed according to a uniform random distribution 
+            within the specified interval.
+        logflux_bounds (tuple of float):
+            The lower and upper bounds of log10(flux) at some reference 
+            frequency. The reference frequency is not specified here, so these 
+            values can be treated purely as amplitude/scaling factors. Sources 
+            will be randomly assigned fluxes/amplitudes in this interval in 
+            log10(flux).
+
+    Returns:
+        ra, dec (array_like):
+            RA and Dec values for each source, in radians.
+        ptsrc_amps (array_like):
+            Amplitude or flux values at an unspecified reference frequency.
     """
     # Get coordinate bounds
     ra_low, ra_high = (min(ra_bounds), max(ra_bounds))
@@ -38,7 +59,37 @@ def generate_random_ptsrc_catalogue(Nptsrc, ra_bounds, dec_bounds, logflux_bound
 def run_example_simulation(args, times, freqs, output_dir, ra, dec, ptsrc_amps, 
                            array_latitude, verbose=False):
     """
-    Run an example visibility simulation for testing purposes.
+    Run an example visibility simulation for testing purposes, using 
+    semi-realistic beams, randomly placed point sources, and a hexagonal 
+    array layout.
+
+    Parameters:
+        args (config):
+            An argparse parser object that contains configuration properties.
+        times (array_like):
+            Time array, i.e. local sidereal time (LST), in radians.
+        freqs (array_like):
+            Frequency array, in MHz.
+        output_dir (str):
+            Unused.
+        ra, dec (array_like):
+            RA and Dec values for each source, in radians.
+        ptsrc_amps (array_like):
+            Amplitude or flux values at an unspecified reference frequency.
+        array_latitude (float):
+            Array latitude in radians.
+
+    Returns:
+        model0 (array_like):
+            Model visibility computed by the simulator. The shape is given 
+            by `extract_vis_from_sim()`.
+        fluxes (array_like):
+            Point source fluxes, per source and per frequency.
+        beams (list):
+            List of `UVBeam` or `AnalyticBeam`-compatible beam objects.
+        ant_info (tuple):
+            Tuple of arrays and dictionaries containing antenna information, 
+            in the order: `(ants, ant_pos, antpairs, ants1, ants2)`.
     """
     # Dimensions of simulation
     hex_array = tuple(args.hex_array)
