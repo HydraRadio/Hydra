@@ -74,6 +74,7 @@ sizes, but for now the main limitation is the amount of RAM available on each no
 ## Learn about the code and different 'heads' of Hydra
 
 * Run the example script, [example.py](example.md)
+* Read the [frequently-asked questions](faq.md) about the code and maths
 
 ## Who is behind Hydra?
 
