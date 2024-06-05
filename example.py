@@ -32,6 +32,9 @@ if __name__ == '__main__':
     # Parse commandline arguments
     args = hydra.config.get_config()
 
+    # Check for debug mode
+    debug = args.debug
+
     # Set switches
     SAMPLE_GAINS = args.sample_gains
     #SAMPLE_VIS = args.sample_vis
@@ -46,6 +49,7 @@ if __name__ == '__main__':
 
     # Print what's switched on
     if myid == 0:
+        print("    Debug mode:                   ", debug)
         print("    Gain perturbation sampler:    ", SAMPLE_GAINS)
         #print("    Vis. sampler:       ", SAMPLE_VIS)
         print("    Ptsrc. amplitude sampler:     ", SAMPLE_PTSRC_AMPS)
@@ -86,7 +90,7 @@ if __name__ == '__main__':
     freq_min, freq_max = (min(args.freq_bounds), max(args.freq_bounds))
     
     # Array latitude
-    array_latitude = np.deg2rad(-30.7215)
+    array_latitude = np.deg2rad(args.latitude)
 
     #--------------------------------------------------------------------------
     # Prior settings
@@ -185,14 +189,21 @@ if __name__ == '__main__':
     comm.Bcast(ra, root=0)
     comm.Bcast(dec, root=0)
     comm.Bcast(ptsrc_amps, root=0)
-    status(myid, "Received %d point sources (sum of amps: %f)" \
-          % (ra.size, np.sum(ptsrc_amps).real), colour='y')
+    if debug:
+        status(myid, "Received %d point sources (sum of amps: %f)" \
+              % (ra.size, np.sum(ptsrc_amps).real), colour='y')
     comm.barrier()
 
     #--------------------------------------------------------------------------
-    # Run visibility simulation for this worker's chunk of frequency/time space
+    # Run point source visibility sim for this worker's chunk of freq./time space
     #--------------------------------------------------------------------------
     t0 = time.time()
+
+    if myid == 0:
+            status(None, "Simulating point source sky model with %d sources" 
+                          % ra.size, 'c')
+            status(None, "Simulation beam type: %s" % args.beam_sim_type, 'y')
+
     model0_chunk, fluxes_chunk, beams, ant_info = run_example_simulation(
                                                        args=args, 
                                                        output_dir=output_dir, 
@@ -202,7 +213,7 @@ if __name__ == '__main__':
                                                        dec=dec, 
                                                        ptsrc_amps=ptsrc_amps,
                                                        array_latitude=array_latitude)
-    status(myid, "Finished simulation in %6.3f sec" % (time.time() - t0), colour='b')
+    status(myid, "Finished ptsrc simulation in %6.3f sec" % (time.time() - t0), colour='b')
     
     # Unpack antenna info
     ants, ant_pos, antpairs, ants1, ants2 = ant_info
@@ -210,6 +221,66 @@ if __name__ == '__main__':
 
     
 
+    #--------------------------------------------------------------------------
+    # Run diffuse model simulation for this worker's chunk of frequency/time space
+    #--------------------------------------------------------------------------
+
+    if args.sim_diffuse_sky_model != 'none':
+        t0 = time.time()
+
+        if myid == 0:
+            status(None, "Simulating diffuse sky model %s" % args.sim_diffuse_sky_model, 'c')
+
+        # Get pixel values
+        diffuse_pixel_ra, diffuse_pixel_dec, diffuse_fluxes_chunk \
+            = hydra.region_sampler.get_diffuse_sky_model_pixels(
+                                            freq_chunk, 
+                                            nside=args.sim_diffuse_nside,
+                                            sky_model=args.sim_diffuse_sky_model)
+
+        # Simulation beams
+        if "polybeam" in args.beam_sim_type.lower():
+            # PolyBeam fitted to HERA Fagnoni beam
+            beam_coeffs=[  0.29778665, -0.44821433, 0.27338272, 
+                          -0.10030698, -0.01195859, 0.06063853, 
+                          -0.04593295,  0.0107879,  0.01390283, 
+                          -0.01881641, -0.00177106, 0.01265177, 
+                          -0.00568299, -0.00333975, 0.00452368,
+                           0.00151808, -0.00593812, 0.00351559
+                         ]
+            sim_beams = [PolyBeam(beam_coeffs, spectral_index=-0.6975, ref_freq=1.e8)
+                         for ant in ants]
+        else:
+            sim_beams = [pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14.)
+                         for ant in ants]
+        if myid == 0:
+            status(None, "Simulation beam type: %s" % args.beam_sim_type, 'y')
+
+        # Calculate projection operator for each region
+        diffuse_proj = hydra.region_sampler.calc_proj_operator(
+                                          region_pixel_ra=diffuse_pixel_ra, 
+                                          region_pixel_dec=diffuse_pixel_dec, 
+                                          region_fluxes=diffuse_fluxes_chunk,
+                                          region_idxs=[np.arange(diffuse_pixel_ra.size),], 
+                                          ant_pos=ant_pos, 
+                                          antpairs=antpairs, 
+                                          freqs=freq_chunk, 
+                                          times=time_chunk, 
+                                          beams=sim_beams
+                                        )
+        
+        # FIXME: REMOVE FACTOR OF 4!
+        model0_diffuse_chunk = 4. * diffuse_proj[:,:,:,0] # Take the 0th (and only) region
+
+        # Clean up
+        del diffuse_proj, diffuse_pixel_ra, diffuse_pixel_dec, diffuse_fluxes_chunk
+        status(myid, "Finished diffuse simulation in %6.3f sec" \
+                                     % (time.time() - t0), 'b')
+
+        # Add diffuse model to ptsrc model
+        model0_chunk += model0_diffuse_chunk
+
+    comm.barrier()
     #--------------------------------------------------------------------------
     # Identify calibration source (brightest near beam)
     #--------------------------------------------------------------------------
@@ -264,6 +335,12 @@ if __name__ == '__main__':
     Ngain_modes = k_freq.size
     Nants = len(ants)
 
+    # Save Fbasis operator and modes
+    np.save(os.path.join(output_dir, "Fbasis_w%04d" % myid), Fbasis)
+    if myid == 0:
+        np.save(os.path.join(output_dir, "k_freq"), k_freq)
+        np.save(os.path.join(output_dir, "k_time"), k_time)
+
     # Define gains and gain perturbations
     gains_chunk = (1. + 1.j) * np.ones((Nants, freq_chunk.size, time_chunk.size), 
                                        dtype=model0_chunk.dtype)
@@ -277,10 +354,11 @@ if __name__ == '__main__':
         gains_chunk[i] += gain0_level[i]
     if myid == 0:
         np.save(os.path.join(output_dir, "sim_gain0_level"), gain0_level)
-    status(myid, gain0_level, 'r')
+    #status(myid, gain0_level, 'r')
 
     # Simple prior on gain perturbation modes
     prior_std_delta_g = sim_gain_amp_std * np.ones(Ngain_modes)
+    prior_std_delta_g[0] *= 0. # FIXME: This sets the gain zero mode to zero
 
     # Random gain perturbation amplitudes (Nants, Ngain_modes)
     # Do realisation on root node and then broadcast to other workers
@@ -316,8 +394,9 @@ if __name__ == '__main__':
                               * (  1.0 * np.random.randn(*data_chunk.shape) \
                                  + 1.j * np.random.randn(*data_chunk.shape))
     data_chunk += noise_chunk
-    status(myid, "Simulation step finished", colour='y')
     comm.barrier()
+    if myid == 0:
+        status(None, "Simulation step finished", colour='y')
 
     # Save simulated model info
     np.save(os.path.join(output_dir, "sim_model0_chunk_w%04d" % myid), model0_chunk)
@@ -349,6 +428,15 @@ if __name__ == '__main__':
 
     # Gain prior
     gain_pspec_sqrt = gain_prior_amp * np.ones(Fbasis.shape[0])
+
+    # Fix gain prior zero mode if requested
+    if args.gain_prior_zero_mode_std is not None:
+        zero_mode_idx = np.where(np.logical_and(k_freq == 0., k_time == 0.))[0]
+        gain_pspec_sqrt[zero_mode_idx] = float(args.gain_prior_zero_mode_std)
+
+        if myid == 0:
+            status(None, "Gain zero-mode prior level: %6.4e" 
+                         % args.gain_prior_zero_mode_std, colour='b')
 
     # Ptsrc priors
     ptsrc_amp_prior_std = ptsrc_amp_prior_level * np.ones(Nptsrc)
@@ -585,7 +673,6 @@ if __name__ == '__main__':
 
             # Update current state of gain model
             current_delta_gain = np.tensordot(xgain, Fbasis, axes=((1,), (0,)))
-
             comm.barrier()
 
 
@@ -612,7 +699,7 @@ if __name__ == '__main__':
             
             # FIXME: current_data_model_chunk=current_data_model_chunk
             # This gets updated each time by this sampler. But we're also conditioning on it?
-            # So x_soln for ptsrcs means somethign different each time
+            # So x_soln for ptsrcs means something different each time
 
             comm.barrier()
             if myid == 0:
@@ -677,8 +764,9 @@ if __name__ == '__main__':
             # Broadcast x_soln to all workers and update model
             comm.Bcast(x_soln, root=0)
             comm.barrier()
-            status(myid, "    Example ptsrc soln:" + str(x_soln[:3]))
-            status(myid, "    Example region soln:" + str(x_soln[Nptsrc:Nptsrc+3]))
+            if myid == 0:
+                status(myid, "    Example ptsrc soln:" + str(x_soln[:3]))
+                status(myid, "    Example region soln:" + str(x_soln[Nptsrc:Nptsrc+3]))
 
             # Update visibility model with latest solution (does not include any gains)
             # Applies projection operator to ptsrc amplitude vector
@@ -1005,7 +1093,7 @@ if __name__ == '__main__':
         # Print resource usage info for this iteration
         if myid == 0:
             rusage = resource.getrusage(resource.RUSAGE_SELF)
-            print("\nResource usage (iter %05d):" % n)
+            print("\nResource usage (iter %05d):" % (n+1))
             print("    Max. RSS (MB):   %8.2f" % (rusage.ru_maxrss/1024.))
             print("    User time (sec): %8.2f" % (rusage.ru_utime), flush=True)
         

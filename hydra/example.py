@@ -130,7 +130,6 @@ def run_example_simulation(args, times, freqs, output_dir, ra, dec, ptsrc_amps,
     else:
         beams = [pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14.)
                  for ant in ants]
-    print("beam type:", args.beam_sim_type)
 
     # Run a simulation
     t0 = time.time()

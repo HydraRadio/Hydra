@@ -686,9 +686,14 @@ def status(myid, message, colour=None):
         'bold': '\033[1m',
         'ul':   '\033[4m',
         }
-    if colour is not None:
-        if myid is None:
-            myid = ""
-        print("%s[%s] %s%s" % (colours[colour], myid, message, endchar))
+
+    # Worker ID, if present
+    if myid is None:
+        myid_str = ""
     else:
-        print("[%d] %s" % (myid, message))
+        myid_str = "[%d]" % myid
+
+    if colour is not None:
+        print("%s%s %s%s" % (colours[colour], myid_str, message, endchar))
+    else:
+        print("%s %s" % (myid_str, message))

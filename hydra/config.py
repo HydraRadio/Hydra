@@ -37,6 +37,11 @@ def get_config():
                         required=False, dest="sample_pspec",
                         help="Sample 21cm power spectrum.")
 
+    # Debug mode
+    parser.add_argument("--debug", action="store_true",
+                        required=False, dest="debug",
+                        help="Whether to enable debug mode, which shows extra output.")
+
     # Output options
     parser.add_argument("--stats", action="store_true",
                         required=False, dest="calculate_stats",
@@ -51,6 +56,9 @@ def get_config():
                         help="Output plots.")
 
     # Array and data shape options
+    parser.add_argument("--latitude", type=float, action="store", default=-30.7215,
+                        required=False, dest="latitude",
+                        help="Latitude of the array, in degrees.")
     parser.add_argument('--hex-array', type=int, action="store", default=(3,4),
                         required=False, nargs='+', dest="hex_array",
                         help="Hex array layout, specified as the no. of antennas "
@@ -100,20 +108,32 @@ def get_config():
     parser.add_argument("--freq-bounds", type=float, action="store", default=(100., 120.),
                         nargs=2, required=False, dest="freq_bounds",
                         help="Bounds for the frequency range of the simulation, in MHz.")
+    
+
+    # Point source sampler parameters
     parser.add_argument("--ptsrc-amp-prior-level", type=float, action="store", default=0.1,
                         required=False, dest="ptsrc_amp_prior_level",
                         help="Fractional prior on point source amplitudes")
     #parser.add_argument("--vis-prior-level", type=float, action="store", default=0.1,
     #                    required=False, dest="vis_prior_level",
     #                    help="Prior on visibility values")
-
     parser.add_argument("--calsrc-std", type=float, action="store", default=-1.,
                         required=False, dest="calsrc_std",
                         help="Define a different std. dev. for the amplitude prior of a calibration source. If -1, do not use a calibration source.")
     parser.add_argument("--calsrc-radius", type=float, action="store", default=10.,
                         required=False, dest="calsrc_radius",
                         help="Radius around declination of the zenith in which to search for brightest source, which is then identified as the calibration source.")
-                        
+    
+    # Diffuse model simulation parameters
+    parser.add_argument("--sim-diffuse-sky-model", type=str, action="store",
+                        default="none", required=False, dest="sim_diffuse_sky_model",
+                        help="Which global sky model to use to define diffuse model. "
+                             "The options all come from pyGDSM: 'gsm2008', 'gsm2016', 'haslam', "
+                             "'lfss', or 'none'.")
+    parser.add_argument("--sim-diffuse-nside", type=int, action="store",
+                        default=16, required=False, dest="sim_diffuse_nside",
+                        help="Healpix nside to use for the region maps.")
+
     # Gain prior
     parser.add_argument("--gain-prior-amp", type=float, action="store", default=0.1,
                         required=False, dest="gain_prior_amp",
@@ -124,31 +144,12 @@ def get_config():
     parser.add_argument("--gain-nmax-time", type=int, action="store", default=2,
                         required=False, dest="gain_nmaxtime",
                         help="Max. Fourier mode index for gain perturbations (time direction).")
-    parser.add_argument("--gain-only-positive-modes", type=bool, action="store", default=False,
+    parser.add_argument("--gain-prior-zero-mode-std", type=float, action="store", default=None,
+                        required=False, dest="gain_prior_zero_mode_std",
+                        help="Separately specify the gain prior standard deviaiton for the zero mode.")
+    parser.add_argument("--gain-only-positive-modes", type=bool, action="store", default=True,
                         required=False, dest="gain_only_positive_modes",
                         help="Whether to only permit positive wavenumber gain modes.")
-
-    # parser.add_argument("--gain-prior-sigma-frate", type=float, action="store", default=None,
-    #                     required=False, dest="gain_prior_sigma_frate",
-    #                     help="Width of a Gaussian prior in fringe rate, in units of mHz.")
-    # parser.add_argument("--gain-prior-sigma-delay", type=float, action="store", default=None,
-    #                     required=False, dest="gain_prior_sigma_delay",
-    #                     help="Width of a Gaussian prior in delay, in units of ns.")
-    # parser.add_argument("--gain-prior-zeropoint-std", type=float, action="store", default=None,
-    #                     required=False, dest="gain_prior_zeropoint_std",
-    #                     help="If specified, fix the std. dev. of the (0,0) mode to some value.")
-    # parser.add_argument("--gain-prior-frate0", type=float, action="store", default=0.,
-    #                     required=False, dest="gain_prior_frate0",
-    #                     help="The central fringe rate of the Gaussian taper (mHz).")
-    # parser.add_argument("--gain-prior-delay0", type=float, action="store", default=0.,
-    #                     required=False, dest="gain_prior_delay0",
-    #                     help="The central delay of the Gaussian taper (ns).")
-    # parser.add_argument("--gain-mode-cut-level", type=float, action="store", default=None,
-    #                     required=False, dest="gain_mode_cut_level",
-    #                     help="If specified, gain modes with (prior power spectrum) < (gain-mode-cut-level) * max(prior power spectrum) will be excluded from the linear solve (i.e. set to zero).")
-    # parser.add_argument("--gain-always-linear", type=bool, action="store", default=False,
-    #                     required=False, dest="gain_always_linear",
-    #                     help="If True, the gain perturbations are always applied under the linear approximation (the x_i x_j^* term is neglected everywhere)")
 
     # Gain simulation
     parser.add_argument("--sim-gain-amp-std", type=float, action="store", default=0.05,
