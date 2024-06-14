@@ -360,7 +360,8 @@ def cg_mpi(comm_groups, Amat_block, bvec_block, vec_size, block_map,
     return x_all
 
 
-def cg(Amat, bvec, maxiters=1000, abs_tol=1e-8, use_norm_tol=False, linear_op=None):
+def cg(Amat, bvec, maxiters=1000, abs_tol=1e-8, use_norm_tol=False, 
+       x0=None, linear_op=None, comm=None):
     """
     Simple Conjugate Gradient solver that operates in serial. This uses the 
     same algorithm as `cg_mpi()` and so can be used for testing/comparison of 
@@ -383,22 +384,42 @@ def cg(Amat, bvec, maxiters=1000, abs_tol=1e-8, use_norm_tol=False, linear_op=No
         use_norm_tol (bool):
             Whether to use the tolerance on each element (as above), or an 
             overall tolerance on the norm of the residual.
+        x0 (array_like):
+            Initial guess for the solution vector. Will be set to zero 
+            otherwise.
         linear_op (func):
             If specified, this function will be used to operate on vectors, 
             instead of the Amat matrix. Must have call signature `func(x)`.
-    
+        comm (MPI communicator):
+            If specified, the CG solver will be run only on the root worker, 
+            but the 
+
     Returns:
         x (array_like):
             Solution vector for the full system.
     """
+    # MPI worker ID
+    myid = 0
+    if comm is not None:
+        myid = comm.Get_rank()
+
     # Use Amat as the linear operator if function not specified
     if linear_op is None:
         linear_op = lambda v: Amat @ v
     
     # Initialise solution vector
-    x = np.zeros_like(bvec)
-    
+    if x0 is None:
+        x = np.zeros_like(bvec)
+    else:
+        assert x0.shape == bvec.shape, "Initial guess x0 has a different shape to bvec"
+        assert x0.dtype == bvec.dtype, "Initial guess x0 has a different type to bvec"
+        x = x0.copy()
+
     # Calculate initial residual
+    # NOTE: linear_op may have internal MPI calls; we assume that it 
+    # handles synchronising its input itself, but that only the root 
+    # worker receives a correct return value.
+
     r = bvec - linear_op(x)
     pvec = r[:]
     
@@ -408,35 +429,53 @@ def cg(Amat, bvec, maxiters=1000, abs_tol=1e-8, use_norm_tol=False, linear_op=No
     while niter < maxiters and not finished:
         
         try:
-            # Check convergence criterion
-            if use_norm_tol:
-                # Check tolerance on norm of r
-                if np.linalg.norm(r) < abs_tol:
-                    finished = True
-                    break
-            else:
-                # Check tolerance per array element
-                if np.all(np.abs(r) < abs_tol):
-                    finished = True
-                    break
+            if myid == 0:
+                # Root worker checks for convergence
+                if use_norm_tol:
+                    # Check tolerance on norm of r
+                    if np.linalg.norm(r) < abs_tol:
+                        finished = True
+                else:
+                    # Check tolerance per array element
+                    if np.all(np.abs(r) < abs_tol):
+                        finished = True
+
+            # Broadcast finished flag to all workers (need to use a non-immutable type)
+            finished_arr = np.array([finished,])
+            if comm is not None:
+                comm.Bcast(finished_arr, root=0)
+                finished = bool(finished_arr[0])
+            if finished:
+                break
 
             # Do CG iteration
             r_dot_r = np.dot(r.T, r)
-            A_dot_p = linear_op(pvec)
+            A_dot_p = linear_op(pvec) # root worker will broadcast correct pvec
             
-            pAp = pvec.T @ A_dot_p
-            alpha = r_dot_r / pAp
+            # Only root worker needs to do these updates; other workers idle
+            if myid == 0:
+                pAp = pvec.T @ A_dot_p
+                alpha = r_dot_r / pAp
 
-            x = x + alpha * pvec
-            r = r - alpha * A_dot_p
+                x = x + alpha * pvec
+                r = r - alpha * A_dot_p
 
-            # Update pvec
-            beta = np.dot(r.T, r) / r_dot_r
-            pvec = r + beta * pvec
+                # Update pvec
+                beta = np.dot(r.T, r) / r_dot_r
+                pvec = r + beta * pvec
+
+            # Update pvec on all workers
+            comm.Bcast(pvec, root=0)
             
             # Increment iteration
             niter += 1
         except:
             raise
-        
+    
+    if comm is not None:
+        comm.barrier()
+
+    # Synchronise solution across all workers
+    if comm is not None:
+        comm.Bcast(x, root=0)
     return x

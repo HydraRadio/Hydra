@@ -599,7 +599,7 @@ def simulate_vis_per_alm(
     # Make sure these are array_like
     freqs = np.atleast_1d(freqs)
     lsts = np.atleast_1d(lsts)
-
+    
     # Array of ell, m values in healpy ordering
     ell, m = hp.Alm().getlm(lmax=lmax)
 
@@ -630,8 +630,7 @@ def simulate_vis_per_alm(
                                       polarized=polarized,
                                       precision=precision,
                                       latitude=latitude,
-                                      use_feed=use_feed,
-                                      multiprocess=multiprocess)
+                                      use_feed=use_feed)
 
     if logfile is not None:
         with open(logfile, 'a') as f:

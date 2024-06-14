@@ -18,6 +18,9 @@ def get_config():
     parser.add_argument("--gains", action="store_true",
                         required=False, dest="sample_gains",
                         help="Sample gains.")
+    parser.add_argument("--cosmo", action="store_true",
+                        required=False, dest="sample_cosmo_field",
+                        help="Sample cosmo field.")
     #parser.add_argument("--vis", action="store_true",
     #                    required=False, dest="sample_vis",
     #                    help="Sample visibilities in general.")
@@ -134,6 +137,21 @@ def get_config():
                         default=16, required=False, dest="sim_diffuse_nside",
                         help="Healpix nside to use for the region maps.")
 
+
+    # Cosmo field parameters
+    parser.add_argument("--cosmo-ra-bounds", type=float, action="store", default=(0, 60),
+                        nargs=2, required=False, dest="cosmo_field_ra_bounds",
+                        help="Bounds for the RA of the cosmo field sample points (in degrees).")
+    parser.add_argument("--cosmo-dec-bounds", type=float, action="store", default=(-40., -20.),
+                        nargs=2, required=False, dest="cosmo_field_dec_bounds",
+                        help="Bounds for the Dec of the cosmo field sample points (in degrees).")
+    parser.add_argument("--cosmo-ra-ngrid", type=int, action="store", default=10,
+                        required=False, dest="cosmo_field_ra_ngrid",
+                        help="Number of cosmo field sample points in the RA direction.")
+    parser.add_argument("--cosmo-dec-ngrid", type=int, action="store", default=10,
+                        required=False, dest="cosmo_field_dec_ngrid",
+                        help="Number of cosmo field sample points in the Dec direction.")
+
     # Gain prior
     parser.add_argument("--gain-prior-amp", type=float, action="store", default=0.1,
                         required=False, dest="gain_prior_amp",
@@ -199,6 +217,9 @@ def get_config():
     parser.add_argument("--sh-nside", type=int, action="store",
                         default=16, required=False, dest="sh_nside",
                         help="Healpix nside used to construct spherical harmonic response function.")
+    parser.add_argument("--sh-prior-std", type=float, action="store",
+                        default=0.1, required=False, dest="sh_prior_std",
+                        help="Prior standard deviation for spherical harmonic modes.")
 
     # Region parameters
     parser.add_argument("--region-nregions", type=int, action="store", default=10,

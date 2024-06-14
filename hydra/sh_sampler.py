@@ -1,6 +1,10 @@
+from mpi4py.MPI import SUM as MPI_SUM
+
 import numpy as np
 import scipy as sp
 import healpy as hp
+
+from .vis_simulator import simulate_vis_per_alm
 
 # Wigner D matrices
 import spherical, quaternionic
@@ -50,19 +54,19 @@ def vis_proj_operator_no_rot(freqs, lsts, beams, ant_pos, lmax, nside,
     Returns:
         vis_response_2D (array_like):
             Visibility operator (δV_ij) for each (l,m) mode, frequency, 
-            baseline and lst. Shape (Nvis,N_alms) where Nvis is N_bl x N_times x N_freqs.
+            baseline and lst. Shape (Nvis, Nalms) where Nvis is Nbl x Ntimes x Nfreqs.
         ell (array of int):
             Array of ell-values for the visiblity simulation
         m  (array of int):
             Array of ell-values for the visiblity simulation
     """
-    ell, m, vis_alm = hydra.vis_simulator.simulate_vis_per_alm(lmax=lmax, 
-                                                               nside=nside, 
-                                                               ants=ant_pos, 
-                                                               freqs=freqs, 
-                                                               lsts=lsts, 
-                                                               beams=beams,
-                                                               latitude=latitude)
+    ell, m, vis_alm = simulate_vis_per_alm(lmax=lmax, 
+                                           nside=nside, 
+                                           ants=ant_pos, 
+                                           freqs=freqs*1e6, # MHz -> Hz 
+                                           lsts=lsts, 
+                                           beams=beams,
+                                           latitude=latitude)
     
     # Removing visibility responses corresponding to the m=0 imaginary parts 
     vis_alm = np.concatenate((vis_alm[:,:,:,:,:len(ell)],
@@ -273,33 +277,108 @@ def get_alms_from_gsm(freq, lmax, nside=64, resolution='low', output_model=False
     return healpy2alms(get_healpy_from_gsm(freq, lmax, nside, resolution, output_model, output_map))
 
 
-def construct_rhs_no_rot(data, inv_noise_cov, inv_prior_cov, omega_0, omega_1, a_0, vis_response):
+def construct_rhs_no_rot(data, inv_noise_var, inv_prior_var, omega_0, omega_1, a_0, vis_response):
     """
     Construct RHS of linear system.
     """
-    real_data_term = vis_response.real.T @ (inv_noise_cov*data.real + np.sqrt(inv_noise_cov)*omega_1.real)
-    imag_data_term = vis_response.imag.T @ (inv_noise_cov*data.imag + np.sqrt(inv_noise_cov)*omega_1.imag)
-    prior_term = inv_prior_cov*a_0 + np.sqrt(inv_prior_cov)*omega_0
+    real_data_term = vis_response.real.T @ (inv_noise_var*data.real + np.sqrt(inv_noise_var)*omega_1.real)
+    imag_data_term = vis_response.imag.T @ (inv_noise_var*data.imag + np.sqrt(inv_noise_var)*omega_1.imag)
+    prior_term = inv_prior_var*a_0 + np.sqrt(inv_prior_var)*omega_0
 
     right_hand_side = real_data_term + imag_data_term + prior_term 
     
     return right_hand_side
 
 
-def apply_lhs_no_rot(a_cr, inv_noise_cov, inv_prior_cov, vis_response):
+def apply_lhs_no_rot(a_cr, inv_noise_var, inv_prior_var, vis_response):
     """
     Apply LHS operator of linear system to an input vector.
     """
     real_noise_term = vis_response.real.T \
-                    @ ( inv_noise_cov[:,np.newaxis] * vis_response.real ) \
+                    @ ( inv_noise_var[:,np.newaxis] * vis_response.real ) \
                     @ a_cr
     imag_noise_term = vis_response.imag.T \
-                    @ ( inv_noise_cov[:,np.newaxis]* vis_response.imag ) \
+                    @ ( inv_noise_var[:,np.newaxis]* vis_response.imag ) \
                     @ a_cr
-    signal_term = inv_prior_cov * a_cr
+    signal_term = inv_prior_var * a_cr
     
     left_hand_side = (real_noise_term + imag_noise_term + signal_term) 
     return left_hand_side
+
+
+def construct_rhs_no_rot_mpi(comm, data, inv_noise_var, inv_prior_var, 
+                             omega_a, omega_n, a_0, vis_response):
+    """
+    Construct RHS of linear system from data split across multiple MPI workers.
+    """
+    myid = comm.Get_rank()
+
+    # Synchronise omega_a across all workers
+    if myid != 0:
+        omega_a *= 0.
+    comm.Bcast(omega_a, root=0)
+
+    # Calculate data terms
+    my_data_term = vis_response.real.T @ ((inv_noise_var * data.real).flatten()
+                                          + np.sqrt(inv_noise_var).flatten()
+                                            * omega_n.real.flatten()) \
+                 + vis_response.imag.T @ ((inv_noise_var * data.imag).flatten()
+                                          + np.sqrt(inv_noise_var).flatten() 
+                                            * omega_n.imag.flatten())
+    
+    # Do Reduce (sum) operation to get total operator on root node
+    data_term = np.zeros((1,), dtype=my_data_term.dtype) # dummy data for non-root workers
+    if myid == 0:
+        data_term = np.zeros_like(my_data_term)
+    
+    comm.Reduce(my_data_term, data_term, op=MPI_SUM, root=0)
+    comm.barrier()
+
+    # Return result (only root worker has correct result)
+    if myid == 0:
+        return data_term \
+             + inv_prior_var * a_0 \
+             + np.sqrt(inv_prior_var) * omega_a
+    else:
+        return np.zeros_like(a_0)
+
+
+def apply_lhs_no_rot_mpi(comm, a_cr, inv_noise_var, inv_prior_var, vis_response):
+    """
+    Apply LHS operator of linear system to an input vector that has been 
+    split into chunks between MPI workers.
+    """
+    myid = comm.Get_rank()
+
+    # Synchronise a_cr across all workers
+    if myid != 0:
+        a_cr *= 0.
+    comm.Bcast(a_cr, root=0)
+
+    # Calculate noise terms for this rank
+    my_tot_noise_term = vis_response.real.T \
+                        @ ( inv_noise_var.flatten()[:,np.newaxis] * vis_response.real ) \
+                        @ a_cr \
+                      + vis_response.imag.T \
+                        @ ( inv_noise_var.flatten()[:,np.newaxis] * vis_response.imag ) \
+                        @ a_cr
+
+    # Do Reduce (sum) operation to get total operator on root node
+    tot_noise_term = np.zeros((1,), dtype=my_tot_noise_term.dtype) # dummy data for non-root workers
+    if myid == 0:
+        tot_noise_term = np.zeros_like(my_tot_noise_term)
+    
+    comm.Reduce(my_tot_noise_term,
+                tot_noise_term,
+                op=MPI_SUM,
+                root=0)
+
+    # Return result (only root worker has correct result)
+    if myid == 0:
+        signal_term = inv_prior_var * a_cr
+        return tot_noise_term + signal_term
+    else:
+        return np.zeros_like(a_cr)
 
 
 def radiometer_eq(auto_visibilities, ants, delta_time, delta_freq, Nnights = 1, include_autos=False):
@@ -385,7 +464,7 @@ if __name__ == "__main__":
 
     # Inverse noise covariance and noise on data
     noise_cov = radiometer_eq(autos@x_true, ants, delta_time, delta_freq)
-    inv_noise_cov = 1/noise_cov
+    inv_noise_var = 1/noise_cov
     data_noise = np.random.randn(noise_cov.size)*np.sqrt(noise_cov) 
     data_vec = model_true + data_noise
 
@@ -393,12 +472,12 @@ if __name__ == "__main__":
     zero_value = 0.001
     prior_cov = (x_true*0.1)**2     # if 0.1 = 10% prior
     prior_cov[prior_cov == 0] = zero_value
-    inv_prior_cov = 1/prior_cov
+    inv_prior_var = 1./prior_cov
     a_0 = np.random.randn(x_true.size)*np.sqrt(prior_cov) + x_true # gaussian centered on alms with S variance 
 
     # Define left hand side operator 
     def lhs_operator(x):
-        y = apply_lhs_no_rot(x, inv_noise_cov, inv_prior_cov, vis_response)
+        y = apply_lhs_no_rot(x, inv_noise_var, inv_prior_var, vis_response)
 
         return y
 
@@ -406,8 +485,8 @@ if __name__ == "__main__":
     omega_0_wf = np.zeros_like(a_0)
     omega_1_wf = np.zeros_like(model_true, dtype=np.complex128)
     rhs_wf = construct_rhs_no_rot(data_vec,
-                                  inv_noise_cov, 
-                                  inv_prior_cov, 
+                                  inv_noise_var, 
+                                  inv_prior_var, 
                                   omega_0_wf, 
                                   omega_1_wf, 
                                   a_0, 
@@ -438,8 +517,8 @@ if __name__ == "__main__":
 
         # Construct the right hand side
         rhs = construct_rhs_no_rot(data_vec,
-                                   inv_noise_cov, 
-                                   inv_prior_cov,
+                                   inv_noise_var, 
+                                   inv_prior_var,
                                    omega_0,
                                    omega_1,
                                    a_0,
@@ -498,9 +577,9 @@ if __name__ == "__main__":
     np.savez(path+'precomputed_data_'+f'{data_seed}_'+f'{jobid}',
              vis_response=vis_response,
              x_true=x_true,
-             inv_noise_cov=inv_noise_cov,
+             inv_noise_var=inv_noise_var,
              zero_value=zero_value,
-             inv_prior_cov=inv_prior_cov,
+             inv_prior_var=inv_prior_var,
              wf_soln=wf_soln,
              nside=nside,
              lmax=lmax,
