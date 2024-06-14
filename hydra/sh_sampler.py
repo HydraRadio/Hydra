@@ -22,10 +22,17 @@ from astropy.time import Time
 import time
 
 
-def vis_proj_operator_no_rot(freqs, lsts, beams, ant_pos, lmax, nside, 
+def vis_proj_operator_no_rot(freqs, 
+                             lsts, 
+                             beams, 
+                             ant_pos, 
+                             lmax, 
+                             nside, 
                              latitude=-0.5361913261514378, 
                              include_autos=False, 
-                             autos_only=False):
+                             autos_only=False,
+                             ref_freq=100.,
+                             spectral_idx=0.):
     """
     Precompute the real and imaginary blocks of the visibility response 
     operator. This should only be done once and then "apply_vis_response()"
@@ -50,6 +57,11 @@ def vis_proj_operator_no_rot(freqs, lsts, beams, ant_pos, lmax, nside,
             Latitude in decimal format of the simulated array/visibilities. 
         include_autos (bool):
             If `True`, the auto baselines are included.
+        ref_freq (float):
+            Reference frequency for the spectral dependence, in MHz.
+        spectral_idx (float):
+            Spectral index, `beta`, for the spectral dependence, 
+            `~(freqs / ref_freq)^beta`.
     
     Returns:
         vis_response_2D (array_like):
@@ -82,15 +94,15 @@ def vis_proj_operator_no_rot(freqs, lsts, beams, ant_pos, lmax, nside,
             # Toggle via keyword argument if you want to keep the auto baselines/only have autos
             if include_autos == True:
                 if j >= i:
-                    antpairs.append((ants[i],ants[j]))
+                    antpairs.append((ants[i], ants[j]))
             elif autos_only == True:
                 if j == i:
-                    antpairs.append((ants[i],ants[j]))
+                    antpairs.append((ants[i], ants[j]))
             else:
                 if j == i:
-                    auto_ants.append((ants[i],ants[j]))
+                    auto_ants.append((ants[i], ants[j]))
                 if j > i:
-                    antpairs.append((ants[i],ants[j]))
+                    antpairs.append((ants[i], ants[j]))
                 
     vis_response = np.zeros((len(antpairs), len(freqs), len(lsts), 2*len(ell)-(lmax+1)), 
                             dtype=np.complex128)
@@ -101,7 +113,11 @@ def vis_proj_operator_no_rot(freqs, lsts, beams, ant_pos, lmax, nside,
         idx1 = ants.index(bl[0])
         idx2 = ants.index(bl[1])
         vis_response[i, :] = vis_alm[:, :, idx1, idx2, :]  
-        
+    
+    # Multiply by spectral dependence model (a powerlaw)
+    # Shape: Nbl, Nfreqs, Ntimes, Nalms 
+    vis_response *= ((freqs / ref_freq)**spectral_idx)[np.newaxis,:,np.newaxis,np.newaxis]
+
     # Reshape to 2D
     # TODO: Make this into a "pack" and "unpack" function
     # Nbl, Nfreqs, Ntimes, Nalms --> Nvis, Nalms

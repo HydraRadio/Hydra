@@ -220,6 +220,12 @@ def get_config():
     parser.add_argument("--sh-prior-std", type=float, action="store",
                         default=0.1, required=False, dest="sh_prior_std",
                         help="Prior standard deviation for spherical harmonic modes.")
+    parser.add_argument("--sh-ref-freq", type=float, action="store",
+                        default=100., required=False, dest="sh_ref_freq",
+                        help="Reference frequency for the SH spectral dependence, in MHz.")
+    parser.add_argument("--sh-spectral-idx", type=float, action="store",
+                        default=0., required=False, dest="sh_spectral_idx",
+                        help="Spectral index for the SH power law spectral dependence.")
 
     # Region parameters
     parser.add_argument("--region-nregions", type=int, action="store", default=10,

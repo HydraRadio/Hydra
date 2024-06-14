@@ -574,7 +574,9 @@ if __name__ == '__main__':
                                             ant_pos=ant_pos, 
                                             lmax=args.sh_lmax, 
                                             nside=args.sh_nside,
-                                            latitude=array_latitude)
+                                            latitude=array_latitude,
+                                            ref_freq=args.sh_ref_freq,
+                                            spectral_idx=args.sh_spectral_idx)
 
         # Spherical harmonic prior mean
         Nshmodes = sh_response_chunk.shape[1] 
