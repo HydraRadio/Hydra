@@ -966,6 +966,10 @@ if __name__ == '__main__':
                              % (time.time() - t0), 'c')
                 print("sh_soln:", sh_soln)
 
+            # Save solution as new sample
+            if myid == 0:
+                np.save(os.path.join(output_dir, "sh_amp_%05d" % n), sh_soln)
+
             # Update visibility model
             sh_current = sh_soln
             current_data_model_chunk_sh = sh_response_chunk @ sh_soln

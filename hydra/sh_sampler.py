@@ -281,8 +281,10 @@ def construct_rhs_no_rot(data, inv_noise_var, inv_prior_var, omega_0, omega_1, a
     """
     Construct RHS of linear system.
     """
-    real_data_term = vis_response.real.T @ (inv_noise_var*data.real + np.sqrt(inv_noise_var)*omega_1.real)
-    imag_data_term = vis_response.imag.T @ (inv_noise_var*data.imag + np.sqrt(inv_noise_var)*omega_1.imag)
+    real_data_term = vis_response.real.T @ (inv_noise_var*data.real 
+                                            + np.sqrt(inv_noise_var)*omega_1.real)
+    imag_data_term = vis_response.imag.T @ (inv_noise_var*data.imag 
+                                            + np.sqrt(inv_noise_var)*omega_1.imag)
     prior_term = inv_prior_var*a_0 + np.sqrt(inv_prior_var)*omega_0
 
     right_hand_side = real_data_term + imag_data_term + prior_term 
