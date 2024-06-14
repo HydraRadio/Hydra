@@ -38,6 +38,7 @@ if __name__ == '__main__':
     # Set switches
     SAMPLE_GAINS = args.sample_gains
     #SAMPLE_VIS = args.sample_vis
+    SAMPLE_COSMO_FIELD = args.sample_cosmo_field
     SAMPLE_PTSRC_AMPS = args.sample_ptsrc
     SAMPLE_REGION_AMPS = args.sample_regions
     SAMPLE_BEAM = args.sample_beam
@@ -51,6 +52,7 @@ if __name__ == '__main__':
     if myid == 0:
         print("    Debug mode:                   ", debug)
         print("    Gain perturbation sampler:    ", SAMPLE_GAINS)
+        print("    Cosmo field sampler:          ", SAMPLE_COSMO_FIELD)
         #print("    Vis. sampler:       ", SAMPLE_VIS)
         print("    Ptsrc. amplitude sampler:     ", SAMPLE_PTSRC_AMPS)
         print("    Diffuse region amp. sampler:  ", SAMPLE_REGION_AMPS)
@@ -191,7 +193,7 @@ if __name__ == '__main__':
     comm.Bcast(ptsrc_amps, root=0)
     if debug:
         status(myid, "Received %d point sources (sum of amps: %f)" \
-              % (ra.size, np.sum(ptsrc_amps).real), colour='y')
+              % (ra.size, np.sum(ptsrc_amps).real), colour='b')
     comm.barrier()
 
     #--------------------------------------------------------------------------
@@ -218,8 +220,6 @@ if __name__ == '__main__':
     # Unpack antenna info
     ants, ant_pos, antpairs, ants1, ants2 = ant_info
     comm.barrier()
-
-    
 
     #--------------------------------------------------------------------------
     # Run diffuse model simulation for this worker's chunk of frequency/time space
@@ -268,9 +268,7 @@ if __name__ == '__main__':
                                           times=time_chunk, 
                                           beams=sim_beams
                                         )
-        
-        # FIXME: REMOVE FACTOR OF 4!
-        model0_diffuse_chunk = 4. * diffuse_proj[:,:,:,0] # Take the 0th (and only) region
+        model0_diffuse_chunk = diffuse_proj[:,:,:,0] # Take the 0th (and only) region
 
         # Clean up
         del diffuse_proj, diffuse_pixel_ra, diffuse_pixel_dec, diffuse_fluxes_chunk
@@ -372,7 +370,7 @@ if __name__ == '__main__':
     comm.Bcast(delta_g_amps0, root=0)
     delta_g_amps0 = delta_g_amps0.reshape((Nants, Ngain_modes))
     status(myid, "Received %d delta_g amps (sum of amps: %f)" \
-          % (delta_g_amps0.size, np.sum(delta_g_amps0).real), colour='y')
+          % (delta_g_amps0.size, np.sum(delta_g_amps0).real), colour='b')
 
     # Dot product with partial Fourier operator to get simulated gain perturbations. 
     # These are for this worker's time/freq. chunk, but should be continuous if you 
@@ -396,7 +394,7 @@ if __name__ == '__main__':
     data_chunk += noise_chunk
     comm.barrier()
     if myid == 0:
-        status(None, "Simulation step finished", colour='y')
+        status(None, "Simulation step finished", colour='b')
 
     # Save simulated model info
     np.save(os.path.join(output_dir, "sim_model0_chunk_w%04d" % myid), model0_chunk)
@@ -415,6 +413,7 @@ if __name__ == '__main__':
     current_data_model_chunk_ptsrc = 0
     current_data_model_chunk_region = 0
     current_data_model_chunk_sh = 0
+    current_data_model_chunk_cosmo = 0
 
     # Initial gain perturbation guesses
     current_delta_gain = np.zeros_like(delta_g_chunk0)
@@ -440,15 +439,10 @@ if __name__ == '__main__':
 
     # Ptsrc priors
     ptsrc_amp_prior_std = ptsrc_amp_prior_level * np.ones(Nptsrc)
-    status(myid, "(0) Ptsrc amp. prior level: %s" % ptsrc_amp_prior_level, colour='b')
+    if myid == 0:
+        status(None, "Ptsrc amp. prior level: %s" % ptsrc_amp_prior_level, colour='b')
     if calsrc:
         amp_prior_std[calsrc_idx] = calsrc_std
-
-    # Spherical harmonic prior mean 
-    # FIXME
-    sh_prior_mean = 0 #np.random.randn(x_true.size)*np.sqrt(prior_cov) + x_true # gaussian centered on alms with S variance 
-    #sh_current = sh_prior_mean.copy()
-    sh_current = sh_prior_mean
 
     # Precompute gain perturbation projection operators
     A_real, A_imag = None, None
@@ -501,7 +495,7 @@ if __name__ == '__main__':
         region_amp_prior_std = region_amp_prior_level * np.ones(Nregions)
 
         if myid == 0:
-            status(myid, "Precomp. region proj. operator took %6.3f sec" \
+            status(myid, "Precomputed region proj. operator in %6.3f sec" \
                          % (time.time() - t0), 'b')
 
 
@@ -520,7 +514,7 @@ if __name__ == '__main__':
                                           beams=beams
                                         )
         if myid == 0:
-            status(myid, "Precomp. ptsrc. proj. operator took %6.3f sec" \
+            status(myid, "Precomputed ptsrc proj. operator in %6.3f sec" \
                          % (time.time() - t0), 'b')
 
 
@@ -536,13 +530,44 @@ if __name__ == '__main__':
             source_proj = ptsrc_proj
             amp_prior_std = ptsrc_amp_prior_std
 
+    #-------------------
+    # Precompute cosmo field projection operator
+    cosmo_proj = None
+    if SAMPLE_COSMO_FIELD:
+        t0 = time.time()
+
+        # Get sample points and unit flux per freq. channel
+        cosmo_grid_ra, cosmo_grid_dec = hydra.cosmo_sampler.make_cosmo_field_grid(args)
+        cosmo_fluxes_chunk = np.ones((cosmo_grid_ra.size, fluxes_chunk.size))
+
+        # Calculate projection operator (this re-uses the point source 
+        # projection operator code, )
+        cosmo_proj = hydra.ptsrc_sampler.calc_proj_operator(
+                                          ra=cosmo_grid_ra, 
+                                          dec=cosmo_grid_dec, 
+                                          fluxes=fluxes_chunk, 
+                                          ant_pos=ant_pos, 
+                                          antpairs=antpairs, 
+                                          freqs=freq_chunk, 
+                                          times=time_chunk, 
+                                          beams=beams
+                                        )
+        if myid == 0:
+            status(myid, "Precomputed cosmo proj. operator in %6.3f sec" \
+                         % (time.time() - t0), 'b')
+
+        # FIXME: Priors
+    #-------------------
     
     # Precompute spherical harmonic projection operator
     sh_response_chunk = None
     if SAMPLE_SH:
+        if myid == 0:
+            status(None, "Precomputing SH proj. operator for lmax = %d, nside = %d" \
+                         % (args.sh_lmax, args.sh_nside), 'c')
         t0 = time.time()
         sh_response_chunk, sh_autos, sh_ell, sh_m \
-                            = vis_proj_operator_no_rot(
+                            = hydra.sh_sampler.vis_proj_operator_no_rot(
                                             freqs=freq_chunk, 
                                             lsts=time_chunk, 
                                             beams=beams, 
@@ -550,6 +575,13 @@ if __name__ == '__main__':
                                             lmax=args.sh_lmax, 
                                             nside=args.sh_nside,
                                             latitude=array_latitude)
+
+        # Spherical harmonic prior mean
+        Nshmodes = sh_response_chunk.shape[1] 
+        sh_prior_mean = np.zeros(Nshmodes)
+        sh_prior_var = (args.sh_prior_std)**2. * np.ones(Nshmodes)
+        sh_current = sh_prior_mean.copy()
+
         if myid == 0:
             status(myid, "Precomp. sph. harmonic proj. operator took %6.3f sec" \
                          % (time.time() - t0), 'b')
@@ -677,9 +709,79 @@ if __name__ == '__main__':
 
 
         #---------------------------------------------------------------------------
+        # (BBBB) Cosmo field sampler
+        #---------------------------------------------------------------------------
+        if SAMPLE_COSMO_FIELD:
+
+            # FIXME FIXME FIXME
+            # Current_data_model DOES NOT include gbar_i gbar_j^* factor, so we need
+            # to apply it here to calculate the residual
+            model_resid_chunk = current_data_model_chunk_ptsrc \
+                              + current_data_model_chunk_region \
+                              + current_data_model_chunk_sh
+            
+            # Guard against all components being zero
+            if model_resid_chunk == 0:
+                model_resid_chunk = np.zeros_like(data_chunk)
+
+            # Find other workers with the same frequency block and add to MPI group
+            my_fidx, my_tidx, _, _ = worker_map[myid]
+            workers_with_same_freq_block = []
+            for w_id in worker_map.keys():
+                _fidx, _tidx, _, _ = worker_map[w_id]
+                if _fidx == my_fidx:
+                    workers_with_same_freq_block.append(w_id)
+            comm_same_freqs = comm.Create( comm.group.Incl(workers_with_same_freq_block) )
+
+
+            # Get LHS and RHS operators for linear system
+            t0 = time.time()
+            #xxxx
+
+            cosmo_op, cosmos_rhs = hydra.ptsrc_sampler.precompute_mpi(
+                                       comm,
+                                       ants=ants, 
+                                       antpairs=antpairs, 
+                                       freq_chunk=freq_chunk, 
+                                       time_chunk=time_chunk,
+                                       proj_chunk=cosmo_proj,
+                                       data_chunk=data_chunk,
+                                       inv_noise_var_chunk=inv_noise_var_chunk,
+                                       current_data_model_chunk=current_data_model_chunk,
+                                       gain_chunk=gains_chunk * (1. + current_delta_gain),
+                                       amp_prior_std=amp_prior_std, 
+                                       realisation=True)
+
+            comm.barrier()
+            if myid == 0:
+                status(None, "Cosmo field sampler linear system precompute took %6.3f sec" 
+                             % (time.time() - t0), 'c')
+
+            # Solve linear system
+            cosmo_soln = np.zeros(cosmo_prior_std.shape, dtype=cosmo_prior_std.dtype)
+
+        #---------------------------------------------------------------------------
         # (B) Source sampler (ptsrc, regions, or both)
         #---------------------------------------------------------------------------
         if SAMPLE_PTSRC_AMPS or SAMPLE_REGION_AMPS:
+
+
+            # Current_data_model DOES NOT include gbar_i gbar_j^* factor, so we need
+            # to apply it here to calculate the residual
+            model_resid_chunk = current_data_model_chunk_cosmo \
+                              + current_data_model_chunk_sh
+            
+            # Guard against all components being zero
+            if model_resid_chunk == 0:
+                model_resid_chunk = np.zeros_like(data_chunk)
+
+            ggv_chunk = hydra.apply_gains(model_resid_chunk,
+                                          gains_chunk,
+                                          ants,
+                                          antpairs,
+                                          inline=False)
+            resid_chunk = data_chunk - ggv_chunk
+
 
             # Get LHS and RHS operators for linear system
             t0 = time.time()
@@ -690,16 +792,11 @@ if __name__ == '__main__':
                                        freq_chunk=freq_chunk, 
                                        time_chunk=time_chunk,
                                        proj_chunk=source_proj,
-                                       data_chunk=data_chunk,
+                                       data_chunk=resid_chunk,
                                        inv_noise_var_chunk=inv_noise_var_chunk,
-                                       current_data_model_chunk=current_data_model_chunk,
                                        gain_chunk=gains_chunk * (1. + current_delta_gain),
                                        amp_prior_std=amp_prior_std, 
                                        realisation=True)
-            
-            # FIXME: current_data_model_chunk=current_data_model_chunk
-            # This gets updated each time by this sampler. But we're also conditioning on it?
-            # So x_soln for ptsrcs means something different each time
 
             comm.barrier()
             if myid == 0:
@@ -713,13 +810,17 @@ if __name__ == '__main__':
                 # Use MPI solver, which will distribute the linear system across workers
 
                 # Get shape of ptsrc linear operator from root node
-                source_op_shape = comm.bcast(source_op.shape, root=0)
+                source_op_shape = None
+                source_op_shape_new = comm.bcast(source_op.shape, root=0)
 
                 # Determine which workers get which blocks
-                comm_groups, block_map, block_shape \
-                    = linsolver.setup_mpi_blocks(comm, 
-                                                 matrix_shape=source_op_shape, 
-                                                 split=ngrid)
+                if source_op_shape != source_op_shape_new:
+                    # This is the first iteration; assign workers to groups
+                    source_op_shape = source_op_shape_new
+                    comm_groups, block_map, block_shape \
+                        = linsolver.setup_mpi_blocks(comm, 
+                                                     matrix_shape=source_op_shape, 
+                                                     split=ngrid)
 
                 # Collect matrix/vector blocks on each worker
                 my_Amat, my_bvec = None, None
@@ -789,7 +890,8 @@ if __name__ == '__main__':
                                                             current_data_model_chunk.shape)
             current_data_model_chunk = current_data_model_chunk_ptsrc \
                                      + current_data_model_chunk_region \
-                                     + current_data_model_chunk_sh
+                                     + current_data_model_chunk_sh \
+                                     + current_data_model_chunk_cosmo
 
         #---------------------------------------------------------------------------
         # (C) Spherical harmonic sampler
@@ -802,8 +904,15 @@ if __name__ == '__main__':
 
             # Current_data_model DOES NOT include gbar_i gbar_j^* factor, so we need
             # to apply it here to calculate the residual
-            # NOTE: Only ptsrc model included here
-            ggv_chunk = hydra.apply_gains(current_data_model_chunk_ptsrc,
+            model_resid_chunk = current_data_model_chunk_ptsrc \
+                              + current_data_model_chunk_region \
+                              + current_data_model_chunk_cosmo
+            
+            # Guard against all components being zero
+            if model_resid_chunk == 0:
+                model_resid_chunk = np.zeros_like(data_chunk)
+
+            ggv_chunk = hydra.apply_gains(model_resid_chunk,
                                           gains_chunk,
                                           ants,
                                           antpairs,
@@ -812,51 +921,58 @@ if __name__ == '__main__':
 
             # Define left hand side operator
             # FIXME: Need to make MPI-enabled version of this function
-            sh_lhs_operator = lambda x: hydra.sh_solver.apply_lhs_no_rot( 
-                                                            x, 
-                                                            inv_noise_cov_chunk, 
-                                                            inv_prior_cov, 
-                                                            sh_response_chunk )
+            sh_lhs_operator = lambda x: hydra.sh_sampler.apply_lhs_no_rot_mpi( 
+                                                        comm=comm,
+                                                        a_cr=x, 
+                                                        inv_noise_var=inv_noise_var_chunk, 
+                                                        inv_prior_var=1./sh_prior_var, 
+                                                        vis_response=sh_response_chunk )
 
             # Generate random maps for the realisations
             omega_a = np.random.randn(sh_prior_mean.size)
-            omega_n = (  1.0*np.random.randn(model_true.size) 
-                       + 1.j*np.random.randn(model_true.size) ) / np.sqrt(2.)
-            
+            omega_n = (  1.0*np.random.randn(*current_data_model_chunk.shape) 
+                       + 1.j*np.random.randn(*current_data_model_chunk.shape) ) \
+                      / np.sqrt(2.) # this will be a different realisation on each worker
 
             # Construct the right hand side
-            # FIXME: Need to make MPI-enabled version
-            sh_rhs = hydra.sh_solver.construct_rhs_no_rot(
-                                           resid_chunk,
-                                           inv_noise_cov_chunk, 
-                                           inv_prior_cov,
-                                           omega_a,
-                                           omega_n,
-                                           sh_prior_mean,
-                                           sh_response_chunk )
-
-            # Build linear operator object 
-            sh_lhs_shape = (sh_rhs.size, sh_rhs.size)
-            hs_lhs_linear_op = LinearOperator(matvec = sh_lhs_operator,
-                                              shape = sh_lhs_shape)
-
-            # Run and time solver
             t0 = time.time()
-            sh_soln, convergence_info = cg(A=sh_lhs_linear_op,
-                                           b=sh_rhs,
-                                           # tol = 1e-07,
-                                           #maxiter=15000,
-                                           x0=sh_current) # initial guess
+            sh_rhs = hydra.sh_sampler.construct_rhs_no_rot_mpi(
+                                           comm=comm,
+                                           data=resid_chunk,
+                                           inv_noise_var=inv_noise_var_chunk, 
+                                           inv_prior_var=1./sh_prior_var,
+                                           omega_a=omega_a,
+                                           omega_n=omega_n,
+                                           a_0=sh_prior_mean,
+                                           vis_response=sh_response_chunk )
             if myid == 0:
-                status(None, "Sph. harmonic sampler solve took %6.3f sec" \
+                status(None, "SH sampler construct RHS took %6.3f sec" \
                              % (time.time() - t0), 'c')
+            
+            # Run and time solver
+            # The cg() function ensures that each worker has the same solution vector
+            t0 = time.time()
+            sh_soln = hydra.linear_solver.cg(Amat=None,
+                                             bvec=sh_rhs,
+                                             linear_op=sh_lhs_operator,
+                                             maxiters=1000, 
+                                             abs_tol=1e-8, 
+                                             use_norm_tol=False,
+                                             x0=sh_current, # initial guess
+                                             comm=comm)
+
+            if myid == 0:
+                status(None, "SH sampler solve took %6.3f sec" \
+                             % (time.time() - t0), 'c')
+                print("sh_soln:", sh_soln)
 
             # Update visibility model
             sh_current = sh_soln
             current_data_model_chunk_sh = sh_response_chunk @ sh_soln
             current_data_model_chunk = current_data_model_chunk_ptsrc \
                                      + current_data_model_chunk_region \
-                                     + current_data_model_chunk_sh
+                                     + current_data_model_chunk_sh \
+                                     + current_data_model_chunk_cosmo
 
 
         #---------------------------------------------------------------------------

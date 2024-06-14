@@ -19,7 +19,6 @@ def precompute_mpi(comm,
                    proj_chunk,
                    data_chunk,
                    inv_noise_var_chunk,
-                   current_data_model_chunk,
                    gain_chunk, 
                    amp_prior_std, 
                    realisation=True):
@@ -35,7 +34,6 @@ def precompute_mpi(comm,
     # Check input dimensions
     assert data_chunk.shape == (len(antpairs), freq_chunk.size, time_chunk.size)
     assert data_chunk.shape == inv_noise_var_chunk.shape
-    assert data_chunk.shape == current_data_model_chunk.shape
     proj = proj_chunk.copy() # make a copy so we don't alter the original proj!
 
     # FIXME: Check for unused args!
@@ -80,16 +78,17 @@ def precompute_mpi(comm,
     proj = proj.reshape((-1, nsrcs))
     realisation_switch = 1.0 if realisation else 0.0 # Turn random realisations on or off
 
-    # Construct current state of model (residual from amplitudes = 1)
+    # Calculate residual of data vs fiducial model (residual from amplitudes = 1)
     # (proj now includes gains)
     resid_chunk = data_chunk.copy() \
           - (  proj.reshape((-1, nsrcs)) 
-             @ np.ones_like(amp_prior_std) ).reshape(current_data_model_chunk.shape)
+             @ np.ones_like(amp_prior_std) ).reshape(data_chunk.shape)
 
     # (Terms 1+3): S^1/2 A^\dagger [ N^{-1} r + N^{-1/2} \omega_r ]
     omega_n = (
         realisation_switch
-        * (1.0 * np.random.randn(*resid_chunk.shape) + 1.0j * np.random.randn(*resid_chunk.shape))
+        * (   1.0 * np.random.randn(*resid_chunk.shape) 
+            + 1.0j * np.random.randn(*resid_chunk.shape)  )
         / np.sqrt(2.0)
     )
 
