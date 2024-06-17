@@ -199,8 +199,8 @@ if __name__ == '__main__':
     print("Nants =", Nants)
 
     antpairs = []
-    for i in range(len(ants)):
-        for j in range(i, len(ants)):
+    for i in range(Nants):
+        for j in range(i, Nants):
             if i != j:
                 # Exclude autos
                 antpairs.append((i,j))
@@ -261,21 +261,27 @@ if __name__ == '__main__':
     if not os.path.exists(sim_outpath):
         # Run a simulation
         t0 = time.time()
-        _sim_vis = hydra.vis_simulator.simulate_vis(
-                ants=ant_pos,
-                fluxes=fluxes,
-                ra=ra,
-                dec=dec,
-                freqs=freqs, # Make sure this is in Hz!
-                lsts=times,
-                beams=beams,
-                polarized=False,
-                precision=2,
-                latitude=args.array_lat,
-                use_feed="x",
-                multiprocess=args.multiprocess,
-                force_no_beam_sqrt=True,
-            )
+        _sim_vis = np.zeros([args.Nfreqs, args.Ntimes, args.Nants, args.Nants],
+                            dtype=complex)
+        for tind in range(args.Ntimes):
+            _sim_vis[:, tind] =  hydra.vis_simulator.simulate_vis(
+                    ants=ant_pos,
+                    fluxes=fluxes,
+                    ra=ra,
+                    dec=dec,
+                    freqs=freqs, # Make sure this is in Hz!
+                    lsts=times[tind],
+                    beams=beams,
+                    polarized=False,
+                    precision=2,
+                    latitude=args.array_lat,
+                    use_feed="x",
+                    multiprocess=args.multiprocess,
+                    force_no_beam_sqrt=True,
+                )
+            if args.beam_type == "pert_sim":
+                for beam in beams:
+                    beam.clear_cache() # Otherwise memory gets gigantic
         timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
         np.save(sim_outpath, _sim_vis)
     else:
