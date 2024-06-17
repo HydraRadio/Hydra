@@ -20,6 +20,9 @@ if __name__ == '__main__':
     parser.add_argument("--seed", type=int, action="store", default=1001,
                         required=False, dest="seed",
                         help="Set the random seed.")
+    parser.add_argument("--chain-seed", type=str, action="store", default="None",
+                        required=False, dest="chain_seed", 
+                        help="Set a separate seed for initializing the Gibbs chain")
     
     # Misc
     parser.add_argument("--recalc-sc-op", action="store_true", required=False,
@@ -84,14 +87,15 @@ if __name__ == '__main__':
                         help="Whether to use multiprocessing in vis sim calls.")
     
     # Point source sim params
-    parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 1),
+    parser.add_argument("--ra-bounds", type=float, action="store", default=(0, np.pi + 0.5),
                         nargs=2, required=False, dest="ra_bounds",
                         help="Bounds for the Right Ascension of the randomly simulated sources")
     parser.add_argument("--dec-bounds", type=float, action="store", 
                         default=(-np.pi/2, 1.),
                         nargs=2, required=False, dest="dec_bounds",
                         help="Bounds for the Declination of the randomly simulated sources")
-    parser.add_argument("--lst-bounds", type=float, action="store", default=(0.2, 0.5),
+    parser.add_argument("--lst-bounds", type=float, action="store", 
+                        default=(np.pi/2, np.pi/2+0.5),
                         nargs=2, required=False, dest="lst_bounds",
                         help="Bounds for the LST range of the simulation, in radians.")
     parser.add_argument("--freq-low", type=float, action="store", required=False,
@@ -131,6 +135,11 @@ if __name__ == '__main__':
                         dest="pca_modes", help="Path to saved PCA eigenvectors.")
     
     args = parser.parse_args()
+    
+    if args.chain_seed == "None":
+        chain_seed = None
+    else:
+        chain_seed = int(args.chain_seed)
 
     hex_array = tuple(args.hex_array)
     assert len(args.hex_array) == 2, "hex-array argument must have length 2."
@@ -190,8 +199,8 @@ if __name__ == '__main__':
     print("Nants =", Nants)
 
     antpairs = []
-    for i in range(len(ants)):
-        for j in range(i, len(ants)):
+    for i in range(Nants):
+        for j in range(i, Nants):
             if i != j:
                 # Exclude autos
                 antpairs.append((i,j))
@@ -211,7 +220,7 @@ if __name__ == '__main__':
     # Generate fluxes
     beta_ptsrc = -2.7
     ptsrc_amps = 10.**np.random.uniform(low=-1., high=2., size=args.Nptsrc)
-    fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc)
+    fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs * 1e-6, beta_ptsrc) # Have to put this in MHz...
     print("pstrc amps (input):", ptsrc_amps[:5])
     np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
     np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
@@ -252,21 +261,27 @@ if __name__ == '__main__':
     if not os.path.exists(sim_outpath):
         # Run a simulation
         t0 = time.time()
-        _sim_vis = hydra.vis_simulator.simulate_vis(
-                ants=ant_pos,
-                fluxes=fluxes,
-                ra=ra,
-                dec=dec,
-                freqs=freqs, # Make sure this is in Hz!
-                lsts=times,
-                beams=beams,
-                polarized=False,
-                precision=2,
-                latitude=args.array_lat,
-                use_feed="x",
-                multiprocess=args.multiprocess,
-                force_no_beam_sqrt=True,
-            )
+        _sim_vis = np.zeros([args.Nfreqs, args.Ntimes, args.Nants, args.Nants],
+                            dtype=complex)
+        for tind in range(args.Ntimes):
+            _sim_vis[:, tind] =  hydra.vis_simulator.simulate_vis(
+                    ants=ant_pos,
+                    fluxes=fluxes,
+                    ra=ra,
+                    dec=dec,
+                    freqs=freqs, # Make sure this is in Hz!
+                    lsts=times[tind],
+                    beams=beams,
+                    polarized=False,
+                    precision=2,
+                    latitude=args.array_lat,
+                    use_feed="x",
+                    multiprocess=args.multiprocess,
+                    force_no_beam_sqrt=True,
+                )
+            if args.beam_type == "pert_sim":
+                for beam in beams:
+                    beam.clear_cache() # Otherwise memory gets gigantic
         timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
         np.save(sim_outpath, _sim_vis)
     else:
@@ -275,8 +290,9 @@ if __name__ == '__main__':
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
 
+    #FIXME: technically we need the conjugate noise rzn on conjugate baselines...
     noise = (np.random.normal(scale=np.sqrt(noise_var)) + 1.j * np.random.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
-    data = _sim_vis + noise
+    data = _sim_vis + _sim_vis.swapaxes(-1,-2).conj() + noise # fix some zeros
     del _sim_vis # Save some memory
     del noise
 
@@ -312,13 +328,17 @@ if __name__ == '__main__':
     # Want shape Nbasis, Nfreqs, Nants, Npol, Npol
     beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
 
-    sig_freq = 0.5 * (freqs[-1] - freqs[0])
+    sig_freq = 0.1 * (freqs[-1] - freqs[0])
     cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, args.Nbasis,
                                                   args.beam_prior_std, sig_freq,
                                                   ridge=1e-6)
     cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
     # Be lazy and just use the initial guess.
     coeff_mean = beam_coeffs[:, :, 0]
+    
+    if chain_seed is not None: # shuffle the initial position
+        np.random.seed(chain_seed)
+        beam_coeffs = np.random.normal(size=beam_coeffs.shape)
     
     t0 = time.time()
     bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
