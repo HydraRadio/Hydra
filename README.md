@@ -55,7 +55,7 @@ we have the following components:
 * Gain sampler (using a linearised gain perturbation model for each antenna gain)
 * Beam sampler (using a Fourier-Bessel model for each E-field beam)
 * Point source sampler (using a simple power-law SED model)
-* Diffuse emission sampler (using a spherical harmonic basis)
+* Diffuse emission sampler (using a spherical harmonic or region-by-region basis)
 * Power spectrum sampler (using a standard bandpower representation of the power spectrum)
 
 All in all, there can be several hundreds of thousands of parameters for a typical array size, sky model 
@@ -70,6 +70,12 @@ sky) in order to analyse calibrated HERA data. This is the _hydra-pspec_ code.
 At present, Hydra is parallelised in a basic way, meaning that it can only run on a single system (e.g. 
 a single HPC node). There are plans to make a distributed version that can scale to much larger problem 
 sizes, but for now the main limitation is the amount of RAM available on each node.
+
+## Learn about the code and different 'heads' of Hydra
+
+* Run the example script, [example.py](example.md)
+* Read the [frequently-asked questions](faq.md) about the code and maths
+* Learn about the different ["heads"](heads.md) (conditional distribution samplers) of Hydra.
 
 ## Who is behind Hydra?
 
