@@ -1,5 +1,30 @@
 # Frequently asked questions
 
+## Basic concepts and terminology
+
+#### What is Gibbs sampling?
+[Gibbs sampling](https://en.wikipedia.org/wiki/Gibbs_sampling) is a Monte Carlo method for drawing samples of 
+parameters from a posterior probability distribution for many parameters. It works by breaking up the 
+posterior distribution, which may be highly non-trivial (e.g. having large numbers of parameters or a complicated 
+functional form), into a set of conditional distributions. Subsets of parameters can then be drawn from their 
+corresponding conditional distributions while conditioning on (fixing) all other parameters. The conditional 
+distributions can often be chosen such that they are much more tractable than the full posterior distribution. 
+The Gibbs sampler then iterates through the conditional distributions, taking turns to draw one subset of 
+parameter values while holding the others fixed until a new sample has been drawn for all free parameters. The 
+process is then repeated to build up a Markov chain of samples of the parameter values, which can be shown to 
+eventually converge to a set of samples from the true joint posterior distribution.
+
+#### What is a Gaussian Constrained Realisation (GCR)?
+This refers to drawing a sample for a set of parameters from a multivariate Gaussian distribution that is 
+conditioned on (constrained by) some data and a model. There is an exact algorithm for drawing samples from 
+a multivariate Gaussian distribution, even for very large (high dimensional) parameter spaces. The algorithm 
+involves solving a linear system that resembles the Wiener filter, but with added random fluctuation terms. 
+Each sample of the set of parameters can be used to construct a model prediction for what the data look like 
+that is _statistically consistent_ with the data, i.e. the prediction is a valid "realisation" of the model 
+that is consistent with the data. This includes data that have missing values, e.g. masked regions. As such, 
+the constrained realisations can be used to predict plausible values of the data in the masked regions that 
+are consistent with the values in the unmasked regions.
+
 ## Model assumptions
 
 #### Linearisation of the complex gains
