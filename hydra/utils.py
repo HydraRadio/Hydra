@@ -4,6 +4,19 @@ from matvis import conversions
 import pyuvdata
 from pyuvsim import AnalyticBeam
 
+"""
+# Terminal colour codes
+#terminal_ = '\033[95m'
+terminal_blue = '\033[94m'
+terminal_cyan = '\033[96m'
+terminal_green = '\033[92m'
+terminal_yellow = '\033[93m'
+#FAIL = '\033[91m'
+terminal_endc = '\033[0m'
+terminal_bold = '\033[1m'
+terminal_ul = '\033[4m'
+"""
+
 
 def flatten_vector(v, reduced_idxs=None):
     """
@@ -289,6 +302,65 @@ def timing_info(fname, iter, task, duration, verbose=True):
             print("%s took %3.2f sec" % (task, duration))
 
 
+def freqs_times_for_worker(comm, freqs, times, fchunks, tchunks=1):
+    """
+    Get the unique frequency and time chunk for a worker. The workers 
+    are arranged onto an `fchunks * tchunks` grid, and each worker is 
+    given the corresponding chunk of the 2D `freqs * times` grid.
+
+    Parameters:
+        comm (MPI Communicator):
+            MPI communicator.
+        freqs (array_like):
+            Array of all frequencies in the data.
+        times (array_like):
+            Array of all times (LSTs) in the data.
+        fchunks (int):
+            Number of chunks to divide the frequency array into.
+        tchunks (int):
+            Number of chunks to divide the time array into.
+
+    Returns:
+        freq_idx_chunk (array_like):
+            The indices of the frequency array belonging to this worker.
+        time_idx_chunk (array_like):
+            The indices of the time array belonging to this worker.
+        worker_map (dict):
+            A dictionary containing the chunk indices and frequency and 
+            time indices for each worker. This is useful for cases where 
+            individual workers have to communicate with each other. The 
+            format of the dictionary entries is:
+            `worker_id: (freq_chunk_idx, time_chunk_idx, freq_idxs, time_idxs)`
+            where `freq_chunk_idx` and `time_chunk_idx` are indices in the 
+            grid of chunks for this worker, and `freq_idxs` and `time_idxs` 
+            are the actual indices in the `freqs` and `times` arrays belonging 
+            to this worker.
+    """
+    myid = comm.Get_rank()
+    nworkers = comm.Get_size()
+    assert nworkers <= fchunks * tchunks, "There are more workers than time and frequency chunks"
+
+    # Get chunk ID for this worker
+    allidxs = np.arange(fchunks * tchunks).reshape((fchunks, tchunks))
+    fidx, tidx = np.where(allidxs == myid)
+    fidx, tidx = int(fidx[0]), int(tidx[0])
+    
+    # Get chunk of freq/time idxs for each worker
+    freq_idxs = np.arange(freqs.size)
+    time_idxs = np.arange(times.size)
+    freq_idx_chunks = np.array_split(freq_idxs, fchunks)
+    time_idx_chunks = np.array_split(time_idxs, tchunks)
+
+    # Make map of freq. and time idxs for each worker
+    worker_map = {}
+    for i in range(nworkers):
+        _fidx, _tidx = np.where(allidxs == i)
+        _fidx, _tidx = int(_fidx[0]), int(_tidx[0])
+        worker_map[i] = (_fidx, _tidx, freq_idx_chunks[_fidx], time_idx_chunks[_tidx])
+
+    return freq_idx_chunks[fidx], time_idx_chunks[tidx], worker_map
+
+
 def build_hex_array(hex_spec=(3,4), ants_per_row=None, d=14.6):
     """
     Build an antenna position dict for a hexagonally close-packed array.
@@ -524,3 +596,104 @@ def gain_prior_pspec_sqrt(lsts, freqs,
     
     return gain_pspec_sqrt
 
+
+def partial_fourier_basis_2d(freqs, times, nfreq, ntime, Lfreq, Ltime, freq0=None, time0=None, 
+                             shape0=None):
+    """
+    Construct a set of 2D Fourier modes from a list of wavenumber integers, 
+    to form an incomplete set of 2D Fourier modes.
+    """
+    # Decide on origin of frequency axis for FT
+    if time0 is None:
+        time0 = times[0]
+    if freq0 is None:
+        freq0 = freqs[0]
+
+    # Determine normalising factors. If being used as a standalone Fourier operator, 
+    # these are just the lengths of the freq and time arrays. If being used as a 
+    # chunk of a Fourier operator across multiple workers, use the overall shape 
+    # from 'shape0'
+    if shape0 is None:
+        Nfreqs = freqs.size
+        Ntimes = times.size
+    else:
+        Nfreqs, Ntimes = shape0
+
+    # Build grid of freqs and times
+    nfreq = np.atleast_1d(nfreq)
+    ntime = np.atleast_1d(ntime)
+    assert len(nfreq.shape) == 1
+    assert len(ntime.shape) == 1
+    assert len(freqs.shape) == 1
+    assert len(times.shape) == 1
+    t2d, f2d = np.meshgrid(times - time0, freqs - freq0)
+
+    # Calculate wavenumbers for each mode
+    kfreq = 2. * np.pi * nfreq / Lfreq # inverse freq. units
+    ktime = 2. * np.pi * ntime / Ltime # inverse time units
+
+    # Shape: (Nmodes, Nfreqs, Ntimes)
+    basis_fns = np.exp(1.j \
+                        * (  (kfreq[:,np.newaxis,np.newaxis] * f2d[np.newaxis,:,:]) \
+                           + (ktime[:,np.newaxis,np.newaxis] * t2d[np.newaxis,:,:])) ) \
+              / np.sqrt(Nfreqs * Ntimes)
+    return basis_fns, kfreq, ktime
+
+
+def partial_fourier_basis_2d_from_nmax(freqs, times, nmaxfreq, nmaxtime, Lfreq, Ltime,
+                                       freq0=None, time0=None, shape0=None, positive_only=False):
+    """
+    Convenience function to construct a set of 2D Fourier modes with wavenumbers 
+    between -nmax <= 0 < nmax.
+    """
+    # Make grid of wavenumber values for both frequency and time, in the range 
+    # -nmax <= 0 < nmax (matches the modes you get from an FFT for 2*nmax points)
+    if positive_only:
+        _nfreq = np.arange(0, nmaxfreq)
+        _ntime = np.arange(0, nmaxtime)
+    else:
+        _nfreq = np.arange(-nmaxfreq, nmaxfreq)
+        _ntime = np.arange(-nmaxtime, nmaxtime)
+    nfreq, ntime = np.meshgrid(_nfreq, _ntime)
+
+    # Use generic function to construct Fourier basis functions
+    basis_fns, kfreq, ktime = partial_fourier_basis_2d(
+                                         freqs=freqs, 
+                                         times=times, 
+                                         nfreq=nfreq.flatten(), 
+                                         ntime=ntime.flatten(), 
+                                         Lfreq=Lfreq, 
+                                         Ltime=Ltime,
+                                         freq0=freq0, 
+                                         time0=time0,
+                                         shape0=shape0)
+    return basis_fns, kfreq, ktime
+
+
+def status(myid, message, colour=None):
+    """
+    Print a status message.
+    """
+    #terminal_ = '\033[95m'
+    endchar = '\033[0m'
+    colours = {
+        'r':    '\033[91m',
+        'g':    '\033[92m',
+        'y':    '\033[93m',
+        'b':    '\033[94m',
+        'm':    '\033[95m',
+        'c':    '\033[96m',
+        'bold': '\033[1m',
+        'ul':   '\033[4m',
+        }
+
+    # Worker ID, if present
+    if myid is None:
+        myid_str = ""
+    else:
+        myid_str = "[%d]" % myid
+
+    if colour is not None:
+        print("%s%s %s%s" % (colours[colour], myid_str, message, endchar))
+    else:
+        print("%s %s" % (myid_str, message))
