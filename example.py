@@ -43,6 +43,7 @@ if __name__ == '__main__':
     SAMPLE_REGION_AMPS = args.sample_regions
     SAMPLE_BEAM = args.sample_beam
     SAMPLE_SH = args.sample_sh
+    SAMPLE_SH_PSPEC = args.sample_sh_pspec
     SAMPLE_PSPEC = args.sample_pspec
     CALCULATE_STATS = args.calculate_stats
     SAVE_TIMING_INFO = args.save_timing_info
@@ -57,7 +58,8 @@ if __name__ == '__main__':
         print("    Ptsrc. amplitude sampler:     ", SAMPLE_PTSRC_AMPS)
         print("    Diffuse region amp. sampler:  ", SAMPLE_REGION_AMPS)
         print("    Primary beam sampler:         ", SAMPLE_BEAM)
-        print("    Sph. harmonic sampler:        ", SAMPLE_SH)
+        print("    Spherical harmonic sampler:   ", SAMPLE_SH)
+        print("    SH power spectrum sampler:    ", SAMPLE_SH_PSPEC)
 
     # Check that at least one thing is being sampled
     if not SAMPLE_GAINS and not SAMPLE_PTSRC_AMPS and not SAMPLE_BEAM \
@@ -896,13 +898,13 @@ if __name__ == '__main__':
                                      + current_data_model_chunk_cosmo
 
         #---------------------------------------------------------------------------
-        # (C) Spherical harmonic sampler
+        # (C) Spherical harmonic a_lm sampler
         #---------------------------------------------------------------------------
 
         if SAMPLE_SH:
 
             if myid == 0:
-                status(None, "Spherical harmonic sampler iteration %d" % n, 'b')
+                status(None, "Spherical harmonic mode sampler iteration %d" % n, 'b')
 
             # Current_data_model DOES NOT include gbar_i gbar_j^* factor, so we need
             # to apply it here to calculate the residual
@@ -980,6 +982,18 @@ if __name__ == '__main__':
                                      + current_data_model_chunk_sh \
                                      + current_data_model_chunk_cosmo
 
+        #---------------------------------------------------------------------------
+        # (C) Spherical harmonic C_ell sampler
+        #---------------------------------------------------------------------------
+
+        if SAMPLE_SH_PSPEC:
+
+            if myid == 0:
+                status(None, "SH power spectrum sampler iteration %d" % n, 'b')
+
+            # FIXME: Loop over ells
+            sh_current
+            scipy.stats.invgamma.rvs(loc=1, scale=1)
 
         #---------------------------------------------------------------------------
         # (D) E-field beam sampler

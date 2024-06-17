@@ -8,12 +8,10 @@ from .vis_simulator import simulate_vis_per_alm
 
 # Wigner D matrices
 import spherical, quaternionic
-
-# Simulation
 import pyuvsim
-
-# Linear solver 
 from scipy.sparse.linalg import cg, LinearOperator
+
+from scipy.stats import invgamma
 
 from astropy import units
 from astropy.coordinates import EarthLocation, SkyCoord
@@ -21,6 +19,42 @@ from astropy.coordinates.builtin_frames import AltAz, ICRS
 from astropy.time import Time
 import time
 
+
+def get_em_ell_idx(lmax):
+    """
+    With (m,l) ordering!
+    """
+    ells_list = np.arange(0,lmax+1)
+    em_real = np.arange(0,lmax+1)
+    em_imag = np.arange(1,lmax+1)
+    # ylabel = []
+    
+    # First append all real (l,m) values
+    Nreal = 0
+    i = 0
+    idx = []
+    ems = []
+    ells = []
+    for em in em_real:
+        for ell in ells_list:
+            if ell >= em:
+                idx.append(i)
+                ems.append(em)
+                ells.append(ell)
+                Nreal += 1
+                i += 1
+    
+    # Then all imaginary -- note: no m=0 modes!
+    Nimag = 0
+    for em in em_imag:
+        for ell in ells_list:
+            if ell >= em :
+                idx.append(i)
+                ems.append(em)
+                ells.append(ell)
+                Nimag += 1
+                i += 1
+    return ems, ells, idx
 
 def vis_proj_operator_no_rot(freqs, 
                              lsts, 
@@ -613,3 +647,22 @@ if __name__ == "__main__":
     np.savez(path+'ant_pos',**ant_dict)
     
     
+def sample_cl(alms, ell, m):
+    """
+    Sample C_ell from an inverse gamma distribution, given a set of 
+    SH coefficients. See Eq. 7 of Eriksen et al. (arXiv:0709.1058).
+    """
+    # Get m, ell ordering
+    m_vals, ell_vals, lm_idxs = get_em_ell_idx(lmax)
+    
+    # Calculate sigma_ell = 1/(2 l + 1) sum_m |a_lm|^2
+    for ell in np.unique(ell_vals):
+        
+        idxs = np.where(ell_vals == ell)
+
+
+    sigma_ell = 
+    x = invgamma.rvs(loc=1, scale=1)
+    C_l = x ((2l+1)/2) sigma_l
+    #a = (2l-1)/2
+

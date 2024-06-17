@@ -36,6 +36,9 @@ def get_config():
     parser.add_argument("--sh", action="store_true",
                         required=False, dest="sample_sh",
                         help="Sample spherical harmonic modes.")
+    parser.add_argument("--cl", action="store_true",
+                        required=False, dest="sample_sh_pspec",
+                        help="Sample spherical harmonic angular power spectrum.")
     parser.add_argument("--pspec", action="store_true",
                         required=False, dest="sample_pspec",
                         help="Sample 21cm power spectrum.")
