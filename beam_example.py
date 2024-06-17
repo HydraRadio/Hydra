@@ -87,14 +87,15 @@ if __name__ == '__main__':
                         help="Whether to use multiprocessing in vis sim calls.")
     
     # Point source sim params
-    parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 1),
+    parser.add_argument("--ra-bounds", type=float, action="store", default=(0, np.pi + 0.5),
                         nargs=2, required=False, dest="ra_bounds",
                         help="Bounds for the Right Ascension of the randomly simulated sources")
     parser.add_argument("--dec-bounds", type=float, action="store", 
                         default=(-np.pi/2, 1.),
                         nargs=2, required=False, dest="dec_bounds",
                         help="Bounds for the Declination of the randomly simulated sources")
-    parser.add_argument("--lst-bounds", type=float, action="store", default=(0.2, 0.5),
+    parser.add_argument("--lst-bounds", type=float, action="store", 
+                        default=(np.pi/2, np.pi/2+0.5),
                         nargs=2, required=False, dest="lst_bounds",
                         help="Bounds for the LST range of the simulation, in radians.")
     parser.add_argument("--freq-low", type=float, action="store", required=False,
@@ -321,7 +322,7 @@ if __name__ == '__main__':
     # Want shape Nbasis, Nfreqs, Nants, Npol, Npol
     beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
 
-    sig_freq = 0.5 * (freqs[-1] - freqs[0])
+    sig_freq = 0.1 * (freqs[-1] - freqs[0])
     cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, args.Nbasis,
                                                   args.beam_prior_std, sig_freq,
                                                   ridge=1e-6)
@@ -331,7 +332,7 @@ if __name__ == '__main__':
     
     if chain_seed is not None: # shuffle the initial position
         np.random.seed(chain_seed)
-        beam_coeffs = (np.random.normal(size=beam_coeffs.shape) + 1.j * np.random.normal(size=beam_coeffs.shape)) / np.sqrt(2)
+        beam_coeffs = np.random.normal(size=beam_coeffs.shape)
     
     t0 = time.time()
     bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
