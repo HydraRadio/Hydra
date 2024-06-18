@@ -661,8 +661,8 @@ def sample_cl(alms, ell, m):
         idxs = np.where(ell_vals == ell)
 
 
-    sigma_ell = 
-    x = invgamma.rvs(loc=1, scale=1)
-    C_l = x ((2l+1)/2) sigma_l
+    #sigma_ell = 
+    #x = invgamma.rvs(loc=1, scale=1)
+    #C_l = x ((2l+1)/2) sigma_l
     #a = (2l-1)/2
 
