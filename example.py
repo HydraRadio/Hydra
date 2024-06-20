@@ -63,9 +63,10 @@ if __name__ == '__main__':
 
     # Check that at least one thing is being sampled
     if not SAMPLE_GAINS and not SAMPLE_PTSRC_AMPS and not SAMPLE_BEAM \
-       and not SAMPLE_SH:
+       and not SAMPLE_SH and not SAMPLE_REGION_AMPS and not SAMPLE_SH_PSPEC \
+       and not SAMPLE_COSMO_FIELD:
         raise ValueError("No samplers were enabled. Must enable at least one "
-                         "of 'gains', 'ptsrc', 'regions', 'beams', 'sh'.")
+                         "of 'gains', 'ptsrc', 'regions', 'beams', 'sh', 'cl', 'pspec', 'cosmo'.")
 
 
     ############
@@ -728,6 +729,16 @@ if __name__ == '__main__':
             if model_resid_chunk == 0:
                 model_resid_chunk = np.zeros_like(data_chunk)
 
+            # Current_data_model DOES NOT include gbar_i gbar_j^* factor, so we need
+            # to apply it here to calculate the residual
+            ggv_chunk = hydra.apply_gains(model_resid_chunk,
+                                          gains_chunk,
+                                          ants,
+                                          antpairs,
+                                          inline=False)
+            resid_chunk = data_chunk - ggv_chunk
+
+            """
             # Find other workers with the same frequency block and add to MPI group
             my_fidx, my_tidx, _, _ = worker_map[myid]
             workers_with_same_freq_block = []
@@ -736,24 +747,58 @@ if __name__ == '__main__':
                 if _fidx == my_fidx:
                     workers_with_same_freq_block.append(w_id)
             comm_same_freqs = comm.Create( comm.group.Incl(workers_with_same_freq_block) )
-
+            """
 
             # Get LHS and RHS operators for linear system
             t0 = time.time()
-            #xxxx
 
-            cosmo_op, cosmos_rhs = hydra.ptsrc_sampler.precompute_mpi(
+            # FIXME
+            cosmo_pspec_current = np.ones((freqs.size, cosmo_grid_ra.size))
+
+            cosmo_background_params = {
+                'h':        0.69,
+                'omega_m':  0.31
+            }
+
+            kx, ky, knu = hydra.cosmo_sampler.comoving_fourier_modes(
+                                            x=np.unique(cosmo_grid_ra), 
+                                            y=np.unique(cosmo_grid_dec), 
+                                            freqs=freqs,
+                                            **cosmo_background_params)
+
+            if myid == 0:
+
+                print("cosmo Fourier modes: kx: ", kx.min(), kx.max())
+                print("cosmo Fourier modes: ky: ", ky.min(), ky.max())
+                print("cosmo Fourier modes: knu:", knu.min(), knu.max())
+
+                kx3d, ky3d, knu3d = np.meshgrid(kx, ky, knu)
+                k = np.sqrt(kx3d**2. + ky3d**2. + knu3d**2.)
+                print("k range:", k.min(), k.max())
+
+            comm.barrier()
+
+            # Calculate prior term
+            pspec3d = hydra.cosmo_sampler.calculate_pspec_on_grid(
+                                                kbins=cosmo_pspec_kbins, 
+                                                pspec=cosmo_pspec_current, 
+                                                x=np.unique(cosmo_grid_ra), 
+                                                y=np.unique(cosmo_grid_dec), 
+                                                freqs=freqs, 
+                                                **cosmo_background_params)
+
+            cosmo_op, cosmos_rhs = hydra.cosmo_sampler.precompute_mpi(
                                        comm,
+                                       freqs=freqs,
                                        ants=ants, 
                                        antpairs=antpairs, 
                                        freq_chunk=freq_chunk, 
                                        time_chunk=time_chunk,
                                        proj_chunk=cosmo_proj,
-                                       data_chunk=data_chunk,
+                                       data_chunk=resid_chunk,
                                        inv_noise_var_chunk=inv_noise_var_chunk,
-                                       current_data_model_chunk=current_data_model_chunk,
                                        gain_chunk=gains_chunk * (1. + current_delta_gain),
-                                       amp_prior_std=amp_prior_std, 
+                                       pspec=cosmo_pspec, 
                                        realisation=True)
 
             comm.barrier()
@@ -762,7 +807,8 @@ if __name__ == '__main__':
                              % (time.time() - t0), 'c')
 
             # Solve linear system
-            cosmo_soln = np.zeros(cosmo_prior_std.shape, dtype=cosmo_prior_std.dtype)
+            # FIXME
+            cosmo_soln = 0 #np.zeros(cosmo_prior_std.shape, dtype=cosmo_prior_std.dtype)
 
         #---------------------------------------------------------------------------
         # (B) Source sampler (ptsrc, regions, or both)

@@ -142,7 +142,7 @@ def get_config():
 
 
     # Cosmo field parameters
-    parser.add_argument("--cosmo-ra-bounds", type=float, action="store", default=(0, 60),
+    parser.add_argument("--cosmo-ra-bounds", type=float, action="store", default=(0., 60.),
                         nargs=2, required=False, dest="cosmo_field_ra_bounds",
                         help="Bounds for the RA of the cosmo field sample points (in degrees).")
     parser.add_argument("--cosmo-dec-bounds", type=float, action="store", default=(-40., -20.),
