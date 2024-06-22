@@ -1,6 +1,10 @@
 
-from mpi4py.MPI import SUM as MPI_SUM 
-from mpi4py.MPI import LAND as MPI_LAND
+try:
+    from mpi4py.MPI import SUM as MPI_SUM 
+    from mpi4py.MPI import LAND as MPI_LAND
+except:
+    pass
+
 import numpy as np
 
 

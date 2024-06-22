@@ -1,5 +1,8 @@
 
-from mpi4py.MPI import SUM as MPI_SUM
+try:
+    from mpi4py.MPI import SUM as MPI_SUM
+except:
+    pass
 
 import numpy as np
 from scipy.interpolate import interp1d
@@ -265,7 +268,6 @@ def precompute_mpi(comm,
     v_im = (proj.imag * np.sqrt(inv_noise_var_chunk[...,np.newaxis]))
 
     # Treat real and imaginary separately; treat frequencies separately
-    # FIXME: Is this neglecting real/imag cross-terms?
     for j in range(freq_chunk.size):
         # Get frequency index of locally-held frequency channels
         i = np.where(freqs == freq_chunk[j])[0]
@@ -279,10 +281,13 @@ def precompute_mpi(comm,
     if myid == 0:
         linear_op = np.zeros_like(my_linear_op)
 
-    comm.Reduce(my_linear_op,
-                linear_op,
-                op=MPI_SUM,
-                root=0)
+    if comm is not None:
+        comm.Reduce(my_linear_op,
+                    linear_op,
+                    op=MPI_SUM,
+                    root=0)
+    else:
+        linear_op = my_linear_op
 
     # (3) Calculate linear system RHS
     realisation_switch = 1.0 if realisation else 0.0 # Turn random realisations on or off
@@ -318,38 +323,16 @@ def precompute_mpi(comm,
     linear_rhs = np.zeros((1,1), dtype=b.dtype) # dummy data for non-root workers
     if myid == 0:
         linear_rhs = np.zeros_like(b)
-    comm.Reduce(b, linear_rhs, op=MPI_SUM, root=0)
+    if comm is not None:
+        comm.Reduce(b, linear_rhs, op=MPI_SUM, root=0)
+    else:
+        linear_rhs = b
 
     # (Term 2): \omega_a
     if myid == 0:
         omega_s = realisation_switch * np.random.randn(*pspec3d.shape) # real vector
         bs = apply_S(omega_s, pspec3d, exponent=-0.5)
-        print("SHAPES", bs.shape, linear_rhs.shape, pspec3d.shape)
         for i in range(b.shape[0]):
             linear_rhs[i] += bs[i,:,:].flatten() # values per pixel at each frequency
 
     return linear_op, linear_rhs
-
-
-def apply_operator(x, freqs, ra_pix, dec_pix, linear_op_term, pspec):
-    """
-    
-    Parameters:
-        x (array_like):
-            1D array of cosmo field values that can be reshaped to `(Nfreqs, Npix)`.
-    """
-    # Get 3D pixel grid shape
-    Nfreqs = freqs.size
-    Nx = ra_pix.size
-    Ny = dec_pix.size
-    Npix = Nx * Ny
-
-    # Reshape x and apply A^T N^-1 A term to x
-    x_vec = x.reshape((Nfreqs, Npix))
-    y_vec = np.zeros_like(x_vec)
-    for j in range(Nfreqs):
-        y_vec[j] = linear_op_term[j] @ x_vec[j]
-
-    # Apply prior term to x vector
-    x_arr = x.reshape((Nfreqs, Nx, Ny))
-    y_vecnp.fft.ifftn(pspec * np.fft.fftn(x_arr)).reshape(y_vec.shape)

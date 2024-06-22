@@ -1,4 +1,8 @@
-from mpi4py.MPI import SUM as MPI_SUM
+
+try:
+    from mpi4py.MPI import SUM as MPI_SUM
+except:
+    pass
 
 import numpy as np
 import scipy as sp
@@ -363,12 +367,16 @@ def construct_rhs_no_rot_mpi(comm, data, inv_noise_var, inv_prior_var,
     """
     Construct RHS of linear system from data split across multiple MPI workers.
     """
-    myid = comm.Get_rank()
+    if comm is not None:
+        myid = comm.Get_rank()
+    else:
+        myid = 0
 
     # Synchronise omega_a across all workers
     if myid != 0:
         omega_a *= 0.
-    comm.Bcast(omega_a, root=0)
+    if comm is not None:
+        comm.Bcast(omega_a, root=0)
 
     # Calculate data terms
     my_data_term = vis_response.real.T @ ((inv_noise_var * data.real).flatten()
@@ -383,8 +391,11 @@ def construct_rhs_no_rot_mpi(comm, data, inv_noise_var, inv_prior_var,
     if myid == 0:
         data_term = np.zeros_like(my_data_term)
     
-    comm.Reduce(my_data_term, data_term, op=MPI_SUM, root=0)
-    comm.barrier()
+    if comm is not None:
+        comm.Reduce(my_data_term, data_term, op=MPI_SUM, root=0)
+        comm.barrier()
+    else:
+        data_term = my_data_term
 
     # Return result (only root worker has correct result)
     if myid == 0:
@@ -400,12 +411,16 @@ def apply_lhs_no_rot_mpi(comm, a_cr, inv_noise_var, inv_prior_var, vis_response)
     Apply LHS operator of linear system to an input vector that has been 
     split into chunks between MPI workers.
     """
-    myid = comm.Get_rank()
+    if comm is not None:
+        myid = comm.Get_rank()
+    else:
+        myid = 0
 
     # Synchronise a_cr across all workers
     if myid != 0:
         a_cr *= 0.
-    comm.Bcast(a_cr, root=0)
+    if comm is not None:
+        comm.Bcast(a_cr, root=0)
 
     # Calculate noise terms for this rank
     my_tot_noise_term = vis_response.real.T \
@@ -420,10 +435,10 @@ def apply_lhs_no_rot_mpi(comm, a_cr, inv_noise_var, inv_prior_var, vis_response)
     if myid == 0:
         tot_noise_term = np.zeros_like(my_tot_noise_term)
     
-    comm.Reduce(my_tot_noise_term,
-                tot_noise_term,
-                op=MPI_SUM,
-                root=0)
+    if comm is not None:
+        comm.Reduce(my_tot_noise_term, tot_noise_term, op=MPI_SUM, root=0)
+    else:
+        tot_noise_term = my_tot_noise_term
 
     # Return result (only root worker has correct result)
     if myid == 0:
@@ -455,196 +470,6 @@ def radiometer_eq(auto_visibilities, ants, delta_time, delta_freq, Nnights = 1, 
                     sigma_full = np.concatenate((sigma_full,sigma_ij))
                     
     return sigma_full
-
-
-
-# MAIN    
-if __name__ == "__main__":
-    start_time = time.time()
-    
-    # Creating directory for output
-    if ARGS['directory']: 
-        directory = str(ARGS['directory'])
-    else:
-        directory = "output"
-
-    path = f'/cosma8/data/dp270/dc-bull2/{directory}/'
-    try: 
-        os.makedirs(path)
-    except FileExistsError:
-        print('folder already exists')
-    
-    # Defining the data_seed for the precomputation random seed
-    if ARGS['data_seed']:
-        data_seed = int(ARGS['data_seed'])
-    else:
-        # if none is passed go back to 10 as before
-        data_seed = 10
-
-    # Defining the jobid to distinguish multiple runs in one go
-    if ARGS['jobid']: 
-        jobid = int(ARGS['jobid'])
-    else:
-        # if none is passed then don't change the keys
-        jobid = 0
-
-    ant_pos = build_hex_array(hex_spec=(3,4), d=14.6)  #builds array with (3,4,3) ants = 10 total
-    ants = list(ant_pos.keys())
-    lmax = 20
-    nside = 128
-    beam_diameter = 14.
-    beams = [pyuvsim.AnalyticBeam('gaussian', diameter=beam_diameter) for ant in ants]
-    freqs = np.linspace(100e6, 102e6, 2)
-    lsts_hours = np.linspace(0.,8.,10)      # in hours for easy setting
-    lsts = np.deg2rad((lsts_hours/24)*360) # in radian, used by HYDRA (and this code)
-    delta_time = 60 # s
-    delta_freq = 1e+06 # (M)Hz
-    latitude = 31.7215 * np.pi / 180  # HERA loc in decimal numbers ## There's some sign error in the code, so this missing sign is a quick fix
-    solver = cg
-
-    vis_response, autos, ell, m = vis_proj_operator_no_rot(freqs=freqs, 
-                                                        lsts=lsts, 
-                                                        beams=beams, 
-                                                        ant_pos=ant_pos, 
-                                                        lmax=lmax, 
-                                                        nside=nside,
-                                                        latitude=latitude)
-
-    np.random.seed(data_seed)
-    x_true = get_alms_from_gsm(freq=100,lmax=lmax, nside=nside)
-    model_true = vis_response @ x_true
-
-    # Inverse noise covariance and noise on data
-    noise_cov = radiometer_eq(autos@x_true, ants, delta_time, delta_freq)
-    inv_noise_var = 1/noise_cov
-    data_noise = np.random.randn(noise_cov.size)*np.sqrt(noise_cov) 
-    data_vec = model_true + data_noise
-
-    # Inverse signal covariance
-    zero_value = 0.001
-    prior_cov = (x_true*0.1)**2     # if 0.1 = 10% prior
-    prior_cov[prior_cov == 0] = zero_value
-    inv_prior_var = 1./prior_cov
-    a_0 = np.random.randn(x_true.size)*np.sqrt(prior_cov) + x_true # gaussian centered on alms with S variance 
-
-    # Define left hand side operator 
-    def lhs_operator(x):
-        y = apply_lhs_no_rot(x, inv_noise_var, inv_prior_var, vis_response)
-
-        return y
-
-    # Wiener filter solution to provide initial guess:
-    omega_0_wf = np.zeros_like(a_0)
-    omega_1_wf = np.zeros_like(model_true, dtype=np.complex128)
-    rhs_wf = construct_rhs_no_rot(data_vec,
-                                  inv_noise_var, 
-                                  inv_prior_var, 
-                                  omega_0_wf, 
-                                  omega_1_wf, 
-                                  a_0, 
-                                  vis_response)
-    
-    # Build linear operator object 
-    lhs_shape = (rhs_wf.size, rhs_wf.size)
-    lhs_linear_op = LinearOperator(matvec = lhs_operator,
-                                       shape = lhs_shape)
-
-    # Get the Wiener Filter solution for initial guess
-    wf_soln, wf_convergence_info = solver(A = lhs_linear_op,
-                                          b = rhs_wf,
-                                          # tol = 1e-07,
-                                          maxiter = 15000)
-    
-    def samples(key):
-        t_iter = time.time()
-
-        # Set a random seed defined by the key
-        random_seed = 100*jobid + key
-        np.random.seed(random_seed)
-        #random_seed = np.random.get_state()[1][0] #for test/output purposes
-
-        # Generate random maps for the realisations
-        omega_0 = np.random.randn(a_0.size)
-        omega_1 = (np.random.randn(model_true.size) + 1.j*np.random.randn(model_true.size))/np.sqrt(2)
-
-        # Construct the right hand side
-        rhs = construct_rhs_no_rot(data_vec,
-                                   inv_noise_var, 
-                                   inv_prior_var,
-                                   omega_0,
-                                   omega_1,
-                                   a_0,
-                                   vis_response)
-
-        # Run and time solver
-        time_start_solver = time.time()
-        x_soln, convergence_info = solver(A = lhs_linear_op,
-                                          b = rhs,
-                                          # tol = 1e-07,
-                                          maxiter = 15000,
-                                          x0 = wf_soln) #initial guess
-        solver_time = time.time() - time_start_solver
-        iteration_time = time.time()-t_iter
-        
-        # Save output
-        np.savez(path+'results_'+f'{data_seed}_'+f'{random_seed}',
-                 omega_0=omega_0,
-                 omega_1=omega_1,
-                 key=key,
-                 x_soln=x_soln,
-                 rhs=rhs,
-                 convergence_info=convergence_info,
-                 solver_time=solver_time,
-                 iteration_time=iteration_time
-        )
-        
-        return key, iteration_time
-    
-    # Time for all precomputations
-    precomp_time = time.time()-start_time
-    print(f'\nprecomputation took:\n{precomp_time}\n')
-    
-    avg_iter_time = 0
-
-    # Multiprocessing, getting the samples    
-    number_of_cores = int(os.environ['SLURM_CPUS_PER_TASK'])
-    print(f'\nSLURM_CPUS_PER_TASK = {number_of_cores}')
-
-    with Pool(number_of_cores) as pool:
-        # issue tasks and process results
-        for result in pool.map(samples, range(100)):
-            key, iteration_time = result
-            avg_iter_time += iteration_time
-            #print(f'Iteration {key} completed in {iteration_time:.2f} seconds')
-
-    avg_iter_time /= (key+1)
-    print(f'average_iter_time:\n{avg_iter_time}\n')
-
-    total_time = time.time()-start_time
-    print(f'total_time:\n{total_time}\n')
-    print(f'All output saved in folder {path}\n')
-    print(f'Note, ant_pos (dict) is saved in own file in {path}\n')
-    
-    # Saving all globally calculated data
-    np.savez(path+'precomputed_data_'+f'{data_seed}_'+f'{jobid}',
-             vis_response=vis_response,
-             x_true=x_true,
-             inv_noise_var=inv_noise_var,
-             zero_value=zero_value,
-             inv_prior_var=inv_prior_var,
-             wf_soln=wf_soln,
-             nside=nside,
-             lmax=lmax,
-             ants=ants,
-             beam_diameter=beam_diameter,
-             freqs=freqs,
-             lsts_hours=lsts_hours,
-             precomp_time=precomp_time,
-             total_time=total_time
-            )
-    # creating a dictionary with string-keys as required by .npz files
-    ant_dict = dict((str(ant), ant_pos[ant]) for ant in ant_pos)
-    np.savez(path+'ant_pos',**ant_dict)
     
     
 def sample_cl(alms, ell, m):

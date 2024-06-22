@@ -1,5 +1,9 @@
 
-from mpi4py.MPI import SUM as MPI_SUM
+try:
+    from mpi4py.MPI import SUM as MPI_SUM
+except:
+    pass
+    
 import numpy as np
 import numpy.fft as fft
 
