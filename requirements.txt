@@ -1,7 +1,8 @@
-numpy==1.23
+numpy<2.0
 scipy
 healpy
 matvis
 pygdsm
 healpy
 pyuvsim
+spherical
