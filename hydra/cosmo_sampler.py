@@ -36,7 +36,6 @@ def calculate_cosmo_fns(h=0.69, omega_m=0.31):
     # Calculate d_A(z) = r(z) [comoving angular diameter distance]
     _dAc = cumulative_trapezoid(C / Hz(zz), zz, initial=0.)
     dAc = interp1d(zz, _dAc, kind='quadratic')
-
     return Hz, dAc
 
 
@@ -103,6 +102,7 @@ def comoving_fourier_modes(x, y, freqs, **cosmo_params):
     dx_perp = np.deg2rad(x[1] - x[0]) * dAc # Mpc
     dy_perp = np.deg2rad(y[1] - y[0]) * dAc # Mpc
     dnu = (C * (1. + zc)**2. / Hz(zc)) * (freqs[1] - freqs[0]) / FREQ_21CM # Mpc
+    
     kx = 2.*np.pi*np.fft.fftfreq(n=x.size, d=dx_perp) # fftfreq outputs per-cycle units
     ky = 2.*np.pi*np.fft.fftfreq(n=y.size, d=dy_perp)
     knu = 2.*np.pi*np.fft.fftfreq(n=freqs.size, d=dnu)
@@ -138,12 +138,6 @@ def calculate_pspec_on_grid(kbins, pspec, x, y, freqs, **cosmo_params):
     assert len(np.shape(x)) == len(np.shape(y)) == len(np.shape(freqs)) == 1, \
         "x, y, and freqs coordinate arrays must be 1D"
 
-    # Check that grids are regular (difference between grid points is a constant)
-    assert np.unique(np.diff(x)).size == np.unique(np.diff(y)).size \
-                                      == np.unique(np.diff(freqs)).size \
-                                      == 1, \
-           "x, y, and freqs grids must each be uniformly spaced"
-
     # Check that kbins and pspec have the same length
     assert kbins.size == pspec.size, "kbins and pspec must have the same length"
 
@@ -151,7 +145,7 @@ def calculate_pspec_on_grid(kbins, pspec, x, y, freqs, **cosmo_params):
     kx, ky, knu = comoving_fourier_modes(x, y, freqs, **cosmo_params)
 
     # Get 3D Fourier grid
-    kx3d, ky3d, knu3d = np.meshgrid(kx, ky, knu)
+    knu3d, kx3d, ky3d = np.meshgrid(knu, kx, ky, indexing='ij')
     k = np.sqrt(kx3d**2. + ky3d**2. + knu3d**2.)
 
     # Make interpolation function for power spectrum bandpowers
@@ -173,7 +167,7 @@ def apply_S(x, pspec, exponent=1):
     Parameters:
         x (array_like):
             Input vector in configuration space, with dimensions 
-            `(Nx, Ny, Nfreqs)`. A 3D FFT will be applied.
+            `(Nfreqs, Nx, Ny)`. A 3D FFT will be applied.
         pspec (array_like):
             A vector of power spectrum values, `P(|k|)`, on the 3D Fourier 
             grid. This can be calculated by `calculate_pspec_on_grid()`.
@@ -184,26 +178,41 @@ def apply_S(x, pspec, exponent=1):
     Returns:
         y (array_like):
             Result of applying the prior covariance matrix to the input 
-            vector. This will be returned with shape `(Nx, Ny, Nfreqs)`.
+            vector. This will be returned with shape `(Nfreqs, Nx, Ny)`.
     """
     assert len(x.shape) == 3, \
-        "Input vector x must be a 3D array with shape (Nx, Ny, Nfreqs)"
+        "Input vector x must be a 3D array with shape (Nfreqs, Nx, Ny)"
 
-    return np.fft.ifftn((pspec)**exponent * np.fft.fftn(x))
+    # imaginary part should be negligible
+    return np.fft.ifftn((pspec)**exponent * np.fft.fftn(x)).real
 
 
-def apply_lhs_operator(x, lhs_Ninv_operator, pspec):
+def apply_lhs_operator(x, lhs_Ninv_operator, pspec3d):
     """
+    Apply the LHS operator for the GCR linear system to an input vector. 
+    The total LHS linear operator is given by `(S^-1 + X^dagger N^-1 X)`. 
+    The first term is applied in Fourier space (where `S` is diagonal), 
+    and the second is applied in configuration space as it has already 
+    been precomputed.
     
     Parameters:
         x (array_like):
             Set of field values on a 3D grid. Has shape (Nfreqs, Nx, Ny).
         lhs_Ninv_operator (array_like):
             xx
-        pspec (function):
+        pspec3d (array_like):
 
     """
+    Nfreqs = x.shape[0]
+    Npix = x.shape[1] * x.shape[2]
 
+    # Calculate prior term and reshape
+    y = apply_S(x, pspec3d, exponent=-1.).reshape((Nfreqs, -1)) # apply S^-1
+
+    # Loop over frequencies and add the other term
+    for i in range(Nfreqs):
+        y[i] += lhs_Ninv_operator[i] @ x[i].flatten() # values per pixel at each frequency
+    return y
 
 
 def precompute_mpi(comm,
@@ -217,7 +226,6 @@ def precompute_mpi(comm,
                    inv_noise_var_chunk,
                    gain_chunk, 
                    pspec3d, 
-                   grid_shape,
                    realisation=True):
     """
     Precompute the projection operator and matrix operator in parallel. 
@@ -314,10 +322,11 @@ def precompute_mpi(comm,
 
     # (Term 2): \omega_a
     if myid == 0:
-        omega_s = realisation_switch * np.random.randn(*grid_shape) # real vector
+        omega_s = realisation_switch * np.random.randn(*pspec3d.shape) # real vector
         bs = apply_S(omega_s, pspec3d, exponent=-0.5)
+        print("SHAPES", bs.shape, linear_rhs.shape, pspec3d.shape)
         for i in range(b.shape[0]):
-            linear_rhs[i] += bs[:,:,i].flatten() # values per pixel at each frequency
+            linear_rhs[i] += bs[i,:,:].flatten() # values per pixel at each frequency
 
     return linear_op, linear_rhs
 

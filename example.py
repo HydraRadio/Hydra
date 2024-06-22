@@ -541,14 +541,16 @@ if __name__ == '__main__':
 
         # Get sample points and unit flux per freq. channel
         cosmo_grid_ra, cosmo_grid_dec = hydra.cosmo_sampler.make_cosmo_field_grid(args)
-        cosmo_fluxes_chunk = np.ones((cosmo_grid_ra.size, fluxes_chunk.size))
+        cosmo_fluxes_chunk = np.ones((cosmo_grid_ra.size, freq_chunk.size))
+
+        print(cosmo_grid_ra.shape, cosmo_grid_dec.shape, "<<<<<<<<")
 
         # Calculate projection operator (this re-uses the point source 
         # projection operator code, )
         cosmo_proj = hydra.ptsrc_sampler.calc_proj_operator(
                                           ra=cosmo_grid_ra, 
                                           dec=cosmo_grid_dec, 
-                                          fluxes=fluxes_chunk, 
+                                          fluxes=cosmo_fluxes_chunk, 
                                           ant_pos=ant_pos, 
                                           antpairs=antpairs, 
                                           freqs=freq_chunk, 
@@ -559,8 +561,36 @@ if __name__ == '__main__':
             status(myid, "Precomputed cosmo proj. operator in %6.3f sec" \
                          % (time.time() - t0), 'b')
 
-        # FIXME: Priors
-    #-------------------
+        # FIXME
+        cosmo_pspec_kbins = np.linspace(0., 10, 25)
+        cosmo_pspec_current = 0.1*cosmo_pspec_kbins + np.ones(cosmo_pspec_kbins.size)
+
+        cosmo_background_params = {
+            'h':        0.69,
+            'omega_m':  0.31
+        }
+
+        # Report on Fourier modes in the 3D cosmo field
+        if myid == 0:
+
+            # Calculate comoving 3D Fourier modes
+            kx, ky, knu = hydra.cosmo_sampler.comoving_fourier_modes(
+                                                x=np.unique(cosmo_grid_ra), 
+                                                y=np.unique(cosmo_grid_dec), 
+                                                freqs=freqs,
+                                                **cosmo_background_params)
+
+            knu3d, kx3d, ky3d = np.meshgrid(knu, kx, ky)
+            k = np.sqrt(kx3d**2. + ky3d**2. + knu3d**2.)
+
+            # Print report on available modes
+            print("Cosmo field Fourier mode ranges:")
+            print("    kx: (%7.4f, %7.4f) Mpc^-1" % (kx.min(), kx.max()))
+            print("    ky: (%7.4f, %7.4f) Mpc^-1" % (ky.min(), ky.max()))
+            print("   knu: (%7.4f, %7.4f) Mpc^-1" % (knu.min(), knu.max()))
+            print("   |k|: (%7.4f, %7.4f) Mpc^-1" % (k.min(), k.max()))
+            print("")
+            
     
     # Precompute spherical harmonic projection operator
     sh_response_chunk = None
@@ -718,13 +748,16 @@ if __name__ == '__main__':
         #---------------------------------------------------------------------------
         if SAMPLE_COSMO_FIELD:
 
-            # FIXME FIXME FIXME
+
+            # FIXME: Testing
+            current_data_model_chunk_ptsrc = model0_chunk
+
             # Current_data_model DOES NOT include gbar_i gbar_j^* factor, so we need
             # to apply it here to calculate the residual
             model_resid_chunk = current_data_model_chunk_ptsrc \
                               + current_data_model_chunk_region \
                               + current_data_model_chunk_sh
-            
+
             # Guard against all components being zero
             if model_resid_chunk == 0:
                 model_resid_chunk = np.zeros_like(data_chunk)
@@ -738,45 +771,8 @@ if __name__ == '__main__':
                                           inline=False)
             resid_chunk = data_chunk - ggv_chunk
 
-            """
-            # Find other workers with the same frequency block and add to MPI group
-            my_fidx, my_tidx, _, _ = worker_map[myid]
-            workers_with_same_freq_block = []
-            for w_id in worker_map.keys():
-                _fidx, _tidx, _, _ = worker_map[w_id]
-                if _fidx == my_fidx:
-                    workers_with_same_freq_block.append(w_id)
-            comm_same_freqs = comm.Create( comm.group.Incl(workers_with_same_freq_block) )
-            """
-
-            # Get LHS and RHS operators for linear system
+            # Precompute: get LHS and RHS operators for linear system
             t0 = time.time()
-
-            # FIXME
-            cosmo_pspec_current = np.ones((freqs.size, cosmo_grid_ra.size))
-
-            cosmo_background_params = {
-                'h':        0.69,
-                'omega_m':  0.31
-            }
-
-            kx, ky, knu = hydra.cosmo_sampler.comoving_fourier_modes(
-                                            x=np.unique(cosmo_grid_ra), 
-                                            y=np.unique(cosmo_grid_dec), 
-                                            freqs=freqs,
-                                            **cosmo_background_params)
-
-            if myid == 0:
-
-                print("cosmo Fourier modes: kx: ", kx.min(), kx.max())
-                print("cosmo Fourier modes: ky: ", ky.min(), ky.max())
-                print("cosmo Fourier modes: knu:", knu.min(), knu.max())
-
-                kx3d, ky3d, knu3d = np.meshgrid(kx, ky, knu)
-                k = np.sqrt(kx3d**2. + ky3d**2. + knu3d**2.)
-                print("k range:", k.min(), k.max())
-
-            comm.barrier()
 
             # Calculate prior term
             pspec3d = hydra.cosmo_sampler.calculate_pspec_on_grid(
@@ -787,7 +783,9 @@ if __name__ == '__main__':
                                                 freqs=freqs, 
                                                 **cosmo_background_params)
 
-            cosmo_op, cosmos_rhs = hydra.cosmo_sampler.precompute_mpi(
+            # Precompute N^-1 part of LHS operator, and calculate RHS
+            cosmo_lhs_Ninv_op, cosmo_rhs \
+                = hydra.cosmo_sampler.precompute_mpi(
                                        comm,
                                        freqs=freqs,
                                        ants=ants, 
@@ -798,17 +796,57 @@ if __name__ == '__main__':
                                        data_chunk=resid_chunk,
                                        inv_noise_var_chunk=inv_noise_var_chunk,
                                        gain_chunk=gains_chunk * (1. + current_delta_gain),
-                                       pspec=cosmo_pspec, 
+                                       pspec3d=pspec3d, 
                                        realisation=True)
 
-            comm.barrier()
             if myid == 0:
                 status(None, "Cosmo field sampler linear system precompute took %6.3f sec" 
                              % (time.time() - t0), 'c')
 
-            # Solve linear system
-            # FIXME
-            cosmo_soln = 0 #np.zeros(cosmo_prior_std.shape, dtype=cosmo_prior_std.dtype)
+            # Solve linear system (only root worker)
+            if myid == 0:
+                t0 = time.time()
+
+                # Set solution size
+                cosmo_soln_shape = (freqs.size, 
+                                    np.unique(cosmo_grid_ra).size, 
+                                    np.unique(cosmo_grid_dec).size)
+
+                # LHS matrix-vector product function
+                cosmo_lhs = lambda x: hydra.cosmo_sampler.apply_lhs_operator(
+                                                            x.reshape(cosmo_soln_shape), 
+                                                            cosmo_lhs_Ninv_op, 
+                                                            pspec3d).flatten()
+
+                # Run CG solver
+                cosmo_soln = hydra.linear_solver.cg(Amat=None, 
+                                                    bvec=cosmo_rhs.flatten(), 
+                                                    linear_op=cosmo_lhs, 
+                                                    comm=None)
+                cosmo_soln_3d = cosmo_soln.reshape(cosmo_soln_shape)
+                print("COSMO SOLUTION:", cosmo_soln)
+
+                
+                import pylab as plt
+                plt.subplot(121)
+                plt.matshow(cosmo_soln_3d[0], fignum=False, aspect='auto')
+                plt.colorbar()
+
+                plt.subplot(122)
+                plt.matshow(cosmo_soln_3d[1], fignum=False, aspect='auto')
+                plt.colorbar()
+                plt.show()
+                exit()
+                
+
+                status(None, "Cosmo field linear solver took %6.3f sec" 
+                             % (time.time() - t0), 'c')
+                status(None, "    Example cosmo soln:" + str(cosmo_soln[:4]))
+
+            comm.barrier()
+            
+            # FIXME: Need to update current_data_model_chunk_cosmo
+            current_data_model_chunk_cosmo = 0 # FIXME
 
         #---------------------------------------------------------------------------
         # (B) Source sampler (ptsrc, regions, or both)

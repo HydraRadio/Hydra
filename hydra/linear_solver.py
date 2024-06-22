@@ -465,7 +465,8 @@ def cg(Amat, bvec, maxiters=1000, abs_tol=1e-8, use_norm_tol=False,
                 pvec = r + beta * pvec
 
             # Update pvec on all workers
-            comm.Bcast(pvec, root=0)
+            if comm is not None:
+                comm.Bcast(pvec, root=0)
             
             # Increment iteration
             niter += 1
