@@ -41,7 +41,7 @@ def get_diffuse_sky_model_pixels(freqs, nside=32, sky_model='gsm2016'):
     if sky_model == 'gsm2008':
         model = pygdsm.GlobalSkyModel(freq_unit='MHz', include_cmb=False)
     if sky_model == 'gsm2016':
-        model = pygdsm.GlobalSkyModel16(freq_unit='MHz', include_cmb=False)
+        model = pygdsm.GlobalSkyModel2016(freq_unit='MHz', include_cmb=False)
     if sky_model == 'haslam':
         model = pygdsm.HaslamSkyModel(freq_unit='MHz', include_cmb=False)
     if sky_model == 'lfsm':
