@@ -1,0 +1,7 @@
+numpy
+scipy
+healpy
+matvis
+mpi4py
+pygdsm
+healpy
