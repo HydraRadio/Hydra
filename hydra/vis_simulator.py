@@ -2,6 +2,7 @@
 Trimmed-down version of matvis that can be modified to return fragments of the
 visibilities.
 """
+
 import numpy as np
 import warnings
 from astropy.constants import c
@@ -13,6 +14,7 @@ from multiprocessing import Pool, cpu_count
 import os, warnings, time
 from datetime import datetime
 from . import utils
+
 
 def run_checks(
     antpos: np.ndarray,
@@ -75,9 +77,11 @@ def run_checks(
     if beam_list is not None:
         # make sure we interpolate to the right frequency first.
         beam_list = [
-            bm.interp(freq_array=np.array([freq]), new_object=True, run_check=False)
-            if isinstance(bm, UVBeam)
-            else bm
+            (
+                bm.interp(freq_array=np.array([freq]), new_object=True, run_check=False)
+                if isinstance(bm, UVBeam)
+                else bm
+            )
             for bm in beam_list
         ]
 
@@ -108,7 +112,7 @@ def vis_sim_per_source(
     polarized: bool = False,
     beam_idx: Optional[np.ndarray] = None,
     subarr_ant=None,
-    force_no_beam_sqrt=False
+    force_no_beam_sqrt=False,
 ):
     """
     Calculate visibility from an input intensity map and beam model. This is
@@ -157,7 +161,7 @@ def vis_sim_per_source(
             Optional length-NANT array specifying a beam index for each antenna.
             By default, either a single beam is assumed to apply to all
             antennas or each antenna gets its own beam.
-        subarr_ant (int): 
+        subarr_ant (int):
             Used to calculate only those visibilities associated
             with a particular antenna.
         force_no_beam_sqrt (bool):
@@ -227,8 +231,8 @@ def vis_sim_per_source(
         # Simulate even if sources are below the horizon, since we need a
         # visibility per source regardless
         above_horizon = tz > 0
-        #tx = tx[above_horizon]
-        #ty = ty[above_horizon]
+        # tx = tx[above_horizon]
+        # ty = ty[above_horizon]
         nsrcs_up = len(tx)
 
         A_s = np.zeros((nax, nfeed, nbeam, nsrcs_up), dtype=complex_dtype)
@@ -275,8 +279,8 @@ def vis_sim_per_source(
             raise ValueError("Beam interpolation resulted in an invalid value")
 
         # Calculate delays, where tau = (b * s) / c
-        #np.dot(antpos, crd_top[:, above_horizon], out=tau)
-        np.dot(antpos, crd_top[:,:], out=tau)
+        # np.dot(antpos, crd_top[:, above_horizon], out=tau)
+        np.dot(antpos, crd_top[:, :], out=tau)
         tau /= c.value
 
         # Component of complex phase factor for one antenna
@@ -285,15 +289,15 @@ def vis_sim_per_source(
         np.exp(1.0j * (ang_freq * tau), out=v)
 
         # Complex voltages.
-        #v *= Isqrt[above_horizon]
+        # v *= Isqrt[above_horizon]
         v *= Isqrt[:]
-        v[:,~above_horizon] *= 0. # zero-out sources below the horizon
+        v[:, ~above_horizon] *= 0.0  # zero-out sources below the horizon
 
         # Compute visibilities using product of complex voltages (upper triangle).
         # Input arrays have shape (Nax, Nfeed, [Nants], Nsrcs
         v = A_s[:, :, beam_idx] * v[np.newaxis, np.newaxis, :]
 
-        # If a subarray is requested, only compute the visibilities that involve 
+        # If a subarray is requested, only compute the visibilities that involve
         # a specified antenna (useful for beam computations etc.)
         if subarr_ant is None:
             for i in range(len(antpos)):
@@ -308,9 +312,9 @@ def vis_sim_per_source(
         else:
             # Get the ones where the antenna in question is not conjugated
             vis[:, :, t] = np.einsum(
-                "jiln,jkmn->ikln", # summing over m just sums over one antenna (squeezes an axis)
+                "jiln,jkmn->ikln",  # summing over m just sums over one antenna (squeezes an axis)
                 v[:, :, :, :].conj(),
-                v[:, :, subarr_ant: subarr_ant + 1, :],
+                v[:, :, subarr_ant : subarr_ant + 1, :],
                 optimize=True,
             )
 
@@ -331,7 +335,7 @@ def simulate_vis_per_source(
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
     subarr_ant=None,
-    force_no_beam_sqrt=False
+    force_no_beam_sqrt=False,
 ):
     """
     Run a basic simulation, returning the visibility for each source
@@ -391,10 +395,16 @@ def simulate_vis_per_source(
     ), "The `fluxes` array must have shape (NSRCS, NFREQS)."
 
     # Check RA and Dec ranges
-    if np.any(ra < 0.) or np.any(ra > 2.*np.pi):
-        warnings.warn("One or more ra values is outside the allowed range (0, 2 pi)", RuntimeWarning)
+    if np.any(ra < 0.0) or np.any(ra > 2.0 * np.pi):
+        warnings.warn(
+            "One or more ra values is outside the allowed range (0, 2 pi)",
+            RuntimeWarning,
+        )
     if np.any(dec < -np.pi) or np.any(dec > np.pi):
-        warnings.warn("One or more dec values is outside the allowed range (-pi, +pi)", RuntimeWarning)
+        warnings.warn(
+            "One or more dec values is outside the allowed range (-pi, +pi)",
+            RuntimeWarning,
+        )
 
     # Determine precision
     if precision == 1:
@@ -430,7 +440,7 @@ def simulate_vis_per_source(
     if polarized:
         vis_shape = (naxes, nfeeds, freqs.size, lsts.size, nants, nants, nsrcs)
     elif subarr_ant is not None:
-    # When polarized beams implemented, need to have similar block in polarized case above
+        # When polarized beams implemented, need to have similar block in polarized case above
         vis_shape = (freqs.size, lsts.size, nants, nsrcs)
     else:
         vis_shape = (freqs.size, lsts.size, nants, nants, nsrcs)
@@ -440,32 +450,31 @@ def simulate_vis_per_source(
     vv = np.zeros_like(vis)
     for i in range(len(freqs)):
         vv[i] = vis_sim_per_source(
-                              antpos,
-                              freqs[i],
-                              eq2tops,
-                              crd_eq,
-                              fluxes[:, i],
-                              beam_list=beams,
-                              precision=precision,
-                              polarized=polarized,
-                              subarr_ant=subarr_ant,
-                              force_no_beam_sqrt=force_no_beam_sqrt
-                             )
+            antpos,
+            freqs[i],
+            eq2tops,
+            crd_eq,
+            fluxes[:, i],
+            beam_list=beams,
+            precision=precision,
+            polarized=polarized,
+            subarr_ant=subarr_ant,
+            force_no_beam_sqrt=force_no_beam_sqrt,
+        )
 
     # Assign returned values to array
     for i in range(freqs.size):
         if polarized:
             vis[:, :, i] = vv[i]  # v.shape: (nax, nfeed, ntimes, nant, nant, nsrcs)
         else:
-            vis[i] = vv[i]  # v.shape: (ntimes, nant, nant, nsrcs) (unless subarr_ant is not None)
+            vis[i] = vv[
+                i
+            ]  # v.shape: (ntimes, nant, nant, nsrcs) (unless subarr_ant is not None)
 
     return vis
 
 
-
-def simulate_vis(
-    *args, **kwargs
-):
+def simulate_vis(*args, **kwargs):
     """
     Run a basic simulation, based on ``matvis``.
 
@@ -530,8 +539,8 @@ def simulate_vis_per_alm(
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
     multiprocess=True,
-    amplitude=1.,
-    logfile=None
+    amplitude=1.0,
+    logfile=None,
 ):
     """
     Run a basic simulation, returning the visibility for each spherical harmonic mode
@@ -599,16 +608,16 @@ def simulate_vis_per_alm(
     # Make sure these are array_like
     freqs = np.atleast_1d(freqs)
     lsts = np.atleast_1d(lsts)
-    
+
     # Array of ell, m values in healpy ordering
     ell, m = hp.Alm().getlm(lmax=lmax)
 
     # Get Healpix pixel coords
     npix = hp.nside2npix(nside)
-    pix_area = 4.*np.pi / npix # steradians per pixel
+    pix_area = 4.0 * np.pi / npix  # steradians per pixel
     dec, ra = hp.pix2ang(nside=nside, ipix=np.arange(npix), lonlat=False)
     # RA must be in range [0, 2 pi] and Dec in range [-pi, +pi]
-    dec = dec - 0.5*np.pi # shift Dec coords
+    dec = dec - 0.5 * np.pi  # shift Dec coords
 
     # Dummy fluxes (one everywhere)
     fluxes = np.ones((npix, freqs.size))
@@ -617,29 +626,33 @@ def simulate_vis_per_alm(
     # visibility contrib. from each pixel
     if logfile is not None:
         t0 = time.time()
-        with open(logfile, 'a') as f:
+        with open(logfile, "a") as f:
             f.write("%s Starting simulate_vis_per_source\n" % (datetime.now()))
 
-    vis_pix = simulate_vis_per_source(ants=ants,
-                                      fluxes=fluxes,
-                                      ra=ra,
-                                      dec=dec,
-                                      freqs=freqs,
-                                      lsts=lsts,
-                                      beams=beams,
-                                      polarized=polarized,
-                                      precision=precision,
-                                      latitude=latitude,
-                                      use_feed=use_feed)
+    vis_pix = simulate_vis_per_source(
+        ants=ants,
+        fluxes=fluxes,
+        ra=ra,
+        dec=dec,
+        freqs=freqs,
+        lsts=lsts,
+        beams=beams,
+        polarized=polarized,
+        precision=precision,
+        latitude=latitude,
+        use_feed=use_feed,
+    )
 
     if logfile is not None:
-        with open(logfile, 'a') as f:
-            f.write("%s Finished simulate_vis_per_source in %5.2f sec\n" \
-                     % (datetime.now(), time.time() - t0))
+        with open(logfile, "a") as f:
+            f.write(
+                "%s Finished simulate_vis_per_source in %5.2f sec\n"
+                % (datetime.now(), time.time() - t0)
+            )
 
     # Empty array with the right shape (no. visibilities times no. l,m modes)
     shape = list(vis_pix.shape)
-    shape[-1] = 2*ell.size # replace last dim. with Nmodes (real + imag.)
+    shape[-1] = 2 * ell.size  # replace last dim. with Nmodes (real + imag.)
     vis = np.zeros(shape, dtype=np.complex128)
 
     # Loop over (ell, m) modes, weighting the precomputed visibility sim
@@ -648,14 +661,14 @@ def simulate_vis_per_alm(
     for n in range(ell.size):
 
         if logfile is not None:
-            with open(logfile, 'a') as f:
+            with open(logfile, "a") as f:
                 f.write("%s ell %d / %d\n" % (datetime.now(), n, ell.size))
 
         # Start with zero vector for all modes
         alm *= 0
 
         # Loop over real, imaginary values for this mode only
-        for j, val in enumerate([1., 1.j]):
+        for j, val in enumerate([1.0, 1.0j]):
 
             # Make healpix map for this mode only
             alm[n] = val
@@ -666,19 +679,20 @@ def simulate_vis_per_alm(
             # Multiply visibility for each pixel by the pixel value for this mode
             if polarized:
                 # vis_pix: (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS, NSRCS)
-                vis[:,:,:,:,:,:,n + j*ell.size] = np.sum(vis_pix * skymap, axis=-1)
+                vis[:, :, :, :, :, :, n + j * ell.size] = np.sum(
+                    vis_pix * skymap, axis=-1
+                )
                 # Last dim. of vis is in blocks of real (first ell.size modes) and
                 # imaginary (last ell.size modes)
             else:
                 # vis_pix: (NFREQS, NTIMES, NANTS, NANTS, NSRCS)
-                vis[:,:,:,:,n + j*ell.size] = np.sum(vis_pix * skymap, axis=-1)
+                vis[:, :, :, :, n + j * ell.size] = np.sum(vis_pix * skymap, axis=-1)
 
     if logfile is not None:
-        with open(logfile, 'a') as f:
+        with open(logfile, "a") as f:
             f.write("%s Finished all.\n" % (datetime.now()))
 
     return ell, m, vis
-
 
 
 def simulate_vis_per_region(
@@ -693,8 +707,8 @@ def simulate_vis_per_region(
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
     multiprocess=True,
-    amplitude=1.,
-    logfile=None
+    amplitude=1.0,
+    logfile=None,
 ):
     """
     Run a basic simulation, returning the visibility for each spherical harmonic mode
@@ -768,10 +782,10 @@ def simulate_vis_per_region(
 
     # Get Healpix pixel coords
     npix = hp.nside2npix(nside)
-    pix_area = 4.*np.pi / npix # steradians per pixel
+    pix_area = 4.0 * np.pi / npix  # steradians per pixel
     dec, ra = hp.pix2ang(nside=nside, ipix=np.arange(npix), lonlat=False)
     # RA must be in range [0, 2 pi] and Dec in range [-pi, +pi]
-    dec = dec - 0.5*np.pi # shift Dec coords
+    dec = dec - 0.5 * np.pi  # shift Dec coords
 
     # Dummy fluxes (one everywhere)
     fluxes = np.ones((npix, freqs.size))
@@ -780,30 +794,34 @@ def simulate_vis_per_region(
     # visibility contrib. from each pixel
     if logfile is not None:
         t0 = time.time()
-        with open(logfile, 'a') as f:
+        with open(logfile, "a") as f:
             f.write("%s Starting simulate_vis_per_source\n" % (datetime.now()))
 
-    vis_pix = simulate_vis_per_source(ants=ants,
-                                      fluxes=fluxes,
-                                      ra=ra,
-                                      dec=dec,
-                                      freqs=freqs,
-                                      lsts=lsts,
-                                      beams=beams,
-                                      polarized=polarized,
-                                      precision=precision,
-                                      latitude=latitude,
-                                      use_feed=use_feed,
-                                      multiprocess=multiprocess)
+    vis_pix = simulate_vis_per_source(
+        ants=ants,
+        fluxes=fluxes,
+        ra=ra,
+        dec=dec,
+        freqs=freqs,
+        lsts=lsts,
+        beams=beams,
+        polarized=polarized,
+        precision=precision,
+        latitude=latitude,
+        use_feed=use_feed,
+        multiprocess=multiprocess,
+    )
 
     if logfile is not None:
-        with open(logfile, 'a') as f:
-            f.write("%s Finished simulate_vis_per_source in %5.2f sec\n" \
-                     % (datetime.now(), time.time() - t0))
+        with open(logfile, "a") as f:
+            f.write(
+                "%s Finished simulate_vis_per_source in %5.2f sec\n"
+                % (datetime.now(), time.time() - t0)
+            )
 
     # Empty array with the right shape (no. visibilities times no. l,m modes)
     shape = list(vis_pix.shape)
-    shape[-1] = 2*ell.size # replace last dim. with Nmodes (real + imag.)
+    shape[-1] = 2 * ell.size  # replace last dim. with Nmodes (real + imag.)
     vis = np.zeros(shape, dtype=np.complex128)
 
     # Loop over (ell, m) modes, weighting the precomputed visibility sim
@@ -812,14 +830,14 @@ def simulate_vis_per_region(
     for n in range(ell.size):
 
         if logfile is not None:
-            with open(logfile, 'a') as f:
+            with open(logfile, "a") as f:
                 f.write("%s ell %d / %d\n" % (datetime.now(), n, ell.size))
 
         # Start with zero vector for all modes
         alm *= 0
 
         # Loop over real, imaginary values for this mode only
-        for j, val in enumerate([1., 1.j]):
+        for j, val in enumerate([1.0, 1.0j]):
 
             # Make healpix map for this mode only
             alm[n] = val
@@ -830,20 +848,20 @@ def simulate_vis_per_region(
             # Multiply visibility for each pixel by the pixel value for this mode
             if polarized:
                 # vis_pix: (NAXES, NFEED, NFREQS, NTIMES, NANTS, NANTS, NSRCS)
-                vis[:,:,:,:,:,:,n + j*ell.size] = np.sum(vis_pix * skymap, axis=-1)
+                vis[:, :, :, :, :, :, n + j * ell.size] = np.sum(
+                    vis_pix * skymap, axis=-1
+                )
                 # Last dim. of vis is in blocks of real (first ell.size modes) and
                 # imaginary (last ell.size modes)
             else:
                 # vis_pix: (NFREQS, NTIMES, NANTS, NANTS, NSRCS)
-                vis[:,:,:,:,n + j*ell.size] = np.sum(vis_pix * skymap, axis=-1)
+                vis[:, :, :, :, n + j * ell.size] = np.sum(vis_pix * skymap, axis=-1)
 
     if logfile is not None:
-        with open(logfile, 'a') as f:
+        with open(logfile, "a") as f:
             f.write("%s Finished all.\n" % (datetime.now()))
 
     return ell, m, vis
-
-
 
 
 def vis_sim_per_source_new(
@@ -852,11 +870,11 @@ def vis_sim_per_source_new(
     lsts: np.ndarray,
     alt: np.ndarray,
     az: np.ndarray,
-    I_sky: np.ndarray,  
+    I_sky: np.ndarray,
     beam_list: Sequence[UVBeam],
     precision: int = 2,
     polarized: bool = False,
-    subarr_ant=None
+    subarr_ant=None,
 ):
     """
     Calculate visibility from an input intensity map and beam model. This is
@@ -944,7 +962,7 @@ def vis_sim_per_source_new(
 
         # Simulate even if sources are below the horizon, since we need a
         # visibility per source regardless
-        above_horizon = alt[tidx] > 0.
+        above_horizon = alt[tidx] > 0.0
         nsrcs_up = nsrcs
 
         A_s = np.zeros((nax, nfeed, nbeam, nsrcs_up), dtype=complex_dtype)
@@ -952,7 +970,7 @@ def vis_sim_per_source_new(
         v = np.zeros((nant, nsrcs_up), dtype=complex_dtype)
 
         # Primary beam pattern using direct interpolation of UVBeam object
-        za = 0.5*np.pi - alt
+        za = 0.5 * np.pi - alt
         for i, bm in enumerate(beam_list):
             spw_axis_present = utils.get_beam_interp_shape(bm)
             kw = (
@@ -962,7 +980,10 @@ def vis_sim_per_source_new(
             )
 
             interp_beam = bm.interp(
-                az_array=az[tidx], za_array=za[tidx], freq_array=np.atleast_1d(freq), **kw
+                az_array=az[tidx],
+                za_array=za[tidx],
+                freq_array=np.atleast_1d(freq),
+                **kw
             )[0]
 
             if polarized:
@@ -985,11 +1006,15 @@ def vis_sim_per_source_new(
             raise ValueError("Beam interpolation resulted in an invalid value")
 
         # Calculate delays, where tau = (b * s) / c
-        #enu_e, enu_n, enu_u = crd_top
-        crd_top = np.array([np.sin(za[tidx])*np.cos(az[tidx]), 
-                            np.sin(za[tidx])*np.sin(az[tidx]), 
-                            np.cos(za[tidx])])
-        np.dot(antpos, crd_top[:,:], out=tau)
+        # enu_e, enu_n, enu_u = crd_top
+        crd_top = np.array(
+            [
+                np.sin(za[tidx]) * np.cos(az[tidx]),
+                np.sin(za[tidx]) * np.sin(az[tidx]),
+                np.cos(za[tidx]),
+            ]
+        )
+        np.dot(antpos, crd_top[:, :], out=tau)
         tau /= c.value
 
         # Component of complex phase factor for one antenna
@@ -998,17 +1023,17 @@ def vis_sim_per_source_new(
         np.exp(1.0j * (ang_freq * tau), out=v)
 
         # Complex voltages.
-        #v *= Isqrt[above_horizon]
+        # v *= Isqrt[above_horizon]
         v *= Isqrt[:]
-        v[:,~above_horizon] *= 0. # zero-out sources below the horizon
+        v[:, ~above_horizon] *= 0.0  # zero-out sources below the horizon
 
         # Compute visibilities using product of complex voltages (upper triangle).
         # Input arrays have shape (Nax, Nfeed, [Nants], Nsrcs
         v = A_s[:, :, :] * v[np.newaxis, np.newaxis, :]
 
-        #print(">>>", A_s)
-        #print("\n\n\n")
-        #print("***", v)
+        # print(">>>", A_s)
+        # print("\n\n\n")
+        # print("***", v)
 
         if subarr_ant is None:
             for i in range(len(antpos)):
@@ -1023,12 +1048,11 @@ def vis_sim_per_source_new(
         else:
             # Get the ones where the antenna in question is not conjugated
             vis[:, :, tidx] = np.einsum(
-                "jiln,jkmn->ikln", # summing over m just sums over one antenna (squeezes an axis)
+                "jiln,jkmn->ikln",  # summing over m just sums over one antenna (squeezes an axis)
                 v[:, :, :, :].conj(),
-                v[:, :, subarr_ant: subarr_ant + 1, :],
+                v[:, :, subarr_ant : subarr_ant + 1, :],
                 optimize=True,
             )
 
     # Return visibilities with or without multiple polarization channels
     return vis if polarized else vis[0, 0]
-
