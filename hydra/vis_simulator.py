@@ -9,7 +9,7 @@ from pyuvdata import UVBeam
 from typing import Optional, Sequence
 from matvis import conversions
 import healpy as hp
-from multiprocessing import Pool, cpu_count
+#from multiprocessing import Pool, cpu_count
 import os, warnings, time
 from datetime import datetime
 from . import utils

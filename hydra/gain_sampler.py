@@ -2,8 +2,11 @@ import numpy as np
 import pylab as plt
 import scipy.sparse
 import numpy.fft as fft
-from mpi4py.MPI import SUM as MPI_SUM
-#import pyfftw.interfaces.numpy_fft as fft
+
+try:
+    from mpi4py.MPI import SUM as MPI_SUM
+except:
+    pass
 
 from scipy.sparse import dok_matrix
 from .utils import flatten_vector, reconstruct_vector, freqs_times_for_worker
