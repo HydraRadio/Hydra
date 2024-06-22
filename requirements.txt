@@ -1,6 +1,7 @@
-numpy
+numpy==1.23
 scipy
 healpy
 matvis
 pygdsm
 healpy
+pyuvsim
