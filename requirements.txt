@@ -4,3 +4,4 @@ healpy
 matvis
 pygdsm
 healpy
+pyuvsim
