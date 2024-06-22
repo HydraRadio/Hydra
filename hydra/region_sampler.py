@@ -27,10 +27,11 @@ def get_diffuse_sky_model_pixels(freqs, nside=32, sky_model='gsm2016'):
 
     Returns:
         ra, dec (array_like):
-            ICRS RA and Dec locations of each pixel.
+            ICRS RA and Dec locations of each pixel. RA range is (0, 360) deg, 
+            Dec range is (-90, +90) deg, but they are returned in radians.
 
         sky_maps (array_like):
-            The frequency spectrum in each pixel.
+            The frequency spectrum in each pixel. Shape is `(Npix, Nfreq)`.
     """
     # Get expected frequency units
     freqs_MHz = freqs
@@ -41,7 +42,11 @@ def get_diffuse_sky_model_pixels(freqs, nside=32, sky_model='gsm2016'):
     if sky_model == 'gsm2008':
         model = pygdsm.GlobalSkyModel(freq_unit='MHz')
     if sky_model == 'gsm2016':
-        model = pygdsm.GlobalSkyModel2016(freq_unit='MHz')
+        try:
+            model = pygdsm.GlobalSkyModel2016(freq_unit='MHz')
+        except(AttributeError):
+            # Different versions of pygdsm changed the API
+            model = pygdsm.GlobalSkyModel16(freq_unit='MHz')
     if sky_model == 'haslam':
         model = pygdsm.HaslamSkyModel(freq_unit='MHz')
     if sky_model == 'lfsm':

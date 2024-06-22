@@ -51,7 +51,7 @@ def get_config():
     # Output options
     parser.add_argument("--stats", action="store_true",
                         required=False, dest="calculate_stats",
-                        help="Calcultae statistics about the sampling results.")
+                        help="Calculate statistics about the sampling results.")
     parser.add_argument("--diagnostics", action="store_true",
                         required=False, dest="output_diagnostics",
                         help="Output diagnostics.") # This will be ignored
@@ -142,7 +142,7 @@ def get_config():
 
 
     # Cosmo field parameters
-    parser.add_argument("--cosmo-ra-bounds", type=float, action="store", default=(0., 60.),
+    parser.add_argument("--cosmo-ra-bounds", type=float, action="store", default=(0., 20.),
                         nargs=2, required=False, dest="cosmo_field_ra_bounds",
                         help="Bounds for the RA of the cosmo field sample points (in degrees).")
     parser.add_argument("--cosmo-dec-bounds", type=float, action="store", default=(-40., -20.),
@@ -167,7 +167,7 @@ def get_config():
                         help="Max. Fourier mode index for gain perturbations (time direction).")
     parser.add_argument("--gain-prior-zero-mode-std", type=float, action="store", default=None,
                         required=False, dest="gain_prior_zero_mode_std",
-                        help="Separately specify the gain prior standard deviaiton for the zero mode.")
+                        help="Separately specify the gain prior standard deviation for the zero mode.")
     parser.add_argument("--gain-only-positive-modes", type=bool, action="store", default=True,
                         required=False, dest="gain_only_positive_modes",
                         help="Whether to only permit positive wavenumber gain modes.")
