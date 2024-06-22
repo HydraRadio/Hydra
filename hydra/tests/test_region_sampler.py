@@ -71,6 +71,82 @@ class TestRegionSampler(unittest.TestCase):
         self.assertEqual(ra2a.size, healpix_npix)
 
 
+    def test_segmented_diffuse_sky_model_pixels(self):
+
+        # Set up pixels
+        freqs = np.linspace(100., 200., 10) # MHz
+        ra1, dec1, sky_maps1 = region_sampler.get_diffuse_sky_model_pixels(freqs, 
+                                                                           nside=8, 
+                                                                           sky_model='gsm2008')
+
+        # Check that function runs
+        idxs1 = region_sampler.segmented_diffuse_sky_model_pixels(ra1, 
+                                                                  dec1, 
+                                                                  sky_maps1, 
+                                                                  freqs, 
+                                                                  nregions=5, 
+                                                                  smoothing_fwhm=None)
+        self.assertTrue(len(idxs1) == 5) # check no. of regions returned
+
+        # Check that all pixels are accounted for
+        npix = 0
+        for r in idxs1:
+            npix += len(r)
+        self.assertEqual(ra1.size, npix)
+
+        # Check that smoothing is sensible
+        idxs1 = region_sampler.segmented_diffuse_sky_model_pixels(ra1, 
+                                                                  dec1, 
+                                                                  sky_maps1, 
+                                                                  freqs, 
+                                                                  nregions=10, 
+                                                                  smoothing_fwhm=10.)
+
+    
+    def test_calc_proj_operator(self):
+        
+        import pyuvsim
+
+        # Basic array layout
+        ant_pos = {
+                        0: (0., 0., 0.),
+                        1: (0., 14., 0.),
+                        2: (0., 0., 14.),
+                   }
+        antpairs = [(0,1), (0,2), (1,2)]
+        times = np.linspace(0., 3., 5) # LSTs
+        beams = [pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14.)
+                         for ant in ant_pos.keys()]
+        nregions = 5
+
+        # Set up pixels
+        freqs = np.linspace(100., 200., 10) # MHz
+        ra1, dec1, sky_maps1 = region_sampler.get_diffuse_sky_model_pixels(freqs, 
+                                                                           nside=8, 
+                                                                           sky_model='gsm2008')
+
+        # Get region idxs
+        idxs1 = region_sampler.segmented_diffuse_sky_model_pixels(ra1, 
+                                                                  dec1, 
+                                                                  sky_maps1, 
+                                                                  freqs, 
+                                                                  nregions=nregions, 
+                                                                  smoothing_fwhm=None)
+
+        # Check that function runs
+        proj = region_sampler.calc_proj_operator(
+                                    ra1,
+                                    dec1,
+                                    sky_maps1,
+                                    idxs1,
+                                    ant_pos,
+                                    antpairs,
+                                    freqs,
+                                    times,
+                                    beams
+                                    )
+        self.assertEqual(proj.shape, (len(antpairs), len(freqs), len(times), nregions))
+
 
 
 if __name__ == "__main__":
