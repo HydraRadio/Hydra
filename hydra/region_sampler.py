@@ -1,4 +1,3 @@
-
 import numpy as np
 from .vis_simulator import simulate_vis
 
@@ -8,12 +7,12 @@ import astropy.units as u
 import healpy as hp
 
 
-def get_diffuse_sky_model_pixels(freqs, nside=32, sky_model='gsm2016'):
+def get_diffuse_sky_model_pixels(freqs, nside=32, sky_model="gsm2016"):
     """
-    Returns arrays of the pixel RA, Dec locations and per-pixel frequency 
-    spectra from a given sky model. By default this is GSM, as implemented 
+    Returns arrays of the pixel RA, Dec locations and per-pixel frequency
+    spectra from a given sky model. By default this is GSM, as implemented
     in `pygdsm`.
-    
+
     Parameters:
         freqs (array_like):
             Frequencies, in MHz.
@@ -22,7 +21,7 @@ def get_diffuse_sky_model_pixels(freqs, nside=32, sky_model='gsm2016'):
             Healpix nside to use when constructing the sky model.
 
         sky_model (str):
-            Which sky modle to use, from pyGDSM. One of: 
+            Which sky modle to use, from pyGDSM. One of:
             'gsm2008', 'gsm2016', 'haslam', 'lfss'.
 
     Returns:
@@ -35,26 +34,30 @@ def get_diffuse_sky_model_pixels(freqs, nside=32, sky_model='gsm2016'):
     """
     # Get expected frequency units
     freqs_MHz = freqs
-    
+
     # Initialise sky model and extract data cube
-    assert sky_model in ['gsm2008', 'gsm2016', 'haslam', 'lfsm'], \
-        "Available sky models: 'gsm2008', 'gsm2016', 'haslam', 'lfsm'"
-    if sky_model == 'gsm2008':
-        model = pygdsm.GlobalSkyModel(freq_unit='MHz')
-    if sky_model == 'gsm2016':
+    assert sky_model in [
+        "gsm2008",
+        "gsm2016",
+        "haslam",
+        "lfsm",
+    ], "Available sky models: 'gsm2008', 'gsm2016', 'haslam', 'lfsm'"
+    if sky_model == "gsm2008":
+        model = pygdsm.GlobalSkyModel(freq_unit="MHz", include_cmb=False)
+    if sky_model == "gsm2016":
         try:
-            model = pygdsm.GlobalSkyModel2016(freq_unit='MHz')
+            model = pygdsm.GlobalSkyModel2016(freq_unit="MHz", include_cmb=False)
         except(AttributeError):
             # Different versions of pygdsm changed the API
-            model = pygdsm.GlobalSkyModel16(freq_unit='MHz')
-    if sky_model == 'haslam':
-        model = pygdsm.HaslamSkyModel(freq_unit='MHz')
-    if sky_model == 'lfsm':
-        model = pygdsm.LowFrequencySkyModel(freq_unit='MHz')
-    
+            model = pygdsm.GlobalSkyModel16(freq_unit="MHz", include_cmb=False)
+    if sky_model == "haslam":
+        model = pygdsm.HaslamSkyModel(freq_unit="MHz", include_cmb=False)
+    if sky_model == "lfsm":
+        model = pygdsm.LowFrequencySkyModel(freq_unit="MHz", include_cmb=False)
+
     model.generate(freqs_MHz)
-    sky_maps = model.generated_map_data # (Nfreqs, Npix), should be in Kelvin
-    
+    sky_maps = model.generated_map_data  # (Nfreqs, Npix), should be in Kelvin
+
     # Must change nside to make compute practical
     nside_gsm = hp.npix2nside(sky_maps[0].size)
     sky_maps = hp.ud_grade(sky_maps, nside_out=nside)
@@ -63,31 +66,32 @@ def get_diffuse_sky_model_pixels(freqs, nside=32, sky_model='gsm2016'):
     equiv = u.brightness_temperature(freqs_MHz * u.MHz, beam_area=1 * u.sr)
     Ksr_per_Jy = ((1 * u.Jy).to(u.K, equivalencies=equiv) * u.sr / u.Jy).value
     for i in range(Ksr_per_Jy.size):
-        sky_maps[i] /= Ksr_per_Jy[i] # converts K to Jy/sr
-    
+        sky_maps[i] /= Ksr_per_Jy[i]  # converts K to Jy/sr
+
     # Get pixel RA/Dec coords (assumes Galactic coords for sky map data)
     idxs = np.arange(sky_maps[0].size)
     pix_lon, pix_lat = hp.pix2ang(nside, idxs, lonlat=True)
-    gal_coords = Galactic(l=pix_lon*u.deg, b=pix_lat*u.deg)
-    
+    gal_coords = Galactic(l=pix_lon * u.deg, b=pix_lat * u.deg)
+
     icrs_frame = ICRS()
     eq_coords = gal_coords.transform_to(icrs_frame)
     ra = eq_coords.ra.rad
     dec = eq_coords.dec.rad
-    
+
     # Returns list of pixels with spectra as effective point sources
     return ra, dec, sky_maps.T
 
 
-def segmented_diffuse_sky_model_pixels(ra, dec, sky_maps, freqs, nregions, 
-                                       smoothing_fwhm=None):
+def segmented_diffuse_sky_model_pixels(
+    ra, dec, sky_maps, freqs, nregions, smoothing_fwhm=None
+):
     """
-    Returns a list of pixel indices for each region in a diffuse sky map. 
-    This function currently uses a crude spectral index measurement to 
-    segment the map into regions with roughly equal numbers of pixels. 
-    Smoothing can be used to reduce sharp edges. The regions can be 
+    Returns a list of pixel indices for each region in a diffuse sky map.
+    This function currently uses a crude spectral index measurement to
+    segment the map into regions with roughly equal numbers of pixels.
+    Smoothing can be used to reduce sharp edges. The regions can be
     disconnected.
-    
+
     Parameters:
         ra, dec (array_like):
             ICRS RA and Dec locations of each pixel.
@@ -99,33 +103,33 @@ def segmented_diffuse_sky_model_pixels(ra, dec, sky_maps, freqs, nregions,
             Frequencies, in MHz.
 
         nregions (int):
-            The number of regions of roughly equal numbers of pixels to 
+            The number of regions of roughly equal numbers of pixels to
             segment the sky map into.
 
         smoothing_fwhm (float):
-            Smoothing FWHM (in degrees) to apply to the segmented map in 
-            order to reduce sharp edges. The smoothing is applied to a map 
-            of region indices. It is then re-segmented, which can result 
-            in a slight reduction in the number of segments due to 
+            Smoothing FWHM (in degrees) to apply to the segmented map in
+            order to reduce sharp edges. The smoothing is applied to a map
+            of region indices. It is then re-segmented, which can result
+            in a slight reduction in the number of segments due to
             round-off of region indices.
 
     Returns:
         idxs (list of array_like):
-            List of arrays, with each array containing the array indices 
+            List of arrays, with each array containing the array indices
             of the pixels that belong to each region.
     """
     # Crude spectral index map
-    beta = np.log(sky_maps[:,0] / sky_maps[:,1]) / np.log(freqs[0] / freqs[1])
+    beta = np.log(sky_maps[:, 0] / sky_maps[:, 1]) / np.log(freqs[0] / freqs[1])
 
     # Sort spectral index map and break up into ~equal-sized segments
     beta_sorted = np.sort(beta)
-    bounds = beta_sorted[::beta_sorted.size // nregions]
+    bounds = beta_sorted[:: beta_sorted.size // nregions]
 
     # Loop over regions and select pixels belonging to each region
     regions = np.zeros(beta.size, dtype=int)
     for i in range(bounds.size - 1):
         # These have >= and <= to ensure that all pixels belong somewhere
-        idxs = np.where(np.logical_and(beta >= bounds[i], beta <= bounds[i+1]))
+        idxs = np.where(np.logical_and(beta >= bounds[i], beta <= bounds[i + 1]))
         regions[idxs] = i
 
     # Apply smoothing and then re-segment
@@ -142,8 +146,16 @@ def segmented_diffuse_sky_model_pixels(ra, dec, sky_maps, freqs, nregions,
 
 
 def calc_proj_operator(
-    region_pixel_ra, region_pixel_dec, region_fluxes, region_idxs, ant_pos, 
-    antpairs, freqs, times, beams, latitude=-0.5361913261514378
+    region_pixel_ra,
+    region_pixel_dec,
+    region_fluxes,
+    region_idxs,
+    ant_pos,
+    antpairs,
+    freqs,
+    times,
+    beams,
+    latitude=-0.5361913261514378,
 ):
     """
     Calculate a visibility vector for each point source, as a function of
@@ -174,7 +186,7 @@ def calc_proj_operator(
 
     Returns:
         proj_operator (array_like):
-            The projection operator from region amplitudes to visibilities. This 
+            The projection operator from region amplitudes to visibilities. This
             is an array of the visibility values for each region.
     """
     Nregions = len(region_idxs)
@@ -190,7 +202,7 @@ def calc_proj_operator(
         # Returns shape (NFREQS, NTIMES, NANTS, NANTS)
         vis = simulate_vis(
             ants=ant_pos,
-            fluxes=region_fluxes[region_idxs[j],:],
+            fluxes=region_fluxes[region_idxs[j], :],
             ra=region_pixel_ra[region_idxs[j]],
             dec=region_pixel_dec[region_idxs[j]],
             freqs=freqs * 1e6,
@@ -199,7 +211,7 @@ def calc_proj_operator(
             polarized=False,
             precision=2,
             latitude=latitude,
-            use_feed="x"
+            use_feed="x",
         )
 
         # Allocate computed visibilities to only available baselines (saves memory)

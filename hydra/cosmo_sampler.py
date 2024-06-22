@@ -44,13 +44,13 @@ def calculate_cosmo_fns(h=0.69, omega_m=0.31):
 
 def make_cosmo_field_grid(args):
     """
-    Make a regular Cartesian grid of points in RA and Dec that sample a 
+    Make a regular Cartesian grid of points in RA and Dec that sample a
     cosmological 21cm field.
 
     Parameters:
         args (argparse object):
-            An argparse object containing the following settings: 
-            `cosmo_field_ra_bounds`, `cosmo_field_dec_bounds`, 
+            An argparse object containing the following settings:
+            `cosmo_field_ra_bounds`, `cosmo_field_dec_bounds`,
             `cosmo_field_ra_ngrid`, `cosmo_field_dec_ngrid`.
 
     Returns:
@@ -58,12 +58,16 @@ def make_cosmo_field_grid(args):
             RA and Dec values of the sample points, in radians.
     """
     # Define sample points
-    ra = np.linspace(min(args.cosmo_field_ra_bounds), 
-                     max(args.cosmo_field_ra_bounds), 
-                     args.cosmo_field_ra_ngrid)
-    dec = np.linspace(min(args.cosmo_field_dec_bounds), 
-                      max(args.cosmo_field_dec_bounds), 
-                      args.cosmo_field_dec_ngrid)
+    ra = np.linspace(
+        min(args.cosmo_field_ra_bounds),
+        max(args.cosmo_field_ra_bounds),
+        args.cosmo_field_ra_ngrid,
+    )
+    dec = np.linspace(
+        min(args.cosmo_field_dec_bounds),
+        max(args.cosmo_field_dec_bounds),
+        args.cosmo_field_dec_ngrid,
+    )
 
     # Define 2D grid
     ra_grid, dec_grid = np.meshgrid(ra, dec)
@@ -231,10 +235,10 @@ def precompute_mpi(comm,
                    pspec3d, 
                    realisation=True):
     """
-    Precompute the projection operator and matrix operator in parallel. 
+    Precompute the projection operator and matrix operator in parallel.
 
-    The projection operator is computed in chunks in time and frequency. 
-    The overall matrix operator can be computed by summing the matrix 
+    The projection operator is computed in chunks in time and frequency.
+    The overall matrix operator can be computed by summing the matrix
     operator for the time and frequency chunks.
 
     Parameters:
@@ -248,17 +252,19 @@ def precompute_mpi(comm,
     # Check input dimensions
     assert data_chunk.shape == (len(antpairs), freq_chunk.size, time_chunk.size)
     assert data_chunk.shape == inv_noise_var_chunk.shape
-    proj = proj_chunk.copy() # make a copy so we don't alter the original proj!
+
+    proj = proj_chunk.copy()  # make a copy so we don't alter the original proj!
 
     # Apply gains to projection operator
     for k, bl in enumerate(antpairs):
         ant1, ant2 = bl
         i1 = np.where(ants == ant1)[0][0]
         i2 = np.where(ants == ant2)[0][0]
-        proj[k,:,:,:] *= gain_chunk[i1,:,:,np.newaxis] \
-                       * gain_chunk[i2,:,:,np.newaxis].conj()
+        proj[k, :, :, :] *= (
+            gain_chunk[i1, :, :, np.newaxis] * gain_chunk[i2, :, :, np.newaxis].conj()
+        )
 
-    # (2) Precompute linear system operator for each frequency (for the 
+    # (2) Precompute linear system operator for each frequency (for the
     # likelihood part of the operator, the freqs. don't talk to each other)
     Nbls, Nfreqs_chunk, Ntimes_chunk, Npix = proj.shape
     my_linear_op = np.zeros((freqs.size, Npix, Npix), dtype=proj.real.dtype)
@@ -271,13 +277,18 @@ def precompute_mpi(comm,
     for j in range(freq_chunk.size):
         # Get frequency index of locally-held frequency channels
         i = np.where(freqs == freq_chunk[j])[0]
+
         _vre = v_re[:,j,:,:].reshape((-1, Npix))
         _vim = v_im[:,j,:,:].reshape((-1, Npix))
+        
         my_linear_op[i,:,:] = _vre.T @ _vre + _vim.T @ _vim
+    
     del v_re, v_im
 
     # Do Reduce (sum) operation to get total operator on root node
-    linear_op = np.zeros((1,1,1), dtype=my_linear_op.dtype) # dummy data for non-root workers
+    linear_op = np.zeros(
+        (1, 1, 1), dtype=my_linear_op.dtype
+    )  # dummy data for non-root workers
     if myid == 0:
         linear_op = np.zeros_like(my_linear_op)
 
@@ -306,6 +317,7 @@ def precompute_mpi(comm,
 
     # Separate complex part of RHS into real and imaginary parts, and apply
     # the real and imaginary parts of the projection operator separately.
+
     # Do this for each frequency separately
     b = np.zeros((freqs.size, Npix), dtype=np.float64)
     for j in range(freq_chunk.size):
@@ -321,6 +333,7 @@ def precompute_mpi(comm,
 
     # Reduce (sum) operation on b (sums over all chunks in freq and time)
     linear_rhs = np.zeros((1,1), dtype=b.dtype) # dummy data for non-root workers
+
     if myid == 0:
         linear_rhs = np.zeros_like(b)
     if comm is not None:

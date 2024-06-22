@@ -5,7 +5,7 @@ from scipy.signal.windows import blackmanharris as BH
 from scipy.stats import invgamma
 from scipy.optimize import minimize, Bounds
 
-#from multiprocess import Pool
+# from multiprocess import Pool
 from . import utils
 import os, time
 
@@ -151,8 +151,7 @@ def gcr_fgmodes_1d(
 
 
 def gcr_fgmodes(
-    vis, w, matrices, fgmodes, f0=None, nproc=1, map_estimate=False,
-    verbose=False
+    vis, w, matrices, fgmodes, f0=None, nproc=1, map_estimate=False, verbose=False
 ):
     """
     Perform the GCR step on all time samples, using parallelisation if
@@ -199,18 +198,20 @@ def gcr_fgmodes(
     if verbose:
         st = time.time()
     with Pool(nproc) as pool:
-        samples, residuals, info = zip(*pool.map(
-            lambda idx: gcr_fgmodes_1d(
-                vis=vis[idx],
-                w=w,
-                matrices=matrices,
-                fgmodes=fgmodes,
-                f0=f0,
-                map_estimate=map_estimate,
-                verbose=verbose
-            ),
-            idxs,
-        ))
+        samples, residuals, info = zip(
+            *pool.map(
+                lambda idx: gcr_fgmodes_1d(
+                    vis=vis[idx],
+                    w=w,
+                    matrices=matrices,
+                    fgmodes=fgmodes,
+                    f0=f0,
+                    map_estimate=map_estimate,
+                    verbose=verbose,
+                ),
+                idxs,
+            )
+        )
     samples = np.array(samples).reshape((vis.shape[0], -1))
     residuals = np.array(residuals)
     info = np.array(info)
@@ -231,19 +232,19 @@ def covariance_from_pspec(ps, fourier_op):
     Nfreqs = ps.size
     Csigfft = np.zeros((Nfreqs, Nfreqs), dtype=complex)
     Csigfft[np.diag_indices(Nfreqs)] = ps
-    C = (fourier_op.T.conj() @ Csigfft @ fourier_op)
+    C = fourier_op.T.conj() @ Csigfft @ fourier_op
     return C
 
 
 def build_matrices(Nparams, flags, signal_S, Ninv, fgmodes):
     """
     Calculate matrices and build A in Ax=b for the GCR step.
-    
+
     Parameters:
         Nparams (int):
             Number of model parameters.
         flags (array_like):
-            Array of flags (1 for unflagged, 0 for flagged), with shape 
+            Array of flags (1 for unflagged, 0 for flagged), with shape
             `(Nfreqs,)`.
         signal_S (array_like):
             Current value of the EoR signal frequency-frequency covariance.
@@ -255,14 +256,14 @@ def build_matrices(Nparams, flags, signal_S, Ninv, fgmodes):
             Foreground mode array, of shape (Nfreqs, Nmodes). This should be
             derived from a PCA decomposition of a model foreground covariance
             matrix or similar.
-    
+
     Returns:
         matrices (list of array_like):
             List containing necessary GCR operators (`matrices[0]`) and the
             linear operator A in the GCR Ax=b solve step.
     """
     Nfreqs = signal_S.shape[0]
-    
+
     # Construct matrix structure
     matrices = [0, 0]
     matrices[0] = np.zeros((4, Nfreqs, Nfreqs), dtype=complex)
@@ -283,13 +284,21 @@ def build_matrices(Nparams, flags, signal_S, Ninv, fgmodes):
 
     matrices[1][0] = A
     matrices[1][1] = np.linalg.pinv(A)  # pseudo-inverse, to be used as a preconditioner
-    
+
     return matrices
 
 
 def gibbs_step_fgmodes(
-    vis, flags, signal_S, fgmodes, Ninv, ps_prior=None, f0=None, nproc=1,
-    map_estimate=False, verbose=False
+    vis,
+    flags,
+    signal_S,
+    fgmodes,
+    Ninv,
+    ps_prior=None,
+    f0=None,
+    nproc=1,
+    map_estimate=False,
+    verbose=False,
 ):
     """
     Perform a single Gibbs iteration for a Gibbs sampling scheme using a foreground model
@@ -300,7 +309,7 @@ def gibbs_step_fgmodes(
             Array of complex visibilities for a single baseline, of shape
             `(Ntimes, Nfreqs)`.
         flags (array_like):
-            Array of flags (1 for unflagged, 0 for flagged), with shape 
+            Array of flags (1 for unflagged, 0 for flagged), with shape
             `(Nfreqs,)`.
         signal_S (array_like):
             Current value of the EoR signal frequency-frequency covariance.
@@ -348,8 +357,14 @@ def gibbs_step_fgmodes(
 
     # (1) Solve GCR equation to get EoR signal and foreground amplitude realisations
     cr = gcr_fgmodes(
-        vis=vis, w=flags, matrices=matrices, fgmodes=fgmodes, f0=f0, nproc=nproc,
-        map_estimate=map_estimate, verbose=verbose
+        vis=vis,
+        w=flags,
+        matrices=matrices,
+        fgmodes=fgmodes,
+        f0=f0,
+        nproc=nproc,
+        map_estimate=map_estimate,
+        verbose=verbose,
     )
 
     # Extract separate signal and FG parts from the solution
@@ -357,12 +372,14 @@ def gibbs_step_fgmodes(
     fg_amps = cr[:, -fgmodes.shape[1] :]
 
     # Full model of data is sum of EoR (GCR) + FG model
-    model = signal_cr + fg_amps @ fgmodes.T  # np.einsum('ijk,lk->ijl', fg_amps, fgmodes)
+    model = (
+        signal_cr + fg_amps @ fgmodes.T
+    )  # np.einsum('ijk,lk->ijl', fg_amps, fgmodes)
     # Chi-squared is computed as the sum of ( |data - model| / noise )^2,
     # i.e. as a sum of standard normal random variables.
     # FIXME: this will need to be changed to account for time-dependent
     # flags (i.e. when we have a different N per time).
-    chisq = np.abs(vis - model)**2 * Ninv.diagonal()[None, :]
+    chisq = np.abs(vis - model) ** 2 * Ninv.diagonal()[None, :]
     if verbose:
         chisq_mean = chisq[:, flags].mean()
         if chisq_mean > 10:
@@ -383,18 +400,20 @@ def gibbs_step_fgmodes(
     # WARNING: np.linalg.inv should be avoided for general, dense matrices.
     # S_sample should be diagonally dominant and thus this should be okay.
     Sinv = np.linalg.inv(S_sample)
-    ln_post = np.sum(np.diagonal(
-        -(
-            (vis - model)[:, flags].conj()
-            @ Ninv[flags][:, flags]
-            @ (vis - model)[:, flags].T
+    ln_post = np.sum(
+        np.diagonal(
+            -(
+                (vis - model)[:, flags].conj()
+                @ Ninv[flags][:, flags]
+                @ (vis - model)[:, flags].T
+            )
+            - (
+                signal_cr[:, flags].conj()
+                @ Sinv[flags][:, flags]
+                @ signal_cr[:, flags].T
+            )
         )
-        - (
-            signal_cr[:, flags].conj()
-            @ Sinv[flags][:, flags]
-            @ signal_cr[:, flags].T
-        )
-    ))
+    )
     ln_post = ln_post.real
     if verbose:
         print(f"{ln_post:<12.1f}")

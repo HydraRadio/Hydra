@@ -1,9 +1,5 @@
 import numpy as np
-import pylab as plt
-import scipy.sparse
 import numpy.fft as fft
-
-from .utils import flatten_vector, reconstruct_vector
 
 
 def apply_sqrt_pspec(sqrt_pspec, v, group_id, ifft=False):
@@ -85,10 +81,10 @@ def apply_operator(v, inv_noise_var, sqrt_pspec, group_id, gains, ants, antpairs
     assert len(antpairs) == v.shape[0]
 
     # Apply sqrt power spectrum, inverse FFT, and divide by noise variance
-    y = apply_sqrt_pspec(sqrt_pspec=sqrt_pspec,
-                         v=v,
-                         group_id=group_id,
-                         ifft=True) * inv_noise_var
+    y = (
+        apply_sqrt_pspec(sqrt_pspec=sqrt_pspec, v=v, group_id=group_id, ifft=True)
+        * inv_noise_var
+    )
 
     # Multiply by gains, then FFT back
     for k, bl in enumerate(antpairs):
@@ -100,16 +96,14 @@ def apply_operator(v, inv_noise_var, sqrt_pspec, group_id, gains, ants, antpairs
 
         # Apply S^1/2 to input vector, transform to data space, multiply by
         # gain product, and divide by noise variance
-        y[k, :, :] = fft.fft2(  y[k,:,:]
-                              * gains[i1] * gains[i2].conj()
-                              * gains[i2] * gains[i1].conj()
-                              )
+        y[k, :, :] = fft.fft2(
+            y[k, :, :] * gains[i1] * gains[i2].conj() * gains[i2] * gains[i1].conj()
+        )
 
     # Return full application of the LHS operator
-    return v + apply_sqrt_pspec(sqrt_pspec=sqrt_pspec,
-                                v=y,
-                                group_id=group_id,
-                                ifft=False)
+    return v + apply_sqrt_pspec(
+        sqrt_pspec=sqrt_pspec, v=y, group_id=group_id, ifft=False
+    )
 
 
 def construct_rhs(
@@ -189,7 +183,7 @@ def construct_rhs(
         i1 = np.where(ants == ant1)[0][0]
         i2 = np.where(ants == ant2)[0][0]
 
-        y[k,:,:] = fft.fft2(y[k,:,:] * gains[i1].conj() * gains[i2])
+        y[k, :, :] = fft.fft2(y[k, :, :] * gains[i1].conj() * gains[i2])
 
     # Apply sqrt(S) operator
     y = apply_sqrt_pspec(sqrt_pspec, y, group_id, ifft=False)
