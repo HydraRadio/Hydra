@@ -68,7 +68,8 @@ def generate_random_ptsrc_catalogue(
 
 
 def run_example_simulation(
-    args, times, freqs, output_dir, ra, dec, ptsrc_amps, array_latitude, verbose=False
+    times, freqs, output_dir, ra, dec, ptsrc_amps, array_latitude, 
+    beam_type='gaussian', hex_array=(3,4),
 ):
     """
     Run an example visibility simulation for testing purposes, using
@@ -76,8 +77,6 @@ def run_example_simulation(
     array layout.
 
     Parameters:
-        args (config):
-            An argparse parser object that contains configuration properties.
         times (array_like):
             Time array, i.e. local sidereal time (LST), in radians.
         freqs (array_like):
@@ -90,6 +89,12 @@ def run_example_simulation(
             Amplitude or flux values at an unspecified reference frequency.
         array_latitude (float):
             Array latitude in radians.
+        hex_array (tuple):
+            Tuple of length 2 specifying the number of antennas in the first 
+            and central rows of a regular symmetric hexagonal array.
+        beam_type (str):
+            The type of beam model to use for the simulations. Can be 
+            'polybeam' or 'gaussian'.
 
     Returns:
         model0 (array_like):
@@ -104,11 +109,11 @@ def run_example_simulation(
             in the order: `(ants, ant_pos, antpairs, ants1, ants2)`.
     """
     # Dimensions of simulation
-    hex_array = tuple(args.hex_array)
+    hex_array = tuple(hex_array)
     assert len(hex_array) == 2, "hex-array argument must have length 2."
 
     # Set up array and data properties
-    ant_pos = build_hex_array(hex_spec=args.hex_array, d=14.6)
+    ant_pos = build_hex_array(hex_spec=hex_array, d=14.6)
     ants = np.array(list(ant_pos.keys()))
     Nants = len(ants)
 
@@ -128,7 +133,7 @@ def run_example_simulation(
     ##np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
 
     # Beams
-    if "polybeam" in args.beam_sim_type.lower():
+    if "polybeam" in beam_type.lower():
         # PolyBeam fitted to HERA Fagnoni beam
         beam_coeffs = [
             0.29778665,

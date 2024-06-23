@@ -209,15 +209,16 @@ if __name__ == '__main__':
                           % ra.size, 'c')
             status(None, "Simulation beam type: %s" % args.beam_sim_type, 'y')
 
-    model0_chunk, fluxes_chunk, beams, ant_info = run_example_simulation(
-                                                       args=args, 
+    model0_chunk, fluxes_chunk, beams, ant_info = run_example_simulation( 
                                                        output_dir=output_dir, 
                                                        times=time_chunk,
                                                        freqs=freq_chunk,
                                                        ra=ra, 
                                                        dec=dec, 
                                                        ptsrc_amps=ptsrc_amps,
-                                                       array_latitude=array_latitude)
+                                                       array_latitude=array_latitude,
+                                                       hex_array=args.hex_array,
+                                                       beam_type=args.beam_sim_type)
     status(myid, "Finished ptsrc simulation in %6.3f sec" % (time.time() - t0), colour='b')
     
     # Unpack antenna info
