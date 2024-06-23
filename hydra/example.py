@@ -30,7 +30,7 @@ def generate_random_ptsrc_catalogue(
         ra_bounds, dec_bounds (tuple of float):
             Tuples with the lower and upper bounds of the RA and Dec ranges.
             Sources will be placed according to a uniform random distribution
-            within the specified interval.
+            within the specified interval. In radians.
         logflux_bounds (tuple of float):
             The lower and upper bounds of log10(flux) at some reference
             frequency. The reference frequency is not specified here, so these

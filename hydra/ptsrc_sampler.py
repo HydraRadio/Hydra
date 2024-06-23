@@ -34,7 +34,13 @@ def precompute_mpi(
     The overall matrix operator can be computed by summing the matrix
     operator for the time and frequency chunks.
     """
-    myid = comm.Get_rank()
+    # Make sure ants is an array
+    ants = np.atleast_1d(ants)
+
+    if comm is not None:
+        myid = comm.Get_rank()
+    else:
+        myid = 0
 
     # Check input dimensions
     assert data_chunk.shape == (len(antpairs), freq_chunk.size, time_chunk.size)
@@ -76,7 +82,10 @@ def precompute_mpi(
     if myid == 0:
         linear_op = np.zeros_like(my_linear_op)
 
-    comm.Reduce(my_linear_op, linear_op, op=MPI_SUM, root=0)
+    if comm is not None:
+        comm.Reduce(my_linear_op, linear_op, op=MPI_SUM, root=0)
+    else:
+        linear_op = my_linear_op
 
     # Include prior and identity terms to finish constructing LHS operator on root worker
     if myid == 0:
@@ -118,7 +127,11 @@ def precompute_mpi(
     linear_rhs = np.zeros((1,), dtype=b.dtype)  # dummy data for non-root workers
     if myid == 0:
         linear_rhs = np.zeros_like(b)
-    comm.Reduce(b, linear_rhs, op=MPI_SUM, root=0)
+    
+    if comm is not None:
+        comm.Reduce(b, linear_rhs, op=MPI_SUM, root=0)
+    else:
+        linear_rhs = b
 
     # (Term 2): \omega_a
     if myid == 0:
