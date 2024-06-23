@@ -53,7 +53,6 @@ class TestRegionSampler(unittest.TestCase):
         self.assertTrue(np.all(~np.isnan(sky_maps4)))
 
         # Check RA and Dec bounds
-        print(np.rad2deg(dec1).astype(int))
         self.assertTrue( np.all(np.logical_and(ra1 >= np.deg2rad(0.), ra1 < np.deg2rad(360.))) )
         self.assertTrue( np.all(np.logical_and(ra2 >= np.deg2rad(0.), ra2 < np.deg2rad(360.))) )
         self.assertTrue( np.all(np.logical_and(ra3 >= np.deg2rad(0.), ra3 < np.deg2rad(360.))) )
