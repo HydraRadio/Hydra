@@ -37,4 +37,9 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
       run: |
-        pytest --cov-report term-missing --cov=hydra
+        pytest --junitxml=pytest.xml --cov-report=term-missing xml:coverage.xml --cov=hydra
+    - name: Pytest Coverage Comment
+      uses: MishaKav/pytest-coverage-comment@v1.1.51
+      with:
+        pytest-xml-coverage-path: ./coverage.xml
+        junitxml-path: ./pytest.xml
