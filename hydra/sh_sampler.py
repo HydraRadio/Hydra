@@ -22,6 +22,7 @@ from astropy.coordinates import EarthLocation, SkyCoord
 from astropy.coordinates.builtin_frames import AltAz, ICRS
 from astropy.time import Time
 import time
+import pygdsm
 
 
 def get_em_ell_idx(lmax):
@@ -190,7 +191,6 @@ def vis_proj_operator_no_rot(
         Nautos = len(auto_ants) * len(freqs) * len(lsts)
         autos_2D = autos.reshape(Nautos, 2 * len(ell) - (lmax + 1))
 
-    if autos_only == False and include_autos == False:
         return vis_response_2D, autos_2D, ell, m
     else:
         return vis_response_2D, ell, m
@@ -214,16 +214,22 @@ def alms2healpy(alms, lmax):
             Array of zeros except for the specified mode.
             The array represents all positive (+m) modes including zeroth modes.
     """
+    if len(alms.shape) == 1:
+        # Combine real and imaginary parts into alm format expected by healpy
+        real_imag_split_index = int((np.size(alms) + (lmax + 1)) / 2)
+        real = alms[:real_imag_split_index]
 
-    real_imag_split_index = int((np.size(alms) + (lmax + 1)) / 2)
-    real = alms[:real_imag_split_index]
+        add_imag_m0_modes = np.zeros(lmax + 1) # add m=0 imag. modes back in
+        imag = np.concatenate((add_imag_m0_modes, alms[real_imag_split_index:]))
+        healpy_modes = real + 1.0j * imag
+        return healpy_modes
 
-    add_imag_m0_modes = np.zeros(lmax + 1)
-    imag = np.concatenate((add_imag_m0_modes, alms[real_imag_split_index:]))
+    elif len(alms.shape) == 2:
+        # Handle 2D array case (loop over entries) with a recursion
+        return np.array([alms2healpy(modes, lmax) for modes in alms])
 
-    healpy_modes = real + 1.0j * imag
-
-    return healpy_modes
+    else:
+        raise ValueError("alms array must either have shape (Nmodes,) or (Nmaps, Nmodes)")
 
 
 def healpy2alms(healpy_modes):
@@ -245,10 +251,19 @@ def healpy2alms(healpy_modes):
             Imag part is smaller as the m=0 modes shouldn't contain and
             imaginary part.
     """
-    lmax = hp.sphtfunc.Alm.getlmax(healpy_modes.size)  # to remove the m=0 imag modes
-    alms = np.concatenate((healpy_modes.real, healpy_modes.imag[(lmax + 1) :]))
+    if len(healpy_modes.shape) == 1:
+        # Split healpy mode array into read and imaginary parts, with m=0 
+        # imaginary modes excluded (since they are always zero for a real field)
+        lmax = hp.sphtfunc.Alm.getlmax(healpy_modes.size)  # to remove the m=0 imag modes
+        alms = np.concatenate((healpy_modes.real, healpy_modes.imag[(lmax + 1) :]))
+        return alms
 
-    return alms
+    elif len(healpy_modes.shape) == 2:
+        # Loop through elements of the 2D input array (recursive) 
+        return np.array([healpy2alms(_map) for _map in healpy_modes])
+
+    else:
+        raise ValueError("Input array must have shape (Nmodes,) or (Nmaps, Nmodes).")
 
 
 def get_healpy_from_gsm(
@@ -287,14 +302,18 @@ def get_healpy_from_gsm(
 
     """
     # Instantiate GSM model and extract alms
-    gsm_2016 = GlobalSkyModel2016(freq_unit="MHz", resolution=resolution)
+    try:
+        gsm_2016 = pygdsm.GlobalSkyModel2016(freq_unit="MHz", resolution=resolution)
+    except(AttributeError):
+        gsm_2016 = pygdsm.GlobalSkyModel16(freq_unit="MHz", resolution=resolution)
+    
     gsm_map = gsm_2016.generate(freqs=freq)
     gsm_upgrade = hp.ud_grade(gsm_map, nside)
-    healpy_modes_gal = hp.map2alm(maps=gsm_upgrade, lmax=lmax)
+    healpy_modes_gal = np.array([hp.map2alm(maps=_map, lmax=lmax) for _map in gsm_upgrade])
 
     # By default it is in gal-coordinates, convert to equatorial
     rot_gal2eq = hp.Rotator(coord="GC")
-    healpy_modes_eq = rot_gal2eq.rotate_alm(healpy_modes_gal)
+    healpy_modes_eq = np.array([rot_gal2eq.rotate_alm(_modes) for _modes in healpy_modes_gal])
 
     if output_model == False and output_map == False:  # default
         return healpy_modes_eq

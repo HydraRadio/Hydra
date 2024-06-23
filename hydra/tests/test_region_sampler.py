@@ -65,9 +65,9 @@ class TestRegionSampler(unittest.TestCase):
         
         # Check that higher-res works too
         ra2a, dec2a, sky_maps2a = region_sampler.get_diffuse_sky_model_pixels(freqs, 
-                                                                              nside=32, 
+                                                                              nside=16, 
                                                                               sky_model='gsm2016')
-        healpix_npix = 12 * 32**2 # (Npix = 12 * Nside^2)
+        healpix_npix = 12 * 16**2 # (Npix = 12 * Nside^2)
         self.assertEqual(ra2a.size, healpix_npix)
 
 

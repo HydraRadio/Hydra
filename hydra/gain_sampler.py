@@ -303,11 +303,11 @@ def apply_operator_mpi(
 
 # --------------------------
 
-
+"""
 def nonfunctioning_apply_linear_op_mpi(
     comm, ants, antpairs, Fbasis, vec, vec_shape, inv_noise_var, gain_pspec_sqrt, ggV
 ):
-    """
+    \"""
     This was an attempted MPI rewrite of the linear operator function using a
     different mathematical approach, but it seems to have a bug.
 
@@ -315,7 +315,7 @@ def nonfunctioning_apply_linear_op_mpi(
 
     Assume that only the root worker has the correct x vector and distribute
     it.
-    """
+    \"""
     myid = comm.Get_rank()
 
     # FIXME: Need to handle real and imaginary parts properly
@@ -449,7 +449,7 @@ def nonfunctioning_apply_linear_op_mpi(
 
 
 def legacy_apply_sqrt_pspec(sqrt_pspec, x):
-    """
+    \"""
     Apply the square root of the power spectrum to a set of complex Fourier
     coefficients. This is a way of implementing the operation "S^1/2 x" if S is
     diagonal, represented only by a 2D power spectrum.
@@ -467,7 +467,7 @@ def legacy_apply_sqrt_pspec(sqrt_pspec, x):
         z (array_like):
             Array of complex Fourier coefficients that have been multiplied by
             the sqrt of the power spectrum. Same shape as x.
-    """
+    \"""
     assert len(x.shape) == 3, "x must have shape (Nants, Ntau, Nfrate)"
     if len(sqrt_pspec.shape) == 3:
         return sqrt_pspec * x
@@ -478,7 +478,7 @@ def legacy_apply_sqrt_pspec(sqrt_pspec, x):
 def legacy_apply_operator(
     x, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis, reduced_idxs=None
 ):
-    r"""
+    r\"""
     Apply LHS operator to a vector of Fourier coefficients.
 
     Parameters:
@@ -504,7 +504,7 @@ def legacy_apply_operator(
             Array of complex visibility model values, of shape (Nvis, Ntimes,
             Nfreqs).
             $m_{ij} = \bar{g}_i \bar{g}_j^\dagger V_{ij}$.
-    """
+    \"""
     gain_shape = x.shape
     vis_shape = inv_noise_var.shape
     assert inv_noise_var.shape == model_vis.shape
@@ -535,7 +535,7 @@ def legacy_apply_operator(
 def legacy_construct_rhs(
     resid, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis, realisation=True
 ):
-    """
+    \"""
     Construct the RHS vector of the linear system. This will have shape
     (Nants, Ntau, Nfrate).
 
@@ -564,7 +564,7 @@ def legacy_construct_rhs(
             the Wiener filter terms (False).
 
 
-    """
+    \"""
     # fft: data -> fourier
     # ifft: fourier -> data
     Nvis, Ntimes, Nfreqs = resid.shape
@@ -612,3 +612,4 @@ def legacy_construct_rhs(
 
     # Add the transformed Terms 1+3 to b vector
     return b + yy
+"""
