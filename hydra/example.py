@@ -27,10 +27,12 @@ def generate_random_ptsrc_catalogue(
     Parameters:
         Nptsrc (int):
             Number of point sources in catalogue.
-        ra_bounds, dec_bounds (tuple of float):
-            Tuples with the lower and upper bounds of the RA and Dec ranges.
+        ra_bounds (tuple of float):
+            Tuple with the lower and upper bounds of the RA range, in radians. 
             Sources will be placed according to a uniform random distribution
-            within the specified interval. In radians.
+            within the specified interval.
+        dec_bounds (tuple of float):
+            Same as above, but for the declination range.
         logflux_bounds (tuple of float):
             The lower and upper bounds of log10(flux) at some reference
             frequency. The reference frequency is not specified here, so these
@@ -39,8 +41,10 @@ def generate_random_ptsrc_catalogue(
             log10(flux).
 
     Returns:
-        ra, dec (array_like):
-            RA and Dec values for each source, in radians.
+        ra (array_like):
+            RA values for the sources, in radians.
+        dec (array_like):
+            Dec values for the sources, in radians.
         ptsrc_amps (array_like):
             Amplitude or flux values at an unspecified reference frequency.
     """
@@ -83,8 +87,10 @@ def run_example_simulation(
             Frequency array, in MHz.
         output_dir (str):
             Unused.
-        ra, dec (array_like):
-            RA and Dec values for each source, in radians.
+        ra (array_like):
+            RA values for the sources, in radians.
+        dec (array_like):
+            Dec values for the sources, in radians.
         ptsrc_amps (array_like):
             Amplitude or flux values at an unspecified reference frequency.
         array_latitude (float):
