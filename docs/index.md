@@ -73,6 +73,7 @@ sizes, but for now the main limitation is the amount of RAM available on each no
 
 ## Learn about the code and different 'heads' of Hydra
 
+* See the [API documentation](./api/)
 * Run the example script, [example.py](example.md)
 * Read the [frequently-asked questions](faq.md) about the code and maths
 * Learn about the different ["heads"](heads.md) (conditional distribution samplers) of Hydra.
