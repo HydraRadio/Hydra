@@ -34,7 +34,7 @@ jobs:
           python-version: 3.9
       - run: |
             pip install mkdocs mkdocstrings[python]
-            mkdocs build --config-file ./docs/apidocs/mkdocs.yml --site-dir api/
+            mkdocs build --config-file ./docs/apidocs/mkdocs.yml --site-dir ../api/
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Build with Jekyll
