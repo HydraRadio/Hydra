@@ -446,7 +446,7 @@ if __name__ == '__main__':
     if myid == 0:
         status(None, "Ptsrc amp. prior level: %s" % ptsrc_amp_prior_level, colour='b')
     if calsrc:
-        amp_prior_std[calsrc_idx] = calsrc_std
+        ptsrc_amp_prior_std[calsrc_idx] = calsrc_std
 
     # Precompute gain perturbation projection operators
     A_real, A_imag = None, None
