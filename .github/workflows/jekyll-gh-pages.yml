@@ -45,6 +45,7 @@ jobs:
             pip install mkdocs mkdocstrings[python]
             #mkdocs gh-deploy --config-file ./docs/api/mkdocs.yml --force --site-dir api/
             mkdocs build --config-file ./docs/api/mkdocs.yml --site-dir api/
+            ls -lh ./_site/
             cp -r ./docs/api/api ./_site/api/
 
   # Deployment job
