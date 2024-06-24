@@ -43,7 +43,9 @@ jobs:
           python-version: 3.9
       - run: |
             pip install mkdocs mkdocstrings[python]
-            mkdocs gh-deploy --config-file ./docs/api/mkdocs.yml --force --site-dir api/
+            #mkdocs gh-deploy --config-file ./docs/api/mkdocs.yml --force --site-dir api/
+            mkdocs build --config-file ./docs/api/mkdocs.yml --site-dir api/
+            cp -r ./docs/api/api ./_site/api/
 
   # Deployment job
   deploy:
