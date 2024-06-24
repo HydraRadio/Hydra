@@ -43,17 +43,17 @@ def get_diffuse_sky_model_pixels(freqs, nside=32, sky_model="gsm2016"):
         "lfsm",
     ], "Available sky models: 'gsm2008', 'gsm2016', 'haslam', 'lfsm'"
     if sky_model == "gsm2008":
-        model = pygdsm.GlobalSkyModel(freq_unit="MHz", include_cmb=False)
+        model = pygdsm.GlobalSkyModel(freq_unit="MHz")
     if sky_model == "gsm2016":
         try:
-            model = pygdsm.GlobalSkyModel2016(freq_unit="MHz", include_cmb=False)
+            model = pygdsm.GlobalSkyModel2016(freq_unit="MHz")
         except(AttributeError):
             # Different versions of pygdsm changed the API
-            model = pygdsm.GlobalSkyModel16(freq_unit="MHz", include_cmb=False)
+            model = pygdsm.GlobalSkyModel16(freq_unit="MHz")
     if sky_model == "haslam":
-        model = pygdsm.HaslamSkyModel(freq_unit="MHz", include_cmb=False)
+        model = pygdsm.HaslamSkyModel(freq_unit="MHz")
     if sky_model == "lfsm":
-        model = pygdsm.LowFrequencySkyModel(freq_unit="MHz", include_cmb=False)
+        model = pygdsm.LowFrequencySkyModel(freq_unit="MHz")
 
     model.generate(freqs_MHz)
     sky_maps = model.generated_map_data  # (Nfreqs, Npix), should be in Kelvin
