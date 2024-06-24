@@ -206,6 +206,8 @@ def vis_sim_per_source(
     # Intensity distribution (sqrt) and antenna positions. Does not support
     # negative sky. Factor of 0.5 accounts for splitting Stokes I between
     # polarization channels
+    if np.any(I_sky < 0.):
+        raise ValueError("Sky model has negative values.")
     Isqrt = np.sqrt(0.5 * I_sky).astype(real_dtype)
     antpos = antpos.astype(real_dtype)
 
