@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        
+        <link rel="shortcut icon" href="../img/favicon.ico">
+        <title>Example simulations (example) - Hydra API documentation</title>
+        <link href="../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../css/brands.min.css" rel="stylesheet">
+        <link href="../css/solid.min.css" rel="stylesheet">
+        <link href="../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../assets/_mkdocstrings.css" rel="stylesheet">
+        <link href="../assets/_mkdocstrings.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script> 
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-dark bg-primary">
+            <div class="container">
+                <a class="navbar-brand" href="..">Hydra API documentation</a>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href=".." class="nav-link">Hydra API documentation</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="./" class="nav-link active" aria-current="page">Example simulations (example)</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="../ptsrc_sampler/" class="nav-link">Point source sampler (ptsrc_sampler)</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="../region_sampler/" class="nav-link">Region sampler (region_sampler)</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="../sh_sampler/" class="nav-link">Spherical harmonic sampler (sh_sampler)</a>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href=".." class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../ptsrc_sampler/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3"><div class="navbar-expand-md bs-sidebar hidden-print affix" role="complementary">
+    <div class="navbar-header">
+        <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" title="Table of Contents">
+            <span class="fa fa-angle-down"></span>
+        </button>
+    </div>
+
+    
+    <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+        <ul class="nav flex-column">
+            
+            <li class="nav-item" data-bs-level="1"><a href="#example-simulations-example" class="nav-link">Example simulations (example)</a>
+              <ul class="nav flex-column">
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.example" class="nav-link">example</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.example.generate_random_ptsrc_catalogue" class="nav-link">generate_random_ptsrc_catalogue</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.example.run_example_simulation" class="nav-link">run_example_simulation</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+              </ul>
+            </li>
+        </ul>
+    </div>
+</div></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="example-simulations-example">Example simulations (<code>example</code>)</h1>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<a id="hydra.example"></a>
+    <div class="doc doc-contents first">
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.example.generate_random_ptsrc_catalogue" class="doc doc-heading">
+            <code class="highlight language-python">generate_random_ptsrc_catalogue(Nptsrc, ra_bounds, dec_bounds, logflux_bounds=(-1.0, 2.0))</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Generate a catalogue of point sources with random positions and log(flux)
+values.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code>Nptsrc</code></td>
+            <td>
+                  <code>int</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of point sources in catalogue.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>ra_bounds</code></td>
+            <td>
+                  <code>tuple of float</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Tuple with the lower and upper bounds of the RA range, in radians. 
+Sources will be placed according to a uniform random distribution
+within the specified interval.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>dec_bounds</code></td>
+            <td>
+                  <code>tuple of float</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Same as above, but for the declination range.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>logflux_bounds</code></td>
+            <td>
+                  <code>tuple of float</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The lower and upper bounds of log10(flux) at some reference
+frequency. The reference frequency is not specified here, so these
+values can be treated purely as amplitude/scaling factors. Sources
+will be randomly assigned fluxes/amplitudes in this interval in
+log10(flux).</p>
+              </div>
+            </td>
+            <td>
+                  <code>(-1.0, 2.0)</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>ra</code></td>            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>RA values for the sources, in radians.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>dec</code></td>            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Dec values for the sources, in radians.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>ptsrc_amps</code></td>            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Amplitude or flux values at an unspecified reference frequency.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/example.py</code></summary>
+              <pre class="highlight"><code class="language-python">def generate_random_ptsrc_catalogue(
+    Nptsrc, ra_bounds, dec_bounds, logflux_bounds=(-1.0, 2.0)
+):
+    """
+    Generate a catalogue of point sources with random positions and log(flux)
+    values.
+
+    Parameters:
+        Nptsrc (int):
+            Number of point sources in catalogue.
+        ra_bounds (tuple of float):
+            Tuple with the lower and upper bounds of the RA range, in radians. 
+            Sources will be placed according to a uniform random distribution
+            within the specified interval.
+        dec_bounds (tuple of float):
+            Same as above, but for the declination range.
+        logflux_bounds (tuple of float):
+            The lower and upper bounds of log10(flux) at some reference
+            frequency. The reference frequency is not specified here, so these
+            values can be treated purely as amplitude/scaling factors. Sources
+            will be randomly assigned fluxes/amplitudes in this interval in
+            log10(flux).
+
+    Returns:
+        ra (array_like):
+            RA values for the sources, in radians.
+        dec (array_like):
+            Dec values for the sources, in radians.
+        ptsrc_amps (array_like):
+            Amplitude or flux values at an unspecified reference frequency.
+    """
+    # Get coordinate bounds
+    ra_low, ra_high = (min(ra_bounds), max(ra_bounds))
+    dec_low, dec_high = (min(dec_bounds), max(dec_bounds))
+    logflux_low, logflux_high = (min(logflux_bounds), max(logflux_bounds))
+
+    # Generate random point source locations
+    # RA goes from [0, 2 pi] and Dec from [-pi / 2, +pi / 2].
+    ra = np.random.uniform(low=ra_low, high=ra_high, size=Nptsrc)
+
+    # Inversion sample to get them uniform on the sphere, in case wide bounds are used
+    U = np.random.uniform(low=0, high=1, size=Nptsrc)
+    dsin = np.sin(dec_high) - np.sin(dec_low)
+    dec = np.arcsin(
+        U * dsin + np.sin(dec_low)
+    )  # np.arcsin returns on [-pi / 2, +pi / 2]
+
+    # Generate fluxes
+    ptsrc_amps = 10.0 ** np.random.uniform(
+        low=logflux_low, high=logflux_high, size=Nptsrc
+    )
+    return ra, dec, ptsrc_amps</code></pre>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.example.run_example_simulation" class="doc doc-heading">
+            <code class="highlight language-python">run_example_simulation(times, freqs, output_dir, ra, dec, ptsrc_amps, array_latitude, beam_type='gaussian', hex_array=(3, 4))</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Run an example visibility simulation for testing purposes, using
+semi-realistic beams, randomly placed point sources, and a hexagonal
+array layout.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code>times</code></td>
+            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Time array, i.e. local sidereal time (LST), in radians.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>freqs</code></td>
+            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Frequency array, in MHz.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>output_dir</code></td>
+            <td>
+                  <code>str</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Unused.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>ra</code></td>
+            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>RA values for the sources, in radians.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>dec</code></td>
+            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Dec values for the sources, in radians.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>ptsrc_amps</code></td>
+            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Amplitude or flux values at an unspecified reference frequency.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>array_latitude</code></td>
+            <td>
+                  <code>float</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Array latitude in radians.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>hex_array</code></td>
+            <td>
+                  <code>tuple</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Tuple of length 2 specifying the number of antennas in the first 
+and central rows of a regular symmetric hexagonal array.</p>
+              </div>
+            </td>
+            <td>
+                  <code>(3, 4)</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>beam_type</code></td>
+            <td>
+                  <code>str</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The type of beam model to use for the simulations. Can be 
+'polybeam' or 'gaussian'.</p>
+              </div>
+            </td>
+            <td>
+                  <code>&#39;gaussian&#39;</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>model0</code></td>            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Model visibility computed by the simulator. The shape is given
+by <code>extract_vis_from_sim()</code>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>fluxes</code></td>            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Point source fluxes, per source and per frequency.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>beams</code></td>            <td>
+                  <code>list</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>List of <code>UVBeam</code> or <code>AnalyticBeam</code>-compatible beam objects.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>ant_info</code></td>            <td>
+                  <code>tuple</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Tuple of arrays and dictionaries containing antenna information,
+in the order: <code>(ants, ant_pos, antpairs, ants1, ants2)</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/example.py</code></summary>
+              <pre class="highlight"><code class="language-python">def run_example_simulation(
+    times, freqs, output_dir, ra, dec, ptsrc_amps, array_latitude, 
+    beam_type='gaussian', hex_array=(3,4),
+):
+    """
+    Run an example visibility simulation for testing purposes, using
+    semi-realistic beams, randomly placed point sources, and a hexagonal
+    array layout.
+
+    Parameters:
+        times (array_like):
+            Time array, i.e. local sidereal time (LST), in radians.
+        freqs (array_like):
+            Frequency array, in MHz.
+        output_dir (str):
+            Unused.
+        ra (array_like):
+            RA values for the sources, in radians.
+        dec (array_like):
+            Dec values for the sources, in radians.
+        ptsrc_amps (array_like):
+            Amplitude or flux values at an unspecified reference frequency.
+        array_latitude (float):
+            Array latitude in radians.
+        hex_array (tuple):
+            Tuple of length 2 specifying the number of antennas in the first 
+            and central rows of a regular symmetric hexagonal array.
+        beam_type (str):
+            The type of beam model to use for the simulations. Can be 
+            'polybeam' or 'gaussian'.
+
+    Returns:
+        model0 (array_like):
+            Model visibility computed by the simulator. The shape is given
+            by `extract_vis_from_sim()`.
+        fluxes (array_like):
+            Point source fluxes, per source and per frequency.
+        beams (list):
+            List of `UVBeam` or `AnalyticBeam`-compatible beam objects.
+        ant_info (tuple):
+            Tuple of arrays and dictionaries containing antenna information,
+            in the order: `(ants, ant_pos, antpairs, ants1, ants2)`.
+    """
+    # Dimensions of simulation
+    hex_array = tuple(hex_array)
+    assert len(hex_array) == 2, "hex-array argument must have length 2."
+
+    # Set up array and data properties
+    ant_pos = build_hex_array(hex_spec=hex_array, d=14.6)
+    ants = np.array(list(ant_pos.keys()))
+    Nants = len(ants)
+
+    # Set up baselines
+    antpairs = []
+    for i in range(len(ants)):
+        for j in range(i, len(ants)):
+            if i != j:
+                # Exclude autos
+                antpairs.append((i, j))
+
+    ants1, ants2 = list(zip(*antpairs))
+
+    beta_ptsrc = -2.7
+    fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs, beta_ptsrc)
+    ##np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
+    ##np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
+
+    # Beams
+    if "polybeam" in beam_type.lower():
+        # PolyBeam fitted to HERA Fagnoni beam
+        beam_coeffs = [
+            0.29778665,
+            -0.44821433,
+            0.27338272,
+            -0.10030698,
+            -0.01195859,
+            0.06063853,
+            -0.04593295,
+            0.0107879,
+            0.01390283,
+            -0.01881641,
+            -0.00177106,
+            0.01265177,
+            -0.00568299,
+            -0.00333975,
+            0.00452368,
+            0.00151808,
+            -0.00593812,
+            0.00351559,
+        ]
+        beams = [
+            PolyBeam(beam_coeffs, spectral_index=-0.6975, ref_freq=1.0e8)
+            for ant in ants
+        ]
+    else:
+        beams = [
+            pyuvsim.analyticbeam.AnalyticBeam("gaussian", diameter=14.0) for ant in ants
+        ]
+
+    # Run a simulation
+    t0 = time.time()
+    _sim_vis = simulate_vis(
+        ants=ant_pos,
+        fluxes=fluxes,
+        ra=ra,
+        dec=dec,
+        freqs=freqs * 1e6,  # MHz -&gt; Hz
+        lsts=times,
+        beams=beams,
+        polarized=False,
+        precision=2,
+        latitude=array_latitude,
+        use_feed="x",
+    )
+    # timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
+    # print("(0) Simulation", time.time() - t0)
+
+    # Allocate computed visibilities to only the requested baselines (saves memory)
+    model0 = extract_vis_from_sim(ants, antpairs, _sim_vis)
+    del _sim_vis  # save some memory
+
+    # Return
+    ant_info = (ants, ant_pos, antpairs, ants1, ants2)
+    return model0, fluxes, beams, ant_info</code></pre>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../js/base.js"></script>
+        <script src="../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

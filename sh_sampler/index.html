@@ -1,0 +1,1468 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        
+        <link rel="shortcut icon" href="../img/favicon.ico">
+        <title>Spherical harmonic sampler (sh_sampler) - Hydra API documentation</title>
+        <link href="../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../css/brands.min.css" rel="stylesheet">
+        <link href="../css/solid.min.css" rel="stylesheet">
+        <link href="../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../assets/_mkdocstrings.css" rel="stylesheet">
+        <link href="../assets/_mkdocstrings.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script> 
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-dark bg-primary">
+            <div class="container">
+                <a class="navbar-brand" href="..">Hydra API documentation</a>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href=".." class="nav-link">Hydra API documentation</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="../example/" class="nav-link">Example simulations (example)</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="../ptsrc_sampler/" class="nav-link">Point source sampler (ptsrc_sampler)</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="../region_sampler/" class="nav-link">Region sampler (region_sampler)</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="./" class="nav-link active" aria-current="page">Spherical harmonic sampler (sh_sampler)</a>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href="../region_sampler/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" class="nav-link disabled">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3"><div class="navbar-expand-md bs-sidebar hidden-print affix" role="complementary">
+    <div class="navbar-header">
+        <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" title="Table of Contents">
+            <span class="fa fa-angle-down"></span>
+        </button>
+    </div>
+
+    
+    <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+        <ul class="nav flex-column">
+            
+            <li class="nav-item" data-bs-level="1"><a href="#spherical-harmonic-sampler-sh_sampler" class="nav-link">Spherical harmonic sampler (sh_sampler)</a>
+              <ul class="nav flex-column">
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.sh_sampler" class="nav-link">sh_sampler</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.sh_sampler.alms2healpy" class="nav-link">alms2healpy</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.sh_sampler.apply_lhs_no_rot" class="nav-link">apply_lhs_no_rot</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.sh_sampler.apply_lhs_no_rot_mpi" class="nav-link">apply_lhs_no_rot_mpi</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.sh_sampler.construct_rhs_no_rot" class="nav-link">construct_rhs_no_rot</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.sh_sampler.construct_rhs_no_rot_mpi" class="nav-link">construct_rhs_no_rot_mpi</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.sh_sampler.get_alms_from_gsm" class="nav-link">get_alms_from_gsm</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.sh_sampler.get_em_ell_idx" class="nav-link">get_em_ell_idx</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.sh_sampler.get_healpy_from_gsm" class="nav-link">get_healpy_from_gsm</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.sh_sampler.healpy2alms" class="nav-link">healpy2alms</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.sh_sampler.sample_cl" class="nav-link">sample_cl</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.sh_sampler.vis_proj_operator_no_rot" class="nav-link">vis_proj_operator_no_rot</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+              </ul>
+            </li>
+        </ul>
+    </div>
+</div></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="spherical-harmonic-sampler-sh_sampler">Spherical harmonic sampler (<code>sh_sampler</code>)</h1>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<a id="hydra.sh_sampler"></a>
+    <div class="doc doc-contents first">
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.sh_sampler.alms2healpy" class="doc doc-heading">
+            <code class="highlight language-python">alms2healpy(alms, lmax)</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Takes a real array split as [real, imag] (without the m=0 modes
+imag-part) and turns it into a complex array of alms (positive
+modes only) ordered as in HEALpy.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code>alms</code></td>
+            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Array of zeros except for the specified mode.
+The array represents all positive (+m) modes including zero
+and has double length, as real and imaginary values are split.
+The first half is the real values.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>healpy_modes</code></td>            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Array of zeros except for the specified mode.
+The array represents all positive (+m) modes including zeroth modes.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/sh_sampler.py</code></summary>
+              <pre class="highlight"><code class="language-python">def alms2healpy(alms, lmax):
+    """
+    Takes a real array split as [real, imag] (without the m=0 modes
+    imag-part) and turns it into a complex array of alms (positive
+    modes only) ordered as in HEALpy.
+
+    Parameters:
+        alms (array_like):
+            Array of zeros except for the specified mode.
+            The array represents all positive (+m) modes including zero
+            and has double length, as real and imaginary values are split.
+            The first half is the real values.
+
+    Returns:
+        healpy_modes (array_like):
+            Array of zeros except for the specified mode.
+            The array represents all positive (+m) modes including zeroth modes.
+    """
+    if len(alms.shape) == 1:
+        # Combine real and imaginary parts into alm format expected by healpy
+        real_imag_split_index = int((np.size(alms) + (lmax + 1)) / 2)
+        real = alms[:real_imag_split_index]
+
+        add_imag_m0_modes = np.zeros(lmax + 1) # add m=0 imag. modes back in
+        imag = np.concatenate((add_imag_m0_modes, alms[real_imag_split_index:]))
+        healpy_modes = real + 1.0j * imag
+        return healpy_modes
+
+    elif len(alms.shape) == 2:
+        # Handle 2D array case (loop over entries) with a recursion
+        return np.array([alms2healpy(modes, lmax) for modes in alms])
+
+    else:
+        raise ValueError("alms array must either have shape (Nmodes,) or (Nmaps, Nmodes)")</code></pre>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.sh_sampler.apply_lhs_no_rot" class="doc doc-heading">
+            <code class="highlight language-python">apply_lhs_no_rot(a_cr, inv_noise_var, inv_prior_var, vis_response)</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Apply LHS operator of linear system to an input vector.</p>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/sh_sampler.py</code></summary>
+              <pre class="highlight"><code class="language-python">def apply_lhs_no_rot(a_cr, inv_noise_var, inv_prior_var, vis_response):
+    """
+    Apply LHS operator of linear system to an input vector.
+    """
+    real_noise_term = (
+        vis_response.real.T @ (inv_noise_var[:, np.newaxis] * vis_response.real) @ a_cr
+    )
+    imag_noise_term = (
+        vis_response.imag.T @ (inv_noise_var[:, np.newaxis] * vis_response.imag) @ a_cr
+    )
+    signal_term = inv_prior_var * a_cr
+
+    left_hand_side = real_noise_term + imag_noise_term + signal_term
+    return left_hand_side</code></pre>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.sh_sampler.apply_lhs_no_rot_mpi" class="doc doc-heading">
+            <code class="highlight language-python">apply_lhs_no_rot_mpi(comm, a_cr, inv_noise_var, inv_prior_var, vis_response)</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Apply LHS operator of linear system to an input vector that has been
+split into chunks between MPI workers.</p>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/sh_sampler.py</code></summary>
+              <pre class="highlight"><code class="language-python">def apply_lhs_no_rot_mpi(comm, a_cr, inv_noise_var, inv_prior_var, vis_response):
+    """
+    Apply LHS operator of linear system to an input vector that has been
+    split into chunks between MPI workers.
+    """
+    if comm is not None:
+        myid = comm.Get_rank()
+    else:
+        myid = 0
+
+    # Synchronise a_cr across all workers
+    if myid != 0:
+        a_cr *= 0.
+    if comm is not None:
+        comm.Bcast(a_cr, root=0)
+
+    # Calculate noise terms for this rank
+    my_tot_noise_term = (
+        vis_response.real.T
+        @ (inv_noise_var.flatten()[:, np.newaxis] * vis_response.real)
+        @ a_cr
+        + vis_response.imag.T
+        @ (inv_noise_var.flatten()[:, np.newaxis] * vis_response.imag)
+        @ a_cr
+    )
+
+    # Do Reduce (sum) operation to get total operator on root node
+    tot_noise_term = np.zeros(
+        (1,), dtype=my_tot_noise_term.dtype
+    )  # dummy data for non-root workers
+    if myid == 0:
+        tot_noise_term = np.zeros_like(my_tot_noise_term)
+
+    if comm is not None:
+        comm.Reduce(my_tot_noise_term, tot_noise_term, op=MPI_SUM, root=0)
+    else:
+        tot_noise_term = my_tot_noise_term
+
+    # Return result (only root worker has correct result)
+    if myid == 0:
+        signal_term = inv_prior_var * a_cr
+        return tot_noise_term + signal_term
+    else:
+        return np.zeros_like(a_cr)</code></pre>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.sh_sampler.construct_rhs_no_rot" class="doc doc-heading">
+            <code class="highlight language-python">construct_rhs_no_rot(data, inv_noise_var, inv_prior_var, omega_0, omega_1, a_0, vis_response)</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Construct RHS of linear system.</p>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/sh_sampler.py</code></summary>
+              <pre class="highlight"><code class="language-python">def construct_rhs_no_rot(
+    data, inv_noise_var, inv_prior_var, omega_0, omega_1, a_0, vis_response
+):
+    """
+    Construct RHS of linear system.
+    """
+    real_data_term = vis_response.real.T @ (
+        inv_noise_var * data.real + np.sqrt(inv_noise_var) * omega_1.real
+    )
+    imag_data_term = vis_response.imag.T @ (
+        inv_noise_var * data.imag + np.sqrt(inv_noise_var) * omega_1.imag
+    )
+    prior_term = inv_prior_var * a_0 + np.sqrt(inv_prior_var) * omega_0
+
+    right_hand_side = real_data_term + imag_data_term + prior_term
+
+    return right_hand_side</code></pre>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.sh_sampler.construct_rhs_no_rot_mpi" class="doc doc-heading">
+            <code class="highlight language-python">construct_rhs_no_rot_mpi(comm, data, inv_noise_var, inv_prior_var, omega_a, omega_n, a_0, vis_response)</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Construct RHS of linear system from data split across multiple MPI workers.</p>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/sh_sampler.py</code></summary>
+              <pre class="highlight"><code class="language-python">def construct_rhs_no_rot_mpi(
+    comm, data, inv_noise_var, inv_prior_var, omega_a, omega_n, a_0, vis_response
+):
+    """
+    Construct RHS of linear system from data split across multiple MPI workers.
+    """
+    if comm is not None:
+        myid = comm.Get_rank()
+    else:
+        myid = 0
+
+    # Synchronise omega_a across all workers
+    if myid != 0:
+        omega_a *= 0.
+    if comm is not None:
+        comm.Bcast(omega_a, root=0)
+
+    # Calculate data terms
+    my_data_term = vis_response.real.T @ (
+        (inv_noise_var * data.real).flatten()
+        + np.sqrt(inv_noise_var).flatten() * omega_n.real.flatten()
+    ) + vis_response.imag.T @ (
+        (inv_noise_var * data.imag).flatten()
+        + np.sqrt(inv_noise_var).flatten() * omega_n.imag.flatten()
+    )
+
+    # Do Reduce (sum) operation to get total operator on root node
+    data_term = np.zeros(
+        (1,), dtype=my_data_term.dtype
+    )  # dummy data for non-root workers
+    if myid == 0:
+        data_term = np.zeros_like(my_data_term)
+
+    if comm is not None:
+        comm.Reduce(my_data_term, data_term, op=MPI_SUM, root=0)
+        comm.barrier()
+    else:
+        data_term = my_data_term
+
+    # Return result (only root worker has correct result)
+    if myid == 0:
+        return data_term + inv_prior_var * a_0 + np.sqrt(inv_prior_var) * omega_a
+    else:
+        return np.zeros_like(a_0)</code></pre>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.sh_sampler.get_alms_from_gsm" class="doc doc-heading">
+            <code class="highlight language-python">get_alms_from_gsm(freq, lmax, nside=64, resolution='low', output_model=False, output_map=False)</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Generate a real array split as [real, imag] (without the m=0 modes
+imag-part) from gsm 2016 (https://github.com/telegraphic/pygdsm)</p>
+      <p>freqs (float or array_like):
+    Frequency (in MHz) for which to return GSM model
+lmax (int):
+    Maximum ell value for alms
+nside (int):
+    The nside to upgrade/downgrade the map to. Default is nside=64.
+resolution (str):
+    if "low/lo/l":  nside = 64  (default)
+    if "hi/high/h": nside = 1024
+output_model (bool):
+    If output_model=True: Outputs model generated from the GSM data.
+    If output_model=False (default): no model output.
+output_map (bool):
+    If output_map=True: Outputs map generated from the GSM data.
+    If output_map=False (default): no map output.</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>alms</code></td>            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Array of zeros except for the specified mode.
+The array represents all positive (+m) modes including zero
+and has double length, as real and imaginary values are split.
+The first half is the real values.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>gsm_2016</code></td>            <td>
+                  <code>PyGDSM 2016 model</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If output_model=True: Outputs model generated from the GSM data.
+If output_model=False (default): no model output.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>gsm_map</code></td>            <td>
+                  <code>healpy map</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If output_map=True: Outputs map generated from the GSM data.
+If output_map=False (default): no map output.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/sh_sampler.py</code></summary>
+              <pre class="highlight"><code class="language-python">def get_alms_from_gsm(
+    freq, lmax, nside=64, resolution="low", output_model=False, output_map=False
+):
+    """
+    Generate a real array split as [real, imag] (without the m=0 modes
+    imag-part) from gsm 2016 (https://github.com/telegraphic/pygdsm)
+
+    Parameters:
+    freqs (float or array_like):
+        Frequency (in MHz) for which to return GSM model
+    lmax (int):
+        Maximum ell value for alms
+    nside (int):
+        The nside to upgrade/downgrade the map to. Default is nside=64.
+    resolution (str):
+        if "low/lo/l":  nside = 64  (default)
+        if "hi/high/h": nside = 1024
+    output_model (bool):
+        If output_model=True: Outputs model generated from the GSM data.
+        If output_model=False (default): no model output.
+    output_map (bool):
+        If output_map=True: Outputs map generated from the GSM data.
+        If output_map=False (default): no map output.
+
+    Returns:
+        alms (array_like):
+            Array of zeros except for the specified mode.
+            The array represents all positive (+m) modes including zero
+            and has double length, as real and imaginary values are split.
+            The first half is the real values.
+        gsm_2016 (PyGDSM 2016 model):
+            If output_model=True: Outputs model generated from the GSM data.
+            If output_model=False (default): no model output.
+        gsm_map (healpy map):
+            If output_map=True: Outputs map generated from the GSM data.
+            If output_map=False (default): no map output.
+    """
+    return healpy2alms(
+        get_healpy_from_gsm(freq, lmax, nside, resolution, output_model, output_map)
+    )</code></pre>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.sh_sampler.get_em_ell_idx" class="doc doc-heading">
+            <code class="highlight language-python">get_em_ell_idx(lmax)</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>With (m,l) ordering!</p>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/sh_sampler.py</code></summary>
+              <pre class="highlight"><code class="language-python">def get_em_ell_idx(lmax):
+    """
+    With (m,l) ordering!
+    """
+    ells_list = np.arange(0, lmax + 1)
+    em_real = np.arange(0, lmax + 1)
+    em_imag = np.arange(1, lmax + 1)
+    # ylabel = []
+
+    # First append all real (l,m) values
+    Nreal = 0
+    i = 0
+    idx = []
+    ems = []
+    ells = []
+    for em in em_real:
+        for ell in ells_list:
+            if ell &gt;= em:
+                idx.append(i)
+                ems.append(em)
+                ells.append(ell)
+                Nreal += 1
+                i += 1
+
+    # Then all imaginary -- note: no m=0 modes!
+    Nimag = 0
+    for em in em_imag:
+        for ell in ells_list:
+            if ell &gt;= em:
+                idx.append(i)
+                ems.append(em)
+                ells.append(ell)
+                Nimag += 1
+                i += 1
+    return ems, ells, idx</code></pre>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.sh_sampler.get_healpy_from_gsm" class="doc doc-heading">
+            <code class="highlight language-python">get_healpy_from_gsm(freq, lmax, nside=64, resolution='low', output_model=False, output_map=False)</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Generate an array of alms (HEALpy ordered) from gsm 2016
+(https://github.com/telegraphic/pygdsm)</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code>freqs</code></td>
+            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Frequency (in MHz) for which to return GSM model.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>lmax</code></td>
+            <td>
+                  <code>int</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Maximum ell value for alms</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>nside</code></td>
+            <td>
+                  <code>int</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The nside to upgrade/downgrade the map to. Default is nside=64.</p>
+              </div>
+            </td>
+            <td>
+                  <code>64</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>resolution</code></td>
+            <td>
+                  <code>str</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>if "low/lo/l":  The GSM nside = 64  (default)
+if "hi/high/h": The GSM nside = 1024</p>
+              </div>
+            </td>
+            <td>
+                  <code>&#39;low&#39;</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>output_model</code></td>
+            <td>
+                  <code>bool</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If output_model=True: Outputs model generated from the GSM data.
+If output_model=False (default): no model output.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>output_map</code></td>
+            <td>
+                  <code>bool</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If output_map=True: Outputs map generated from the GSM data.
+If output_map=False (default): no map output.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>healpy_modes</code></td>            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Complex array of alms with same size and ordering as in healpy (m,l)</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>gsm_2016</code></td>            <td>
+                  <code>PyGDSM 2016 model</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If output_model=True: Outputs model generated from the GSM data.
+If output_model=False (default): no model output.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>gsm_map</code></td>            <td>
+                  <code>healpy map</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If output_map=True: Outputs map generated from the GSM data.
+If output_map=False (default): no map output.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/sh_sampler.py</code></summary>
+              <pre class="highlight"><code class="language-python">def get_healpy_from_gsm(
+    freq, lmax, nside=64, resolution="low", output_model=False, output_map=False
+):
+    """
+    Generate an array of alms (HEALpy ordered) from gsm 2016
+    (https://github.com/telegraphic/pygdsm)
+
+    Parameters:
+        freqs (array_like):
+            Frequency (in MHz) for which to return GSM model.
+        lmax (int):
+            Maximum ell value for alms
+        nside (int):
+            The nside to upgrade/downgrade the map to. Default is nside=64.
+        resolution (str):
+            if "low/lo/l":  The GSM nside = 64  (default)
+            if "hi/high/h": The GSM nside = 1024
+        output_model (bool):
+            If output_model=True: Outputs model generated from the GSM data.
+            If output_model=False (default): no model output.
+        output_map (bool):
+            If output_map=True: Outputs map generated from the GSM data.
+            If output_map=False (default): no map output.
+
+    Returns:
+        healpy_modes (array_like):
+            Complex array of alms with same size and ordering as in healpy (m,l)
+        gsm_2016 (PyGDSM 2016 model):
+            If output_model=True: Outputs model generated from the GSM data.
+            If output_model=False (default): no model output.
+        gsm_map (healpy map):
+            If output_map=True: Outputs map generated from the GSM data.
+            If output_map=False (default): no map output.
+
+    """
+    # Instantiate GSM model and extract alms
+    try:
+        gsm_2016 = pygdsm.GlobalSkyModel2016(freq_unit="MHz", resolution=resolution)
+    except(AttributeError):
+        gsm_2016 = pygdsm.GlobalSkyModel16(freq_unit="MHz", resolution=resolution)
+
+    gsm_map = gsm_2016.generate(freqs=freq)
+    gsm_upgrade = hp.ud_grade(gsm_map, nside)
+    healpy_modes_gal = np.array([hp.map2alm(maps=_map, lmax=lmax) for _map in gsm_upgrade])
+
+    # By default it is in gal-coordinates, convert to equatorial
+    rot_gal2eq = hp.Rotator(coord="GC")
+    healpy_modes_eq = np.array([rot_gal2eq.rotate_alm(_modes) for _modes in healpy_modes_gal])
+
+    if output_model == False and output_map == False:  # default
+        return healpy_modes_eq
+    elif output_model == False and output_map == True:
+        return healpy_modes_eq, gsm_map
+    elif output_model == True and output_map == False:
+        return healpy_modes_eq, gsm_2016
+    else:
+        return healpy_modes_eq, gsm_2016, gsm_map</code></pre>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.sh_sampler.healpy2alms" class="doc doc-heading">
+            <code class="highlight language-python">healpy2alms(healpy_modes)</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Takes a complex array of alms (positive modes only) and turns into
+a real array split as [real, imag] making sure to remove the
+m=0 modes from the imag-part.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code>healpy_modes</code></td>
+            <td>
+                  <code>(array_like, complex)</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Array of zeros except for the specified mode.
+The array represents all positive (+m) modes including zeroth modes.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>alms</code></td>            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Array of zeros except for the specified mode.
+The array represents all positive (+m) modes including zero
+and is split into a real (first) and imag (second) part. The
+Imag part is smaller as the m=0 modes shouldn't contain and
+imaginary part.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/sh_sampler.py</code></summary>
+              <pre class="highlight"><code class="language-python">def healpy2alms(healpy_modes):
+    """
+    Takes a complex array of alms (positive modes only) and turns into
+    a real array split as [real, imag] making sure to remove the
+    m=0 modes from the imag-part.
+
+    Parameters:
+        healpy_modes (array_like, complex):
+            Array of zeros except for the specified mode.
+            The array represents all positive (+m) modes including zeroth modes.
+
+    Returns:
+        alms (array_like):
+            Array of zeros except for the specified mode.
+            The array represents all positive (+m) modes including zero
+            and is split into a real (first) and imag (second) part. The
+            Imag part is smaller as the m=0 modes shouldn't contain and
+            imaginary part.
+    """
+    if len(healpy_modes.shape) == 1:
+        # Split healpy mode array into read and imaginary parts, with m=0 
+        # imaginary modes excluded (since they are always zero for a real field)
+        lmax = hp.sphtfunc.Alm.getlmax(healpy_modes.size)  # to remove the m=0 imag modes
+        alms = np.concatenate((healpy_modes.real, healpy_modes.imag[(lmax + 1) :]))
+        return alms
+
+    elif len(healpy_modes.shape) == 2:
+        # Loop through elements of the 2D input array (recursive) 
+        return np.array([healpy2alms(_map) for _map in healpy_modes])
+
+    else:
+        raise ValueError("Input array must have shape (Nmodes,) or (Nmaps, Nmodes).")</code></pre>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.sh_sampler.sample_cl" class="doc doc-heading">
+            <code class="highlight language-python">sample_cl(alms, ell, m)</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Sample C_ell from an inverse gamma distribution, given a set of
+SH coefficients. See Eq. 7 of Eriksen et al. (arXiv:0709.1058).</p>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/sh_sampler.py</code></summary>
+              <pre class="highlight"><code class="language-python">def sample_cl(alms, ell, m):
+    """
+    Sample C_ell from an inverse gamma distribution, given a set of
+    SH coefficients. See Eq. 7 of Eriksen et al. (arXiv:0709.1058).
+    """
+    # Get m, ell ordering
+    m_vals, ell_vals, lm_idxs = get_em_ell_idx(lmax)
+
+    # Calculate sigma_ell = 1/(2 l + 1) sum_m |a_lm|^2
+    for ell in np.unique(ell_vals):
+        idxs = np.where(ell_vals == ell)</code></pre>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.sh_sampler.vis_proj_operator_no_rot" class="doc doc-heading">
+            <code class="highlight language-python">vis_proj_operator_no_rot(freqs, lsts, beams, ant_pos, lmax, nside, latitude=-0.5361913261514378, include_autos=False, autos_only=False, ref_freq=100.0, spectral_idx=0.0)</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Precompute the real and imaginary blocks of the visibility response
+operator. This should only be done once and then "apply_vis_response()"
+is used to get the actual visibilities.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code>freqs</code></td>
+            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Frequencies, in MHz.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>lsts</code></td>
+            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>LSTs (times) for the simulation. In radians.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>beams</code></td>
+            <td>
+                  <code>list of pyuvbeam</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>List of pyuveam objects, one for each antenna</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>ant_pos</code></td>
+            <td>
+                  <code>dict</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Dictionary of antenna positions, [x, y, z], in m. The keys should
+be the numerical antenna IDs.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>lmax</code></td>
+            <td>
+                  <code>int</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Maximum ell value. Determines the number of modes used.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>nside</code></td>
+            <td>
+                  <code>int</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Healpix nside to use for the calculation (longer baselines should
+use higher nside).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>latitude</code></td>
+            <td>
+                  <code>float</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Latitude in decimal format of the simulated array/visibilities.</p>
+              </div>
+            </td>
+            <td>
+                  <code>-0.5361913261514378</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>include_autos</code></td>
+            <td>
+                  <code>bool</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>True</code>, the auto baselines are included.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>ref_freq</code></td>
+            <td>
+                  <code>float</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Reference frequency for the spectral dependence, in MHz.</p>
+              </div>
+            </td>
+            <td>
+                  <code>100.0</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>spectral_idx</code></td>
+            <td>
+                  <code>float</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Spectral index, <code>beta</code>, for the spectral dependence,
+<code>~(freqs / ref_freq)^beta</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>0.0</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>vis_response_2D</code></td>            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Visibility operator (δV_ij) for each (l,m) mode, frequency,
+baseline and lst. Shape (Nvis, Nalms) where Nvis is Nbl x Ntimes x Nfreqs.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>ell</code></td>            <td>
+                  <code>array of int</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Array of ell-values for the visiblity simulation</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>m</code></td>            <td>
+                  <code>array of int</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Array of ell-values for the visiblity simulation</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/sh_sampler.py</code></summary>
+              <pre class="highlight"><code class="language-python">def vis_proj_operator_no_rot(
+    freqs,
+    lsts,
+    beams,
+    ant_pos,
+    lmax,
+    nside,
+    latitude=-0.5361913261514378,
+    include_autos=False,
+    autos_only=False,
+    ref_freq=100.0,
+    spectral_idx=0.0,
+):
+    """
+    Precompute the real and imaginary blocks of the visibility response
+    operator. This should only be done once and then "apply_vis_response()"
+    is used to get the actual visibilities.
+
+    Parameters:
+        freqs (array_like):
+            Frequencies, in MHz.
+        lsts (array_like):
+            LSTs (times) for the simulation. In radians.
+        beams (list of pyuvbeam):
+            List of pyuveam objects, one for each antenna
+        ant_pos (dict):
+            Dictionary of antenna positions, [x, y, z], in m. The keys should
+            be the numerical antenna IDs.
+        lmax (int):
+            Maximum ell value. Determines the number of modes used.
+        nside (int):
+            Healpix nside to use for the calculation (longer baselines should
+            use higher nside).
+        latitude (float):
+            Latitude in decimal format of the simulated array/visibilities.
+        include_autos (bool):
+            If `True`, the auto baselines are included.
+        ref_freq (float):
+            Reference frequency for the spectral dependence, in MHz.
+        spectral_idx (float):
+            Spectral index, `beta`, for the spectral dependence,
+            `~(freqs / ref_freq)^beta`.
+
+    Returns:
+        vis_response_2D (array_like):
+            Visibility operator (δV_ij) for each (l,m) mode, frequency,
+            baseline and lst. Shape (Nvis, Nalms) where Nvis is Nbl x Ntimes x Nfreqs.
+        ell (array of int):
+            Array of ell-values for the visiblity simulation
+        m  (array of int):
+            Array of ell-values for the visiblity simulation
+    """
+    ell, m, vis_alm = simulate_vis_per_alm(
+        lmax=lmax,
+        nside=nside,
+        ants=ant_pos,
+        freqs=freqs * 1e6,  # MHz -&gt; Hz
+        lsts=lsts,
+        beams=beams,
+        latitude=latitude,
+    )
+
+    # Removing visibility responses corresponding to the m=0 imaginary parts
+    vis_alm = np.concatenate(
+        (vis_alm[:, :, :, :, : len(ell)], vis_alm[:, :, :, :, len(ell) + (lmax + 1) :]),
+        axis=4,
+    )
+
+    ants = list(ant_pos.keys())
+    antpairs = []
+    if autos_only == False and include_autos == False:
+        auto_ants = []
+    for i in ants:
+        for j in ants:
+            # Toggle via keyword argument if you want to keep the auto baselines/only have autos
+            if include_autos == True:
+                if j &gt;= i:
+                    antpairs.append((ants[i], ants[j]))
+            elif autos_only == True:
+                if j == i:
+                    antpairs.append((ants[i], ants[j]))
+            else:
+                if j == i:
+                    auto_ants.append((ants[i], ants[j]))
+                if j &gt; i:
+                    antpairs.append((ants[i], ants[j]))
+
+    vis_response = np.zeros(
+        (len(antpairs), len(freqs), len(lsts), 2 * len(ell) - (lmax + 1)),
+        dtype=np.complex128,
+    )
+
+    ## Collapse the two antenna dimensions into one baseline dimension
+    # Nfreqs, Ntimes, Nant1, Nant2, Nalms --&gt; Nbl, Nfreqs, Ntimes, Nalms
+    for i, bl in enumerate(antpairs):
+        idx1 = ants.index(bl[0])
+        idx2 = ants.index(bl[1])
+        vis_response[i, :] = vis_alm[:, :, idx1, idx2, :]
+
+    # Multiply by spectral dependence model (a powerlaw)
+    # Shape: Nbl, Nfreqs, Ntimes, Nalms
+    vis_response *= ((freqs / ref_freq) ** spectral_idx)[
+        np.newaxis, :, np.newaxis, np.newaxis
+    ]
+
+    # Reshape to 2D
+    # TODO: Make this into a "pack" and "unpack" function
+    # Nbl, Nfreqs, Ntimes, Nalms --&gt; Nvis, Nalms
+    Nvis = len(antpairs) * len(freqs) * len(lsts)
+    vis_response_2D = vis_response.reshape(Nvis, 2 * len(ell) - (lmax + 1))
+
+    if autos_only == False and include_autos == False:
+        autos = np.zeros(
+            (len(auto_ants), len(freqs), len(lsts), 2 * len(ell) - (lmax + 1)),
+            dtype=np.complex128,
+        )
+        ## Collapse the two antenna dimensions into one baseline dimension
+        # Nfreqs, Ntimes, Nant1, Nant2, Nalms --&gt; Nbl, Nfreqs, Ntimes, Nalms
+        for i, bl in enumerate(auto_ants):
+            idx1 = ants.index(bl[0])
+            idx2 = ants.index(bl[1])
+            autos[i, :] = vis_alm[:, :, idx1, idx2, :]
+
+        ## Reshape to 2D
+        ## TODO: Make this into a "pack" and "unpack" function
+        # Nbl, Nfreqs, Ntimes, Nalms --&gt; Nvis, Nalms
+        Nautos = len(auto_ants) * len(freqs) * len(lsts)
+        autos_2D = autos.reshape(Nautos, 2 * len(ell) - (lmax + 1))
+
+        return vis_response_2D, autos_2D, ell, m
+    else:
+        return vis_response_2D, ell, m</code></pre>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../js/base.js"></script>
+        <script src="../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

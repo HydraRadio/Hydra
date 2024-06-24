@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        
+        <link rel="shortcut icon" href="../img/favicon.ico">
+        <title>Point source sampler (ptsrc_sampler) - Hydra API documentation</title>
+        <link href="../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../css/brands.min.css" rel="stylesheet">
+        <link href="../css/solid.min.css" rel="stylesheet">
+        <link href="../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../assets/_mkdocstrings.css" rel="stylesheet">
+        <link href="../assets/_mkdocstrings.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script> 
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-dark bg-primary">
+            <div class="container">
+                <a class="navbar-brand" href="..">Hydra API documentation</a>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href=".." class="nav-link">Hydra API documentation</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="../example/" class="nav-link">Example simulations (example)</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="./" class="nav-link active" aria-current="page">Point source sampler (ptsrc_sampler)</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="../region_sampler/" class="nav-link">Region sampler (region_sampler)</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="../sh_sampler/" class="nav-link">Spherical harmonic sampler (sh_sampler)</a>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href="../example/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../region_sampler/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3"><div class="navbar-expand-md bs-sidebar hidden-print affix" role="complementary">
+    <div class="navbar-header">
+        <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" title="Table of Contents">
+            <span class="fa fa-angle-down"></span>
+        </button>
+    </div>
+
+    
+    <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+        <ul class="nav flex-column">
+            
+            <li class="nav-item" data-bs-level="1"><a href="#point-source-sampler-ptsrc_sampler" class="nav-link">Point source sampler (ptsrc_sampler)</a>
+              <ul class="nav flex-column">
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.ptsrc_sampler" class="nav-link">ptsrc_sampler</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.ptsrc_sampler.calc_proj_operator" class="nav-link">calc_proj_operator</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#hydra.ptsrc_sampler.precompute_mpi" class="nav-link">precompute_mpi</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+              </ul>
+            </li>
+        </ul>
+    </div>
+</div></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="point-source-sampler-ptsrc_sampler">Point source sampler (<code>ptsrc_sampler</code>)</h1>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<a id="hydra.ptsrc_sampler"></a>
+    <div class="doc doc-contents first">
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.ptsrc_sampler.calc_proj_operator" class="doc doc-heading">
+            <code class="highlight language-python">calc_proj_operator(ra, dec, fluxes, ant_pos, antpairs, freqs, times, beams, latitude=-0.5361913261514378)</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Calculate a visibility vector for each point source, as a function of
+frequency, time, and baseline. This is the projection operator from point
+source amplitude to visibilities. Gains are not included.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code>ra,</code></td>
+            <td>
+                  <code>dec (array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>RA and Dec of each source, in radians.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>fluxes</code></td>
+            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Flux for each point source as a function of frequency.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>ant_pos</code></td>
+            <td>
+                  <code>dict</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Dictionary of antenna positions, [x, y, z], in m. The keys should
+be the numerical antenna IDs.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>antpairs</code></td>
+            <td>
+                  <code>list of tuple</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>List of tuples containing pairs of antenna IDs, one for each
+baseline.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>freqs</code></td>
+            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Frequencies, in MHz.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>times</code></td>
+            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>LSTs, in radians.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>beams</code></td>
+            <td>
+                  <code>list of UVBeam</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>List of UVBeam objects, one for each antenna.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>latitude</code></td>
+            <td>
+                  <code>float</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Latitude of the observing site, in radians.</p>
+              </div>
+            </td>
+            <td>
+                  <code>-0.5361913261514378</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>vis_proj_operator</code></td>            <td>
+                  <code>array_like</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The projection operator from source amplitudes to visibilities,
+from <code>calc_proj_operator</code>. This is an array of the visibility
+values for each source.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/ptsrc_sampler.py</code></summary>
+              <pre class="highlight"><code class="language-python">def calc_proj_operator(
+    ra,
+    dec,
+    fluxes,
+    ant_pos,
+    antpairs,
+    freqs,
+    times,
+    beams,
+    latitude=-0.5361913261514378,
+):
+    """
+    Calculate a visibility vector for each point source, as a function of
+    frequency, time, and baseline. This is the projection operator from point
+    source amplitude to visibilities. Gains are not included.
+
+    Parameters:
+        ra, dec (array_like):
+            RA and Dec of each source, in radians.
+        fluxes (array_like):
+            Flux for each point source as a function of frequency.
+        ant_pos (dict):
+            Dictionary of antenna positions, [x, y, z], in m. The keys should
+            be the numerical antenna IDs.
+        antpairs (list of tuple):
+            List of tuples containing pairs of antenna IDs, one for each
+            baseline.
+        freqs (array_like):
+            Frequencies, in MHz.
+        times (array_like):
+            LSTs, in radians.
+        beams (list of UVBeam):
+            List of UVBeam objects, one for each antenna.
+        latitude (float):
+            Latitude of the observing site, in radians.
+
+    Returns:
+        vis_proj_operator (array_like):
+            The projection operator from source amplitudes to visibilities,
+            from `calc_proj_operator`. This is an array of the visibility
+            values for each source.
+    """
+    Nptsrc = ra.size
+    Nants = len(ant_pos)
+    Nvis = len(antpairs)
+
+    # Empty array of per-point source visibilities
+    vis_ptsrc = np.zeros((Nvis, freqs.size, times.size, Nptsrc), dtype=np.complex128)
+
+    # Get visibility for each point source
+    # Returns shape (NFREQS, NTIMES, NANTS, NANTS, NSRCS)
+    vis = simulate_vis_per_source(
+        ants=ant_pos,
+        fluxes=fluxes,
+        ra=ra,
+        dec=dec,
+        freqs=freqs * 1e6,
+        lsts=times,
+        beams=beams,
+        polarized=False,
+        precision=2,
+        latitude=latitude,
+        use_feed="x",
+    )
+
+    # Allocate computed visibilities to only available baselines (saves memory)
+    ants = list(ant_pos.keys())
+    for i, bl in enumerate(antpairs):
+        idx1 = ants.index(bl[0])
+        idx2 = ants.index(bl[1])
+        vis_ptsrc[i, :, :, :] = vis[:, :, idx1, idx2, :]
+
+    return vis_ptsrc</code></pre>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="hydra.ptsrc_sampler.precompute_mpi" class="doc doc-heading">
+            <code class="highlight language-python">precompute_mpi(comm, ants, antpairs, freq_chunk, time_chunk, proj_chunk, data_chunk, inv_noise_var_chunk, gain_chunk, amp_prior_std, realisation=True)</code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+      <p>Precompute the projection operator and matrix operator in parallel.</p>
+<p>The projection operator is computed in chunks in time and frequency.
+The overall matrix operator can be computed by summing the matrix
+operator for the time and frequency chunks.</p>
+
+            <details class="quote">
+              <summary>Source code in <code>hydra/ptsrc_sampler.py</code></summary>
+              <pre class="highlight"><code class="language-python">def precompute_mpi(
+    comm,
+    ants,
+    antpairs,
+    freq_chunk,
+    time_chunk,
+    proj_chunk,
+    data_chunk,
+    inv_noise_var_chunk,
+    gain_chunk,
+    amp_prior_std,
+    realisation=True,
+):
+    """
+    Precompute the projection operator and matrix operator in parallel.
+
+    The projection operator is computed in chunks in time and frequency.
+    The overall matrix operator can be computed by summing the matrix
+    operator for the time and frequency chunks.
+    """
+    # Make sure ants is an array
+    ants = np.atleast_1d(ants)
+
+    if comm is not None:
+        myid = comm.Get_rank()
+    else:
+        myid = 0
+
+    # Check input dimensions
+    assert data_chunk.shape == (len(antpairs), freq_chunk.size, time_chunk.size)
+    assert data_chunk.shape == inv_noise_var_chunk.shape
+    proj = proj_chunk.copy()  # make a copy so we don't alter the original proj!
+
+    # FIXME: Check for unused args!
+
+    # Apply gains to projection operator
+    for k, bl in enumerate(antpairs):
+        ant1, ant2 = bl
+        i1 = np.where(ants == ant1)[0][0]
+        i2 = np.where(ants == ant2)[0][0]
+        proj[k, :, :, :] *= (
+            gain_chunk[i1, :, :, np.newaxis] * gain_chunk[i2, :, :, np.newaxis].conj()
+        )
+
+    # (2) Precompute linear system operator
+    nsrcs = proj.shape[-1]
+    my_linear_op = np.zeros((nsrcs, nsrcs), dtype=proj.real.dtype)
+
+    # inv_noise_var has shape (Nbls, Nfreqs, Ntimes)
+    v_re = (proj.real * np.sqrt(inv_noise_var_chunk[..., np.newaxis])).reshape(
+        (-1, nsrcs)
+    )
+    v_im = (proj.imag * np.sqrt(inv_noise_var_chunk[..., np.newaxis])).reshape(
+        ((-1, nsrcs))
+    )
+
+    # Treat real and imaginary separately, and get copies, to massively
+    # speed-up the matrix multiplication!
+    my_linear_op[:, :] = v_re.T @ v_re + v_im.T @ v_im
+    del v_re, v_im
+
+    # Do Reduce (sum) operation to get total operator on root node
+    linear_op = np.zeros(
+        (1, 1), dtype=my_linear_op.dtype
+    )  # dummy data for non-root workers
+    if myid == 0:
+        linear_op = np.zeros_like(my_linear_op)
+
+    if comm is not None:
+        comm.Reduce(my_linear_op, linear_op, op=MPI_SUM, root=0)
+    else:
+        linear_op = my_linear_op
+
+    # Include prior and identity terms to finish constructing LHS operator on root worker
+    if myid == 0:
+        linear_op = np.eye(linear_op.shape[0]) + np.diag(
+            amp_prior_std
+        ) @ linear_op @ np.diag(amp_prior_std)
+
+    # (3) Calculate linear system RHS
+    proj = proj.reshape((-1, nsrcs))
+    realisation_switch = (
+        1.0 if realisation else 0.0
+    )  # Turn random realisations on or off
+
+    # Calculate residual of data vs fiducial model (residual from amplitudes = 1)
+    # (proj now includes gains)
+    resid_chunk = data_chunk.copy() - (
+        proj.reshape((-1, nsrcs)) @ np.ones_like(amp_prior_std)
+    ).reshape(data_chunk.shape)
+
+    # (Terms 1+3): S^1/2 A^\dagger [ N^{-1} r + N^{-1/2} \omega_r ]
+    omega_n = (
+        realisation_switch
+        * (
+            1.0 * np.random.randn(*resid_chunk.shape)
+            + 1.0j * np.random.randn(*resid_chunk.shape)
+        )
+        / np.sqrt(2.0)
+    )
+
+    # Separate complex part of RHS into real and imaginary parts, and apply
+    # the real and imaginary parts of the projection operator separately.
+    # This is necessary to get a real RHS vector
+    y = (
+        (resid_chunk * inv_noise_var_chunk) + (omega_n * np.sqrt(inv_noise_var_chunk))
+    ).flatten()
+    b = amp_prior_std * (proj.T.real @ y.real + proj.T.imag @ y.imag)
+
+    # Reduce (sum) operation on b
+    linear_rhs = np.zeros((1,), dtype=b.dtype)  # dummy data for non-root workers
+    if myid == 0:
+        linear_rhs = np.zeros_like(b)
+
+    if comm is not None:
+        comm.Reduce(b, linear_rhs, op=MPI_SUM, root=0)
+    else:
+        linear_rhs = b
+
+    # (Term 2): \omega_a
+    if myid == 0:
+        linear_rhs += realisation_switch * np.random.randn(nsrcs)  # real vector
+
+    return linear_op, linear_rhs</code></pre>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../js/base.js"></script>
+        <script src="../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>
