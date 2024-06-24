@@ -28,6 +28,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Build mkdocs api docs
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.9
+      - run: |
+            pip install mkdocs mkdocstrings[python]
+            #mkdocs gh-deploy --config-file ./docs/api/mkdocs.yml --force --site-dir api/
+            mkdocs build --config-file ./docs/api/mkdocs.yml --site-dir api/      
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Build with Jekyll
@@ -37,16 +45,7 @@ jobs:
           destination: ./_site
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
-      - name: Build mkdocs api docs
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.9
-      - run: |
-            pip install mkdocs mkdocstrings[python]
-            #mkdocs gh-deploy --config-file ./docs/api/mkdocs.yml --force --site-dir api/
-            mkdocs build --config-file ./docs/api/mkdocs.yml --site-dir api/
-            sudo cp -r ./docs/api/api ./_site/api/
-
+      
   # Deployment job
   deploy:
     environment:
