@@ -5,15 +5,11 @@ theme:
 
 plugins:
 - search
-- mkdocstrings
 
 - mkdocstrings:
       default_handler: python
       handlers:
         python:
-          setup_commands:
-              - import sys
-              - sys.path.append('/home/phil/hera/Hydra')
           load_external_modules: true
           selection:
               new_path_syntax: true
