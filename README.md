@@ -73,9 +73,10 @@ sizes, but for now the main limitation is the amount of RAM available on each no
 
 ## Learn about the code and different 'heads' of Hydra
 
-* Run the example script, [example.py](example.md)
-* Read the [frequently-asked questions](faq.md) about the code and maths
-* Learn about the different ["heads"](heads.md) (conditional distribution samplers) of Hydra.
+* See the [API documentation](https://hydraradio.github.io/Hydra/api/)
+* Run the example script, [example.py]([example.md](https://hydraradio.github.io/Hydra/example.html))
+* Read the [frequently-asked questions]([faq.md](https://hydraradio.github.io/Hydra/faq.html)) about the code and maths
+* Learn about the different ["heads"]([heads.md](https://hydraradio.github.io/Hydra/heads.html)) (conditional distribution samplers) of Hydra.
 
 ## Who is behind Hydra?
 
