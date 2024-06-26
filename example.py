@@ -89,12 +89,13 @@ if __name__ == '__main__':
     sim_gain_amp_std = args.sim_gain_amp_std
     
     # Source position and LST/frequency ranges
-    #ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
-    #dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
-    lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
+    # LSTs specified in hours, but converted to radians
+    # Freqs. specified in MHz
+    lst_min, lst_max = (min(args.lst_bounds) * 2.*np.pi/24., 
+                        max(args.lst_bounds) * 2.*np.pi/24.)
     freq_min, freq_max = (min(args.freq_bounds), max(args.freq_bounds))
     
-    # Array latitude
+    # Array latitude, in degrees
     array_latitude = np.deg2rad(args.latitude)
 
     #--------------------------------------------------------------------------
@@ -181,11 +182,14 @@ if __name__ == '__main__':
     ptsrc_amps = np.zeros_like(ra)
 
     if myid == 0:
-        # Generate random catalogue
-        ra, dec, ptsrc_amps = generate_random_ptsrc_catalogue(Nptsrc, 
-                                                              ra_bounds=args.ra_bounds, 
-                                                              dec_bounds=args.dec_bounds, 
-                                                              logflux_bounds=(-1., 2.))
+        # Generate random catalogue (convert input ra/dec from deg to rad)
+        # Returned ra and dec arrays are now in radians
+        ra, dec, ptsrc_amps = generate_random_ptsrc_catalogue(
+                                                Nptsrc, 
+                                                ra_bounds=np.deg2rad(args.ra_bounds), 
+                                                dec_bounds=np.deg2rad(args.dec_bounds), 
+                                                logflux_bounds=(-1., 2.)
+                                                )
         # Save generated catalogue info
         np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
         np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
@@ -294,20 +298,21 @@ if __name__ == '__main__':
         calsrc = True
         calsrc_std = args.calsrc_std
 
-    # Select what would be the calibration source (brightest, close to beam)
-    calsrc_idxs = np.where(np.abs(dec - array_latitude)*180./np.pi < calsrc_radius)[0]
-    assert len(calsrc_idxs) > 0, "No sources found within %d deg of the zenith" % calsrc_radius
-    calsrc_idx = calsrc_idxs[np.argmax(ptsrc_amps[calsrc_idxs])]
-    calsrc_amp = ptsrc_amps[calsrc_idx]
-    if myid == 0:
-        print("Calibration source:")
-        print("  Enabled:            %s" % calsrc)
-        print("  Index:              %d" % calsrc_idx)
-        print("  Amplitude:          %6.3e" % calsrc_amp)
-        print("  Dist. from zenith:  %6.2f deg" \
-              % np.rad2deg(np.abs(dec[calsrc_idx] - array_latitude)))
-        print("  Flux @ lowest freq: %6.3e Jy" % fluxes_chunk[calsrc_idx,0])
-        print("")
+        # Select what would be the calibration source (brightest, close to beam)
+        calsrc_idxs = np.where(np.abs(dec - array_latitude)*180./np.pi < calsrc_radius)[0]
+        assert len(calsrc_idxs) > 0, \
+            "No sources found within %d deg of the zenith" % calsrc_radius
+        calsrc_idx = calsrc_idxs[np.argmax(ptsrc_amps[calsrc_idxs])]
+        calsrc_amp = ptsrc_amps[calsrc_idx]
+        if myid == 0:
+            print("Calibration source:")
+            print("  Enabled:            %s" % calsrc)
+            print("  Index:              %d" % calsrc_idx)
+            print("  Amplitude:          %6.3e" % calsrc_amp)
+            print("  Dist. from zenith:  %6.2f deg" \
+                  % np.rad2deg(np.abs(dec[calsrc_idx] - array_latitude)))
+            print("  Flux @ lowest freq: %6.3e Jy" % fluxes_chunk[calsrc_idx,0])
+            print("")
 
 
     #--------------------------------------------------------------------------
@@ -955,8 +960,10 @@ if __name__ == '__main__':
             comm.Bcast(x_soln, root=0)
             comm.barrier()
             if myid == 0:
-                status(myid, "    Example ptsrc soln:" + str(x_soln[:3]))
-                status(myid, "    Example region soln:" + str(x_soln[Nptsrc:Nptsrc+3]))
+                status(None, "    Example ptsrc soln:  " + str(x_soln[:3]))
+                status(None, "    Example region soln: " + str(x_soln[Nptsrc:Nptsrc+3]))
+                status(None, "    Ptsrc soln. avg.:     %+8.6f +/- %8.6f" \
+                              % (np.mean(x_soln[:3]), np.std(x_soln[:3])))
 
             # Update visibility model with latest solution (does not include any gains)
             # Applies projection operator to ptsrc amplitude vector
