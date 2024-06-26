@@ -7,5 +7,5 @@ from . import (
     sh_sampler,
     vis_sampler,
 )
-from . import config, example, linear_solver, plot, sparse_beam, utils, vis_simulator
+from . import config, example, io, linear_solver, plot, sparse_beam, utils, vis_simulator
 from .utils import *
