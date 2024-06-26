@@ -30,7 +30,7 @@ def load_uvdata_metadata(comm, fname):
         uvd.read(fname, read_data=False) # metadata only
 
         # Get frequency and LST arrays
-        freqs = np.unique(uvd.freq_array) * 1e6 # MHz
+        freqs = np.unique(uvd.freq_array) / 1e6 # MHz
         lsts = np.unique(uvd.lst_array)
 
         # Get array latitude etc.
@@ -49,9 +49,9 @@ def load_uvdata_metadata(comm, fname):
         ants1, ants2 = zip(*antpairs)
 
         # Get array antenna locations
-        ant_ids_in_order = uvd.get_ants()
+        ant_ids_in_order = uvd.antenna_numbers
         ant_ids = np.unique(np.concatenate((ants1, ants2)))
-        ants = {ant: list(uvd.antenna_positions[ant_ids_in_order == ant]) 
+        ants = {ant: list(uvd.antenna_positions[ant_ids_in_order == ant,:]) 
                 for ant in ant_ids}
 
         # Put data in dict with named fields to avoid ambiguity
@@ -80,7 +80,7 @@ def load_uvdata_metadata(comm, fname):
     return data_info
 
 
-def partial_load_uvdata(fname, freq_chunk, lst_chunk, antpairs):
+def partial_load_uvdata(fname, freq_chunk, lst_chunk, antpairs, pol='xx'):
     """
     Load data from a UVData file and unpack into the expected format. 
     Uses the partial loading feature of UVH5 files.
@@ -96,6 +96,8 @@ def partial_load_uvdata(fname, freq_chunk, lst_chunk, antpairs):
         bls (array_like):
             Data baselines that this worker should load. These should be 
             provided as antenna pairs.
+        pol (str):
+            Which polarisation to retrieve from the data.
     
     Returns:
         data (array_like):
@@ -107,7 +109,10 @@ def partial_load_uvdata(fname, freq_chunk, lst_chunk, antpairs):
     """
     # Create new object
     uvd = UVData()
-    uvd.read(fname, frequencies=freq_chunk*1e6, lsts=lst_chunk, bls=antpairs)
+    uvd.read(fname, 
+             frequencies=np.array(freq_chunk)*1e6, 
+             lsts=lst_chunk, 
+             bls=antpairs)
 
     # Get data and flags
     data = np.zeros((len(antpairs), len(freq_chunk), len(lst_chunk)), 
@@ -118,6 +123,10 @@ def partial_load_uvdata(fname, freq_chunk, lst_chunk, antpairs):
     # Loop over baselines and extract data
     for i, bl in enumerate(antpairs):
         ant1, ant2 = bl
-        data[i,:,:] = uvd.get_data(ant1, ant2, squeeze='full') # collapses length-1 dimensions
-        flags[i,:,:] = uvd.get_flags(ant1, ant2, squeeze='full') # collapses length-1 dimensions
+        dd = uvd.get_data(ant1, ant2, pol)
+        print(dd.shape, ant1, ant2)
+
+        # squeeze='full' collapses length-1 dimensions
+        data[i,:,:] = uvd.get_data(ant1, ant2, pol, squeeze='full').T
+        flags[i,:,:] = uvd.get_flags(ant1, ant2, pol, squeeze='full').T
     return data, flags
