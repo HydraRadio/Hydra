@@ -253,6 +253,17 @@ def select_subarr(arr, ant_samp_ind, Nants):
 
 
 def get_bess_outer(bess_matr):
+    """
+    Outer product of the design matrix from beam coeffs to source pos at each source pos.
+
+    Parameters:
+        bess_matr (array):
+            A matrix that maps from beam coefficients to source pos at each time.
+            Has shape (Ntimes, Nsrc, Nbasis)
+    Returns:
+        bess_outer (array):
+            Outer product of beam design matrix with itself at each source pos.
+    """
 
     return bess_matr[:, :, np.newaxis] * bess_matr.conj()[:, :, :, np.newaxis]
 
@@ -260,6 +271,47 @@ def get_bess_sky_contraction(bess_outer, ants, fluxes, ra, dec, freqs, lsts,
                              polarized=False, 
                              precision=1, latitude=-30.7215 * np.pi / 180.0, 
                              use_feed="x", multiprocess=True):
+    """
+    Calculate a quadratic form that maps from beam coefficients to model visibilities.
+
+    Parameters:
+        bess_outer (array):
+            Output of get_bess_outer, which is the outer product of the beam
+            design matrix with itself at each source pos.
+        ants (dict):
+            Dictionary of antenna positions. The keys are the antenna names
+            (integers) and the values are the Cartesian x,y,z positions of the
+            antennas (in meters) relative to the array center.
+        fluxes (array_like):
+            2D array with the flux of each source as a function of frequency,
+            of shape (NSRCS, NFREQS).
+        ra, dec (array_like):
+            Arrays of source RA and Dec positions in radians. RA goes from
+            [0, 2 pi] and Dec from [-pi, +pi].
+        freqs (array_like):
+            Frequency channels for the simulation, in Hz.
+        lsts (array_like):
+            Local sidereal times for the simulation, in radians. Range is
+            [0, 2 pi].
+        polarized (bool):
+            If True, raise a NotImplementedError. Eventually this will use
+            polarized beams.
+        precision (int):
+            Which precision setting to use for :func:`~vis_cpu`. If set to
+            ``1``, uses the (``np.float32``, ``np.complex64``) dtypes. If set
+            to ``2``, uses the (``np.float64``, ``np.complex128``) dtypes.
+        latitude (float):
+            The latitude of the center of the array, in radians. The default is
+            the HERA latitude = -30.7215 * pi / 180.
+        use_feed (str):
+            Which feed to use.
+        multiprocess (bool):
+            Whether to use multiprocessing to speed up the calculation
+
+    Returns:
+        bess_sky_contraction (array_like):
+            Quadratic form that maps beam_coeffs to visibilities.
+    """
     
     Npol = 2 if polarized else 1
     Nfreqs = len(freqs)
@@ -303,6 +355,23 @@ def get_bess_sky_contraction(bess_outer, ants, fluxes, ra, dec, freqs, lsts,
 
 def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
                                      ant_samp_ind):
+    """
+    Get a linear operator that maps a particular antenna's beam coefficients to 
+    visibilities.
+
+    Parameters:
+        bess_sky_contraction (array):
+            Output of get_bess_sky_contraction. Quadratic form that maps 
+            beam_coeffs to visibilities.
+        beam_coeffs (array):
+            Complex beam coefficients, shape (Nbasis, Nfreqs, Nants, Npol, Npol)
+        ants (dict):
+            Dictionary of antenna positions. The keys are the antenna names
+            (integers) and the values are the Cartesian x,y,z positions of the
+            antennas (in meters) relative to the array center.
+        ant_samp_ind (int):
+            Index of the antenna being sampled.
+    """
     Nants = len(ants)
     ant_inds = get_ant_inds(ant_samp_ind, Nants)
     beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds] # bfApQ -> ApfbQ
@@ -512,7 +581,7 @@ def construct_rhs(vis, inv_noise_var, mu, bess_trans,
             Subset of visiblities belonging to
             the antenna for which the GCR is being set up. Has shape
             `(NFREQS, NTIMES, NANTS - 1)`.
-        inv_noise_var (array_like):
+        inv_noise_./m,./ vbnvar (array_like):
             Inverse variance of same shape as `vis`. Assumes diagonal
             covariance matrix, which is true in practice.
         mu (array_like):
@@ -521,7 +590,7 @@ def construct_rhs(vis, inv_noise_var, mu, bess_trans,
         cho_tuple (tuple of arr): tensor-factored, cholesky decomposed prior
             covariance matrix.
         bess_trans (array_like):
-            Operator that maps beam coefficients from one antenna into its
+            Operator that maps beam coefficien[l'9ots from one antenna into its
             subset of visibilities.
         flx (bool):
             Whether to use fluctuation terms. Useful for debugging.
@@ -857,3 +926,52 @@ def get_pert_beam(seed, beam_file, trans_std=1e-2, rot_std_deg=1.,
                 fit_coeffs)
     
     return sb
+
+
+def get_loglike_from_bsc(beam_coeffs, bess_sky_contraction, inv_noise_var, data,
+                         ants):
+    """
+    Calculate the log-likelihood of some beam coefficients.
+
+    Parameters:
+        beam_coeffs (array):
+            Complex beam coefficients, shape (Nbasis, Nfreqs, Nants, Npol, Npol)
+        bess_sky_contraction (array):
+            A large quadratic formthat maps beam_coeffs to visibilities. Output
+            of get_bess_sky_contraction.
+        inv_noise_var (array):
+            Inverse noise variance for the visibilities.
+        data (array):
+            The visibilities.
+        ants (dict):
+            Dictionary of antenna positions. The keys are the antenna names
+            (integers) and the values are the Cartesian x,y,z positions of the
+            antennas (in meters) relative to the array center.
+
+    Returns:
+        loglike (float):
+            The natural log of the likelihood for the data/beam coeffs.
+    """
+
+    model = np.zeros_like(data)
+    Nants = len(ants)
+    for ant_ind in range(Nants):
+        ant_inds = get_ant_inds(ant_ind, Nants)
+        b_to_v = get_bess_to_vis_from_contraction(bess_sky_contraction, 
+                                                  beam_coeffs, ants,
+                                                  ant_ind)
+        #qPftab,bfpq-> ftapP FIXME: NOT SURE IF THIS POL CONVENTION IS RIGHT
+        model[:, :, :, :, ant_inds, ant_ind] = np.einsum("qPftab,bfpq->pPfta", 
+                                                         b_to_v, 
+                                                         beam_coeffs[:, :, ant_ind],
+                                                         optimize=True)
+        
+    res_sq = np.abs(data - model)**2
+    loglike_exp = -0.5 * np.sum(res_sq * inv_noise_var)
+    loglike_prefac = -0.5 * (model.size * np.log(2 * np.pi) - np.log(inv_noise_var).sum())
+
+    loglike = loglike_exp + loglike_prefac
+
+    return loglike
+        
+        
