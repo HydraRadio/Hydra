@@ -14,6 +14,13 @@ Hydra uses a technique called **Gibbs sampling** to efficiently draw samples fro
 distribution of *all* the parameters. It is implemented in Python and is compatible with the data 
 formats used by the HERA pipeline, such as _UVData_ and _UVBeam_.
 
+## Learn about the code and different 'heads' of Hydra
+
+* See the [API documentation](https://hydraradio.github.io/Hydra/api/)
+* Run the example script, [example.py](https://hydraradio.github.io/Hydra/example.html)
+* Read the [frequently-asked questions](https://hydraradio.github.io/Hydra/faq.html) about the code and maths
+* Learn about the different ["heads"](https://hydraradio.github.io/Hydra/heads.html) (conditional distribution samplers) of Hydra.
+
 ## What is Gibbs sampling?
 
 Gibbs sampling is a way of breaking up the joint posterior distribution for a set of parameters into a 
@@ -70,13 +77,6 @@ sky) in order to analyse calibrated HERA data. This is the _hydra-pspec_ code.
 At present, Hydra is parallelised in a basic way, meaning that it can only run on a single system (e.g. 
 a single HPC node). There are plans to make a distributed version that can scale to much larger problem 
 sizes, but for now the main limitation is the amount of RAM available on each node.
-
-## Learn about the code and different 'heads' of Hydra
-
-* See the [API documentation](https://hydraradio.github.io/Hydra/api/)
-* Run the example script, [example.py](https://hydraradio.github.io/Hydra/example.html)
-* Read the [frequently-asked questions](https://hydraradio.github.io/Hydra/faq.html) about the code and maths
-* Learn about the different ["heads"](https://hydraradio.github.io/Hydra/heads.html) (conditional distribution samplers) of Hydra.
 
 ## Who is behind Hydra?
 
