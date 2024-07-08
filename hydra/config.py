@@ -232,7 +232,7 @@ def get_config():
         "--dec-bounds",
         type=float,
         action="store",
-        default=(-0.6, 0.4),
+        default=(-40.7, -20.7),
         nargs=2,
         required=False,
         dest="dec_bounds",

@@ -2,19 +2,15 @@ import numpy as np
 from matvis import conversions
 import pyuvdata
 from pyuvsim import AnalyticBeam
+from scipy.interpolate import RegularGridInterpolator
 
-"""
-# Terminal colour codes
-#terminal_ = '\033[95m'
-terminal_blue = '\033[94m'
-terminal_cyan = '\033[96m'
-terminal_green = '\033[92m'
-terminal_yellow = '\033[93m'
-#FAIL = '\033[91m'
-terminal_endc = '\033[0m'
-terminal_bold = '\033[1m'
-terminal_ul = '\033[4m'
-"""
+import pygdsm
+from astropy.coordinates import SkyCoord, AltAz, EarthLocation, Galactic, ICRS
+from astropy.time import Time
+import astropy.units as u
+import healpy as hp
+
+C = 299792.458
 
 
 def flatten_vector(v, reduced_idxs=None):
@@ -703,6 +699,99 @@ def partial_fourier_basis_2d_from_nmax(
         shape0=shape0,
     )
     return basis_fns, kfreq, ktime
+
+
+def tsky_from_galaxy_model(comm, latitude=-30.7214, longitude=21.4280, height=77.,
+                           times_per_hour=12, freq_range=(50., 2), Nfreqs=10, 
+                           dish_diameter=14.):
+    """
+    Predict the sky temperature from a global sky model as a function of 
+    frequency and beam FWHM.
+    
+    Parameters:
+        xx
+
+    Returns:
+        xx
+    """
+    myid = 0
+    if comm is not None:
+        myid = comm.Get_rank()
+
+    sky_frame = Galactic()
+
+    # Generate sky map
+    _sky_map = pygdsm.GlobalSkyModel16()
+
+    # Set up HERA observatory location
+    location = EarthLocation(lat=latitude * u.deg, 
+                             lon=longitude * u.deg, 
+                             height=height * u.m)
+    obstime0 = '2026-01-01T18:00:00.00000' # need to choose a reference time
+    times = Time(obstime0, format='isot', scale='utc') \
+          + np.linspace(0., 24., 24*times_per_hour) * u.hour
+
+    # Get LSTs
+    lsts = np.array([t.sidereal_time('apparent', 'greenwich').rad for t in times])
+    idxs_lsts_sorted = np.argsort(lsts)
+
+    # Get pixel index of zenith pointing at each time
+    pixel_idxs = []
+    for i, t in enumerate(times):
+        c = AltAz(az=0.*u.deg, alt=90.*u.deg, obstime=t, location=location).transform_to(sky_frame)
+        idx = hp.ang2pix(hp.npix2nside(map64.size), theta=c.b.rad + 0.5*np.pi, phi=c.l.rad)
+        pixel_idxs.append(idx)
+
+    # Convert alt/az of zenith to sky coords for each frequency
+    freqs = np.linspace(freq_range[0], freq_range[1], Nfreqs)
+    temperature_vals = np.zeros((freqs.size, lsts.size))
+    for j, freq in enumerate(freqs):
+
+        # Calculate approx. beam FWHM in radians
+        fwhm = (C / (freq*1e6)) / dish_diameter # radians
+
+        # Get sky map at this frequency
+        sky_map = _sky_map.generate(freq)
+        
+        # Get value of pixel at zenith at each time
+        pvals = np.zeros(len(times))
+        for i, t in enumerate(times):
+            # Smooth the sky map at this freq. with the approximate FWHM
+            pvals[i] = hp.smoothing(sky_map, fwhm=fwhm)[pixel_idxs[i]]
+        pvals = np.array(pvals)
+        temperature_vals[j,:] = pvals[idxs_lsts_sorted]
+
+    # Build 2D interpolator and return
+    temp_interp = RegularGridInterpolator((freqs, lsts[idxs_lsts_sorted]), 
+                                          temperature_vals, 
+                                          method='linear', 
+                                          bounds_error=True)
+    return temp_interp
+
+
+def noise_from_autos(ants, auto_vis, data_shape):
+    """
+    
+    Parameters:
+        ants (list):
+            List of antenna indices.
+        auto_vis (list of array_like):
+            List of auto-baseline visibilities.
+        data_shape (tuple):
+            Shape of the chunk of the data array handled by this worker.
+
+    Returns:
+        Ninv (array_like):
+            Inverse noise variance array.
+        noise_chunk (array_like):
+            Array containing a thermal noise realisation with the same 
+            shape as the chunk of data handled by this worker.
+    """
+    raise NotImplementedError("Not yet implemented.")
+    noise_chunk = sigma_noise * np.sqrt(0.5) \
+                              * (  1.0 * np.random.randn(*data_chunk.shape) \
+                                 + 1.j * np.random.randn(*data_chunk.shape))
+    return noise_chunk
 
 
 def status(myid, message, colour=None):

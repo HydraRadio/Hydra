@@ -130,3 +130,80 @@ def partial_load_uvdata(fname, freq_chunk, lst_chunk, antpairs, pol='xx'):
         data[i,:,:] = uvd.get_data(ant1, ant2, pol, squeeze='full').T
         flags[i,:,:] = uvd.get_flags(ant1, ant2, pol, squeeze='full').T
     return data, flags
+
+
+def load_source_catalogue(fname, max_header_lines=20):
+    """
+    Load a source catalogue in an expected standard text file format. The 
+    file should be formatted as follows:
+    
+     - Line 0: Header (starting with #) with comma-separated list of field names
+     - Up to 20 optional header lines as key-value pairs separated by a comma, 
+       e.g. `# ref_freq:300`
+     - Data as comma-separated values.
+    
+    The required fields are:
+     - `ra` and `dec`, equatorial coordinates in degrees
+     - `flux`, the flux at the reference frequency, in Jy
+     - `beta`, the spectral index of the power-law in frequency.
+
+    Parameters:
+        fname (str):
+            Path to the catalogue file. This should be a comma-separated text 
+            file with a header.
+        max_header_lines (int):
+            Maximum number of header lines to check for at the start of the 
+            file. This only needs to be changed if you have more header lines 
+            than the default maximum. If you have fewer header lines than 
+            this, you don't need to change it.
+
+    Returns:
+        cat (dict):
+            Dictionary containing arrays of values for each named field.
+        meta (dict):
+            Dictionary of metadata key:value pairs.
+    """
+    # Define required fields
+    required = ['ra', 'dec', 'flux', 'beta']
+
+    # Get the header
+    with open(fname, 'r') as f:
+        # Read first line and remove whitespace and leading/trailing characters
+        header = f.readline()
+        header = header.replace("#", "").replace("\n", "").replace(" ", "")
+        fields = header.lower().split(",")
+
+        # Get column number of each field
+        field_map = {field: j for field, j in enumerate(fields)}
+
+        # Check for metadata in subsequent lines
+        metadata = {}
+        for i in range(max_header_lines):
+            # This will return a blank line if the end of the file is reached, 
+            # so no need to test
+            line = f.readline()
+            if "#" and ":" in line:
+                line = line.replace("#", "").replace("\n", "").replace(" ", "")
+                vals = line.lower().split(":")
+                key, val = vals[0], vals[1]
+                metadata[key] = value
+
+    # Check that required fields are present
+    for req in required:
+        if req not in field_map.keys():
+            raise KeyError("Field '%s' was not found in catalogue file. "
+                           "The following fields were found: %s" 
+                           % (req, str(field_map.keys())))
+
+    # Load data
+    d = np.loadtxt(fname, comments='#', delimiter=',')
+    assert d.shape[0] == len(field_map.keys()), \
+        "Number of columns in data is different from header"
+
+    # Re-pack catalogue into dict
+    cat = {}
+    for field in field_map:
+        cat[field] = d[field_map[field]]
+
+    return cat, metadata
+    
