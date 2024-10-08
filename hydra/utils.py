@@ -516,9 +516,12 @@ def antenna_dict_from_uvd(uvd):
             in ENU coordinates local to the array (values).
     """
     # Get ENU positions of antennas
+    lat, lon, alt = uvd.telescope_location_lat_lon_alt
     enu = pyuvdata.utils.ENU_from_ECEF(
         uvd.antenna_positions + uvd.telescope_location,
-        *uvd.telescope_location_lat_lon_alt
+        latitude=lat,
+        longitude=lon,
+        altitude=alt
     )
 
     # Get antenna IDs
