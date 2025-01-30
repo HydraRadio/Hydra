@@ -261,16 +261,16 @@ if __name__ == '__main__':
     if not os.path.exists(sim_outpath):
         # Run a simulation
         t0 = time.time()
-        _sim_vis = np.zeros([args.Nfreqs, args.Ntimes, args.Nants, args.Nants],
+        _sim_vis = np.zeros([args.Nfreqs, args.Ntimes, Nants, Nants],
                             dtype=complex)
         for tind in range(args.Ntimes):
-            _sim_vis[:, tind] =  hydra.vis_simulator.simulate_vis(
+            _sim_vis[:, tind:tind + 1] =  hydra.vis_simulator.simulate_vis(
                     ants=ant_pos,
                     fluxes=fluxes,
                     ra=ra,
                     dec=dec,
                     freqs=freqs, # Make sure this is in Hz!
-                    lsts=times[tind],
+                    lsts=times[tind:tind + 1],
                     beams=beams,
                     polarized=False,
                     precision=2,
