@@ -2,10 +2,14 @@ import numpy as np
 import pylab as plt
 import scipy.sparse
 import numpy.fft as fft
-#import pyfftw.interfaces.numpy_fft as fft
+
+try:
+    from mpi4py.MPI import SUM as MPI_SUM
+except:
+    pass
 
 from scipy.sparse import dok_matrix
-from .utils import flatten_vector, reconstruct_vector
+from .utils import flatten_vector, reconstruct_vector, freqs_times_for_worker
 
 r"""
 # Mathematical representation of linear system for gain GCR
@@ -138,144 +142,54 @@ def apply_proj_conj(v, A_real, A_imag, model_vis, gain_shape):
     return g
 
 
-def apply_sqrt_pspec(sqrt_pspec, x):
-    """
-    Apply the square root of the power spectrum to a set of complex Fourier
-    coefficients. This is a way of implementing the operation "S^1/2 x" if S is
-    diagonal, represented only by a 2D power spectrum.
-
-    Parameters:
-        sqrt_pspec (array_like):
-            If given as a 3D array, apply a different power spectrum to each antenna.
-            Otherwise, apply the same (2D) power spectrum to each antenna. The
-            power spectrum should have shape (Ntau, Nfrate).
-
-        x (array_like):
-            Array of complex Fourier coefficients.
-
-    Returns:
-        z (array_like):
-            Array of complex Fourier coefficients that have been multiplied by
-            the sqrt of the power spectrum. Same shape as x.
-    """
-    assert len(x.shape) == 3, "x must have shape (Nants, Ntau, Nfrate)"
-    if len(sqrt_pspec.shape) == 3:
-        return sqrt_pspec * x
-    else:
-        return sqrt_pspec[np.newaxis, :, :] * x
-
-
-def apply_operator(x, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis, 
-                   reduced_idxs=None):
-    r"""
-    Apply LHS operator to a vector of Fourier coefficients.
-
-    Parameters:
-        x (array_like):
-            Array of complex values in Fourier space, of shape
-            (Nants, Nfrate, Ntau).
-
-        inv_noise_var (array_like):
-            Array of real values in visibility space, with the inverse noise
-            variance per baseline, time, and frequency. Shape
-            (Nvis, Ntimes, Nfreqs).
-
-        pspec_sqrt (array_like):
-            Array of (real) power spectrum values, square-rooted, modelling
-            the prior covariance of the gain perturbations.
-            Shape (Nants, Nfrate, Ntau).
-
-        A_real, A_imag (sparse array):
-            Sparse arrays that project from a vector of gain perturbations to
-            a vector of visibilities that they belong to. Shape (Nvis, Nants).
-
-        model_vis (array_like):
-            Array of complex visibility model values, of shape (Nvis, Ntimes,
-            Nfreqs).
-            $m_{ij} = \bar{g}_i \bar{g}_j^\dagger V_{ij}$.
-    """
-    gain_shape = x.shape
-    vis_shape = inv_noise_var.shape
-    assert inv_noise_var.shape == model_vis.shape
-
-    # Multiply Fourier x values by S^1/2 and FT
-    sqrtSx = apply_sqrt_pspec(pspec_sqrt, x)
-    for k in range(sqrtSx.shape[0]):
-        sqrtSx[k, :, :] = fft.ifft2(sqrtSx[k, :, :])
-
-    # Apply projection operator to real-space sqrt(S)-weighted x values,
-    # weight by inverse noise variance, then apply (conjugated) projection
-    # operator
-    y = apply_proj_conj(apply_proj(sqrtSx,
-                                   A_real,
-                                   A_imag,
-                                   model_vis) \
-                          * inv_noise_var,
-                        A_real,
-                        A_imag,
-                        model_vis,
-                        gain_shape)
-
-    # Do inverse FT and multiply by S^1/2 again
-    for k in range(y.shape[0]):
-        y[k, :, :] = fft.fft2(y[k, :, :])
-
-    return x + apply_sqrt_pspec(pspec_sqrt, y)
-        
-
-
-def construct_rhs(
-    resid, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis, realisation=True
+def construct_rhs_mpi(
+    comm,
+    resid,
+    inv_noise_var,
+    pspec_sqrt,
+    A_real,
+    A_imag,
+    model_vis,
+    Fbasis,
+    realisation=True,
+    seed=None,
 ):
     """
-    Construct the RHS vector of the linear system. This will have shape
-    (Nants, Ntau, Nfrate).
-
-    Parameters:
-        resid (array_like, complex):
-            Residual of the observed visibilities (data minus fiducial input
-            model).
-
-        inv_noise_var (array_like):
-            Inverse noise variance, of shape (Nbl, Nfreqs, Ntimes). This is
-            used because we have assumed that the noise is diagonal
-            (uncorrelated) between baselines, times, and frequencies.
-
-        pspec_sqrt (array_like):
-            Array of 2D (sqrt) power spectra used to construct the prior
-            covariance S.
-
-        A_real, A_imag (sparse array):
-            Shape (Nvis, Nants)
-
-        model_vis (array_like):
-            Array of complex model visibilities. Shape (Nvis, Ntimes, Nfreqs).
-
-        realisation (bool):
-            Whether to include Gaussian random realisation terms (True) or just
-            the Wiener filter terms (False).
-        
-        
+    MPI version of RHS constructor.
     """
-    # fft: data -> fourier
-    # ifft: fourier -> data
-    Nvis, Ntimes, Nfreqs = resid.shape
+    myid = comm.Get_rank()
+
+    # The random seed should depend on the worker ID to avoid duplication
+    np.random.seed(seed)
+
+    Nvis, Nfreqs, Ntimes = resid.shape
+    Nmodes = Fbasis.shape[0]
     Nants = A_real.shape[-1]
-    Nfrate = Ntimes
-    Ntau = Nfreqs
+    assert pspec_sqrt.shape == (Nmodes,)
 
     # Switch to turn random realisations on or off
     realisation_switch = 1.0 if realisation else 0.0
 
     # (Term 2): \omega_y
-    b = (
-        realisation_switch
-        * (
-            1.0 * np.random.randn(Nants, Nfrate, Ntau)
-            + 1.0j * np.random.randn(Nants, Nfrate, Ntau)
+    if myid == 0:
+        # Random realisation for prior
+        b = (
+            realisation_switch
+            * (
+                1.0 * np.random.randn(Nants, Nmodes)
+                + 1.0j * np.random.randn(Nants, Nmodes)
+            )
+            / np.sqrt(2.0)
         )
-        / np.sqrt(2.0)
-    )
+    else:
+        b = np.zeros((Nants, Nmodes), dtype=np.complex128)
+
+    # Broadcast this random realisation
+    comm.Bcast(b, root=0)
+
+    # The following quantities are calculated on each worker; each worker holds
+    # a chunk of the data, and the calculated quantities are reduced/summed across
+    # the full set of workers at the end
 
     # (Terms 1+3): S^1/2 F^dagger A^\dagger [ N^{-1} r + N^{-1/2} \omega_r ]
     omega_r = (
@@ -283,7 +197,7 @@ def construct_rhs(
         * (1.0 * np.random.randn(*resid.shape) + 1.0j * np.random.randn(*resid.shape))
         / np.sqrt(2.0)
     )
-    gain_shape = (Nants, Nfrate, Ntau)
+    gain_shape = (Nants, Nfreqs, Ntimes)
 
     # Apply inverse noise (or its sqrt) to data/random vector terms, and do
     # transpose projection operation, all in real space
@@ -295,12 +209,93 @@ def construct_rhs(
         gain_shape,
     )
 
-    # Do FT to go into Fourier space again
-    for k in range(Nants):
-        yy[k,:,:] = fft.fft2(yy[k,:,:])
+    # Conjugate basis
+    FFc = Fbasis.conj().reshape((Fbasis.shape[0], -1))
 
-    # Apply sqrt(S) operator
-    yy = apply_sqrt_pspec(pspec_sqrt, yy)
+    # Do FT to go into Fourier space again; also apply sqrtS operator
+    my_y = np.zeros_like(b)
+    for k in range(Nants):
+        my_y[k, :] = pspec_sqrt * np.tensordot(
+            FFc, yy[k, :, :].flatten(), axes=((1,), (0,))
+        )
+
+    # Do reduce (sum) operation for all workers' my_y arrays, which contain the
+    # projection of that worker's chunk of the result onto a chunk of the Fourier
+    # basis. The result of the reduce/sum gives the full FT over *all* data points
+    total_y = np.zeros_like(my_y)
+    comm.Allreduce(my_y.flatten(), total_y, op=MPI_SUM)
 
     # Add the transformed Terms 1+3 to b vector
-    return b + yy
+    # Result should be the same for all MPI workers
+    bvec = np.concatenate(((b + total_y).flatten().real, (b + total_y).flatten().imag))
+    return bvec
+
+
+def apply_operator_mpi(
+    comm, x, inv_noise_var, pspec_sqrt, A_real, A_imag, model_vis, Fbasis
+):
+    """
+    MPI version of gain linear operator.
+    """
+    myid = comm.Get_rank()
+
+    assert inv_noise_var.shape == model_vis.shape
+
+    # Reshape input vector
+    Nmodes, Nfreqs, Ntimes = Fbasis.shape
+    Nants = A_real.shape[1]
+    # vec = x.reshape((Nants, Nmodes))
+    assert pspec_sqrt.shape == (Nmodes,)
+
+    # Broadcast this input vector to all workers, to make sure it's synced
+    vec = np.zeros(2 * Nants * Nmodes, dtype=x.dtype)
+    if myid == 0:
+        vec[:] = x
+    comm.Bcast(vec, root=0)
+
+    # Extract real and imaginary parts, reshape, and multiply by sqrt of prior var
+    xre = pspec_sqrt[np.newaxis, :] * vec[: vec.size // 2].reshape((Nants, Nmodes))
+    xim = pspec_sqrt[np.newaxis, :] * vec[vec.size // 2 :].reshape((Nants, Nmodes))
+
+    # Conjugate basis
+    FFc = Fbasis.conj().reshape((Fbasis.shape[0], -1))
+
+    # The following quantities are calculated on each worker; each worker holds
+    # a chunk of the data, and the calculated quantities are reduced/summed across
+    # the full set of workers at the end
+
+    # Multiply Fourier x values by S^1/2 and FT
+    sqrtSx = np.zeros((Nants, Fbasis.shape[1], Fbasis.shape[2]), dtype=np.complex128)
+    for k in range(sqrtSx.shape[0]):
+        sqrtSx[k, :, :] = np.tensordot(
+            Fbasis, xre[k, :] + 1.0j * xim[k, :], axes=((0,), (0,))
+        )
+    gain_shape = (Nants, Nfreqs, Ntimes)
+
+    # Apply projection operator to real-space sqrt(S)-weighted x values,
+    # weight by inverse noise variance, then apply (conjugated) projection
+    # operator
+    y = apply_proj_conj(
+        apply_proj(sqrtSx, A_real, A_imag, model_vis) * inv_noise_var,
+        A_real,
+        A_imag,
+        model_vis,
+        gain_shape,
+    )
+
+    # Do inverse FT and multiply by S^1/2 again
+    yy = np.zeros((Nants, Nmodes), dtype=np.complex128)
+    for k in range(y.shape[0]):
+        yy[k, :] = pspec_sqrt * np.tensordot(
+            FFc, y[k, :, :].flatten(), axes=((1,), (0,))
+        )
+
+    # Expand into 1D vector of real and imag. parts
+    my_y = np.concatenate((yy.real.flatten(), yy.imag.flatten()))
+
+    # Do Allreduce/sum to sum over all chunks and distribute result to all workers
+    total_y = np.zeros_like(my_y)
+    comm.Allreduce(my_y.flatten(), total_y, op=MPI_SUM)
+
+    # Add identity and return
+    return x + total_y

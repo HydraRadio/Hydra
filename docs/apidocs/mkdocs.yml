@@ -1,0 +1,16 @@
+site_name: Hydra API documentation
+
+theme:
+  name: "mkdocs"
+
+plugins:
+- search
+
+- mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          load_external_modules: true
+          selection:
+              new_path_syntax: true
+          paths: [../../../Hydra]

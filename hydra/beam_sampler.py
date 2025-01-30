@@ -1,14 +1,16 @@
 import numpy as np
 from scipy.linalg import toeplitz, cholesky, inv, LinAlgError, solve
 from scipy.special import comb, hyp2f1, jn_zeros, jn
+
 import matplotlib.pyplot as plt
 from matplotlib.colors import SymLogNorm
-from hydra.sparse_beam import sparse_beam
 
 from pyuvsim import AnalyticBeam
 
+from .sparse_beam import sparse_beam
 from .vis_simulator import simulate_vis_per_source
 from . import utils
+from .utils import status
 
 
 def split_real_imag(arr, kind):
@@ -27,12 +29,14 @@ def split_real_imag(arr, kind):
         new_arr (array_like):
             Array that has been split into real and imaginary parts.
     """
-    valid_kinds = ['op', 'vec']
+    valid_kinds = ["op", "vec"]
     nax = len(arr.shape)
     if kind not in valid_kinds:
-        raise ValueError("kind must be 'op' or 'vec' when splitting complex "
-                         "arrays into real and imaginary components")
-    if kind == 'op':
+        raise ValueError(
+            "kind must be 'op' or 'vec' when splitting complex "
+            "arrays into real and imaginary components"
+        )
+    if kind == "op":
         new_arr = np.zeros((2, 2) + arr.shape, dtype=float)
         new_arr[0, 0] = arr.real
         new_arr[0, 1] = -arr.imag
@@ -42,12 +46,14 @@ def split_real_imag(arr, kind):
         # Prepare to put these axes at the end
         axes = list(range(2, nax + 2)) + [0, 1]
 
-    elif kind == 'vec':
+    elif kind == "vec":
         new_arr = np.zeros((2,) + arr.shape, dtype=float)
         new_arr[0], new_arr[1] = (arr.real, arr.imag)
 
         # Prepare to put this axis at the end
-        axes = list(range(1, nax + 1)) + [0, ]
+        axes = list(range(1, nax + 1)) + [
+            0,
+        ]
 
     # Rearrange axes (they are always expected at the end)
     new_arr = np.transpose(new_arr, axes=axes)
@@ -78,13 +84,22 @@ def reshape_data_arr(arr, Nfreqs, Ntimes, Nants, Npol):
     """
 
     arr_trans = np.transpose(arr, (0, 1, 3, 4, 2))
-    arr_beam = np.zeros([Npol, Npol, Nfreqs, Ntimes, Nants, Nants], dtype=arr_trans.dtype)
+    arr_beam = np.zeros(
+        [Npol, Npol, Nfreqs, Ntimes, Nants, Nants], dtype=arr_trans.dtype
+    )
     for pol_ind1 in range(Npol):
         for pol_ind2 in range(Npol):
             for freq_ind in range(Nfreqs):
                 for time_ind in range(Ntimes):
-                        triu_inds = np.triu_indices(Nants, k=1)
-                        arr_beam[pol_ind1, pol_ind2, freq_ind, time_ind, triu_inds[0], triu_inds[1]] = arr_trans[pol_ind1, pol_ind2, freq_ind, time_ind]
+                    triu_inds = np.triu_indices(Nants, k=1)
+                    arr_beam[
+                        pol_ind1,
+                        pol_ind2,
+                        freq_ind,
+                        time_ind,
+                        triu_inds[0],
+                        triu_inds[1],
+                    ] = arr_trans[pol_ind1, pol_ind2, freq_ind, time_ind]
 
     return arr_beam
 
@@ -110,8 +125,6 @@ def get_bess_matr(nmodes, mmodes, rho, phi):
             Fourier-Bessel transformation matrix.
     """
 
-
-
     unique_n, ninv = np.unique(nmodes, return_inverse=True)
     nmax = np.amax(unique_n)
     bzeros = jn_zeros(0, nmax)
@@ -123,18 +136,20 @@ def get_bess_matr(nmodes, mmodes, rho, phi):
 
     unique_m, minv = np.unique(mmodes, return_inverse=True)
     # Shape Ntimes, Nptsrc, len(unique_m)
-    az_modes = np.exp(1.j * unique_m[np.newaxis, np.newaxis, :] * phi[:, :, np.newaxis])
+    az_modes = np.exp(
+        1.0j * unique_m[np.newaxis, np.newaxis, :] * phi[:, :, np.newaxis]
+    )
     # Shape Ntimes, Nptsrc, len(mmodes)
-    az_vals = az_modes[:, :, minv] / np.sqrt(np.pi) # making orthonormal
+    az_vals = az_modes[:, :, minv] / np.sqrt(np.pi)  # making orthonormal
 
     bess_matr = bess_vals * az_vals
-
 
     return bess_matr
 
 
-def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
-                     force_spw_index=False):
+def fit_bess_to_beam(
+    beam, freqs, nmodes, mmodes, rho, phi, polarized=False, force_spw_index=False
+):
     """
     Get the best fit Fourier-Bessel coefficients for a beam based on its value at a
     a set direction cosines. A least-squares algorithm is used to perform the
@@ -170,25 +185,30 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
     rho_un = np.unique(rho)
     phi_un = np.unique(phi)
 
-
     drho = rho_un[1] - rho_un[0]
     dphi = phi_un[1] - phi_un[0]
 
     # Before indexing conventions enforced
-    rhs_full = beam.interp(az_array=phi.flatten(),
-                           za_array=np.arccos(1 - rho**2).flatten(),
-                           freq_array=freqs)[0]
-    
+    rhs_full = beam.interp(
+        az_array=phi.flatten(),
+        za_array=np.arccos(1 - rho**2).flatten(),
+        freq_array=freqs,
+    )[0]
+
     if polarized:
         if spw_axis_present or force_spw_index:
-            rhs = rhs_full[:, 0] # Will have shape Nfeed, Naxes_vec, Nfreq, Nrho * Nphi
+            rhs = rhs_full[:, 0]  # Will have shape Nfeed, Naxes_vec, Nfreq, Nrho * Nphi
         else:
             rhs = rhs_full
     else:
         if spw_axis_present or force_spw_index:
-            rhs = rhs_full[1:, 0, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
+            rhs = rhs_full[
+                1:, 0, :1
+            ]  # FIXME: analyticbeam gives nans and zeros for all other indices
         else:
-            rhs = rhs_full[1:, :1] # FIXME: analyticbeam gives nans and zeros for all other indices
+            rhs = rhs_full[
+                1:, :1
+            ]  # FIXME: analyticbeam gives nans and zeros for all other indices
 
     Npol = 1 + polarized
 
@@ -196,18 +216,20 @@ def fit_bess_to_beam(beam, freqs, nmodes, mmodes, rho, phi, polarized=False,
     Nfreqs = len(freqs)
     fit_beam = np.zeros((Nfreqs, ncoeff, Npol, Npol), dtype=complex)
 
-    BT = (bess_matr.conj())
+    BT = bess_matr.conj()
     lhs_op = np.tensordot(BT, bess_matr, axes=((0, 1), (0, 1)))
     BT_res = BT.reshape(rho.size, ncoeff)
     for freq_ind in range(Nfreqs):
         for feed_ind in range(Npol):
             for pol_ind in range(Npol):
-                rhs_vec = (BT_res * rhs[feed_ind, pol_ind, freq_ind, :, np.newaxis]).sum(axis=0)
-                soln = solve(lhs_op, rhs_vec, assume_a='her')
+                rhs_vec = (
+                    BT_res * rhs[feed_ind, pol_ind, freq_ind, :, np.newaxis]
+                ).sum(axis=0)
+                soln = solve(lhs_op, rhs_vec, assume_a="her")
                 fit_beam[freq_ind, :, feed_ind, pol_ind] = soln
 
     # Reshape coefficients array
-    fit_beam = np.array(fit_beam) # Has shape Nfreqs, ncoeffs, Npol, Npol
+    fit_beam = np.array(fit_beam)  # Has shape Nfreqs, ncoeffs, Npol, Npol
 
     return fit_beam
 
@@ -256,37 +278,53 @@ def get_bess_outer(bess_matr):
 
     return bess_matr[:, :, np.newaxis] * bess_matr.conj()[:, :, :, np.newaxis]
 
-def get_bess_sky_contraction(bess_outer, ants, fluxes, ra, dec, freqs, lsts,
-                             polarized=False, 
-                             precision=1, latitude=-30.7215 * np.pi / 180.0, 
-                             use_feed="x", multiprocess=True):
-    
+
+def get_bess_sky_contraction(
+    bess_outer,
+    ants,
+    fluxes,
+    ra,
+    dec,
+    freqs,
+    lsts,
+    polarized=False,
+    precision=1,
+    latitude=-30.7215 * np.pi / 180.0,
+    use_feed="x",
+    multiprocess=True,
+):
+
     Npol = 2 if polarized else 1
     Nfreqs = len(freqs)
     Ncoeff = bess_outer.shape[-1]
     Ntimes = len(lsts)
     Nants = len(ants)
     contract_shape = [Npol, Npol, Nfreqs, Ntimes, Nants, Nants, Ncoeff, Ncoeff]
-    
+
     # tsb,qQftaAs,tsB -> qQftaAbB
     # inner loop is already over frequency, so just loop over that to save mem
     bess_sky_contraction = np.zeros(contract_shape, dtype=complex)
-    beams = [AnalyticBeam("uniform") for ant_ind in range(len(ants))] 
-    
-    #for freq_ind, freq in enumerate(freqs):
-        
-        #FIXME: can do away with freq loop if we use sparse_beam here but it needs to be rewritten
-    for time_ind in range(Ntimes):
-        sky_amp_phase = simulate_vis_per_source(ants, fluxes,
-                                                ra, dec, freqs, lsts[time_ind:time_ind + 1],
-                                                beams=beams, polarized=polarized,
-                                                precision=precision,
-                                                latitude=latitude,
-                                                use_feed=use_feed,
-                                                multiprocess=multiprocess)
+    beams = [AnalyticBeam("uniform") for ant_ind in range(len(ants))]
 
-            
-            
+    # for freq_ind, freq in enumerate(freqs):
+
+    # FIXME: can do away with freq loop if we use sparse_beam here but it needs to be rewritten
+    for time_ind in range(Ntimes):
+        sky_amp_phase = simulate_vis_per_source(
+            ants,
+            fluxes,
+            ra,
+            dec,
+            freqs,
+            lsts[time_ind : time_ind + 1],
+            beams=beams,
+            polarized=polarized,
+            precision=precision,
+            latitude=latitude,
+            use_feed=use_feed,
+            multiprocess=multiprocess,
+        )
+
         if not polarized:
             sky_amp_phase = sky_amp_phase[np.newaxis, np.newaxis, :]
         # Need this conjugation since only lower half of array is filled
@@ -294,30 +332,45 @@ def get_bess_sky_contraction(bess_outer, ants, fluxes, ra, dec, freqs, lsts,
         # makes compute later easier to think about
         sky_amp_phase = sky_amp_phase + sky_amp_phase.swapaxes(4, 5).conj()
 
-        bess_sky_contraction[:, :, :, time_ind] = np.tensordot(sky_amp_phase[:, :, :, 0],
-                                                               bess_outer[time_ind],
-                                                               axes=((-1, ), (0, )))
-
+        bess_sky_contraction[:, :, :, time_ind] = np.tensordot(
+            sky_amp_phase[:, :, :, 0], bess_outer[time_ind], axes=((-1,), (0,))
+        )
 
     return bess_sky_contraction
 
-def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
-                                     ant_samp_ind):
+
+def get_bess_to_vis_from_contraction(
+    bess_sky_contraction, beam_coeffs, ants, ant_samp_ind
+):
     Nants = len(ants)
     ant_inds = get_ant_inds(ant_samp_ind, Nants)
-    beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds] # bfApQ -> ApfbQ
-    bess_trans = np.einsum("ApfbQ,qQftAbB->pqftAB", 
-                           beam_res.conj(), 
-                           bess_sky_contraction[:, :, :, :,  ant_inds, ant_samp_ind],
-                           optimize=True)
-    
+    beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds]  # bfApQ -> ApfbQ
+    bess_trans = np.einsum(
+        "ApfbQ,qQftAbB->pqftAB",
+        beam_res.conj(),
+        bess_sky_contraction[:, :, :, :, ant_inds, ant_samp_ind],
+        optimize=True,
+    )
+
     return bess_trans
 
 
-def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
-                    beam_coeffs, ant_samp_ind, polarized=False, precision=1,
-                    latitude=-30.7215 * np.pi / 180.0, use_feed="x",
-                    multiprocess=True):
+def get_bess_to_vis(
+    bess_matr,
+    ants,
+    fluxes,
+    ra,
+    dec,
+    freqs,
+    lsts,
+    beam_coeffs,
+    ant_samp_ind,
+    polarized=False,
+    precision=1,
+    latitude=-30.7215 * np.pi / 180.0,
+    use_feed="x",
+    multiprocess=True,
+):
     """
     Compute the matrices that act as the quadratic forms by which visibilities
     are made. Calls simulate_vis_per_source to get the Fourier operator, then
@@ -374,13 +427,21 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
 
     # Use uniform beams so that we just get the Fourier operator.
     beams = [AnalyticBeam("uniform") for ant_ind in range(len(ants))]
-    sky_amp_phase = simulate_vis_per_source(ants, fluxes, ra, dec, freqs, lsts,
-                                            beams=beams, polarized=polarized,
-                                            precision=precision,
-                                            latitude=latitude,
-                                            use_feed=use_feed,
-                                            multiprocess=multiprocess,
-                                            subarr_ant=ant_samp_ind)
+    sky_amp_phase = simulate_vis_per_source(
+        ants,
+        fluxes,
+        ra,
+        dec,
+        freqs,
+        lsts,
+        beams=beams,
+        polarized=polarized,
+        precision=precision,
+        latitude=latitude,
+        use_feed=use_feed,
+        multiprocess=multiprocess,
+        subarr_ant=ant_samp_ind,
+    )
     sky_amp_phase = sky_amp_phase[:, :, ant_inds]
     if not polarized:
         sky_amp_phase = sky_amp_phase[np.newaxis, np.newaxis, :]
@@ -389,23 +450,28 @@ def get_bess_to_vis(bess_matr, ants, fluxes, ra, dec, freqs, lsts,
     # Determined optimal contraction order with opt_einsum
     # Implementing steps in faster way using tdot
     # aqfBQ,tsB->aqfQts->Qqftas
-    beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds] # BfaqQ -> aqfBQ
-    beam_on_sky = np.tensordot(beam_res.conj(), bess_matr.conj(),
-                               axes=((3,), (2,))).transpose((3,1,2,4,0,5))
+    beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds]  # BfaqQ -> aqfBQ
+    beam_on_sky = np.tensordot(
+        beam_res.conj(), bess_matr.conj(), axes=((3,), (2,))
+    ).transpose((3, 1, 2, 4, 0, 5))
 
     # Qqftas,QPftas->qPftas
     # reassign to save memory
     # Qqftas -> Qq_ftas; QPftas->Q_Pftas; Qq_ftas,Q_Pftas->qPftas
-    sky_amp_phase = (beam_on_sky[:, :, np.newaxis] * sky_amp_phase[:, np.newaxis]).sum(axis=0)
+    sky_amp_phase = (beam_on_sky[:, :, np.newaxis] * sky_amp_phase[:, np.newaxis]).sum(
+        axis=0
+    )
 
     # qPftas,tsb->qPftab
-    bess_trans = np.zeros((Npol, Npol, freqs.size, lsts.size, nants - 1, beam_res.shape[-2]),
-                          dtype=sky_amp_phase.dtype)
+    bess_trans = np.zeros(
+        (Npol, Npol, freqs.size, lsts.size, nants - 1, beam_res.shape[-2]),
+        dtype=sky_amp_phase.dtype,
+    )
 
     for time_ind in range(lsts.size):
-        bess_trans[:,:, :, time_ind, :, :] = np.tensordot(sky_amp_phase[:, :, :, time_ind],
-                                                     bess_matr[time_ind],
-                                                     axes=((-1, ), (0, )))
+        bess_trans[:, :, :, time_ind, :, :] = np.tensordot(
+            sky_amp_phase[:, :, :, time_ind], bess_matr[time_ind], axes=((-1,), (0,))
+        )
     return bess_trans
 
 
@@ -438,25 +504,31 @@ def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
     # Should not affect the vis at other times/freqs
 
     # qpfta,qPftab->qpPftab
-    Ninv_Q = inv_noise_var[:, :, np.newaxis, :, :, :, np.newaxis] * bess_trans[:, np.newaxis, :, :, :, :, :]
+    Ninv_Q = (
+        inv_noise_var[:, :, np.newaxis, :, :, :, np.newaxis]
+        * bess_trans[:, np.newaxis, :, :, :, :, :]
+    )
 
     # qRftab,qpPFtaB->RfbpPFB
     # Actually just want diagonals in frequency but don't need to save memory here
-    Qdag_Ninv_Q = np.tensordot(bess_trans.conj(), Ninv_Q,
-                              axes=((0, 3, 4), (0, 4, 5)))
+    Qdag_Ninv_Q = np.tensordot(bess_trans.conj(), Ninv_Q, axes=((0, 3, 4), (0, 4, 5)))
     # Get the diagonals RfbpPFB-> fRbpPB
     Qdag_Ninv_Q = Qdag_Ninv_Q[:, range(Nfreqs), :, :, :, range(Nfreqs)]
     # Factor of 2 because 1/2 the variance for each complex component
-    Qdag_Ninv_Q = 2*split_real_imag(Qdag_Ninv_Q, kind='op') # fRbpPBcC
-    Qdag_Ninv_Q = Qdag_Ninv_Q.transpose((1,2,3,4,5,7,6,0)) # fRbpPBcC->RbpPBCcf
+    Qdag_Ninv_Q = 2 * split_real_imag(Qdag_Ninv_Q, kind="op")  # fRbpPBcC
+    Qdag_Ninv_Q = Qdag_Ninv_Q.transpose((1, 2, 3, 4, 5, 7, 6, 0))  # fRbpPBcC->RbpPBCcf
 
     # c,fF->cfF->fcF
     cov_matr = np.swapaxes(comp_matr[:, np.newaxis, np.newaxis] * freq_matr, 0, 1)
     # fcF,RbpPBCcf->fRbpPBCcF
-    cov_Qdag_Ninv_Q = cov_matr[:, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis] * Qdag_Ninv_Q[np.newaxis]
-    #fRbpPBCcF->fRbpPBcCF
+    cov_Qdag_Ninv_Q = (
+        cov_matr[
+            :, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis
+        ]
+        * Qdag_Ninv_Q[np.newaxis]
+    )
+    # fRbpPBCcF->fRbpPBcCF
     cov_Qdag_Ninv_Q = np.swapaxes(cov_Qdag_Ninv_Q, -2, -3)
-
 
     return cov_Qdag_Ninv_Q
 
@@ -480,12 +552,13 @@ def apply_operator(x, cov_Qdag_Ninv_Q):
     Npol = x.shape[2]
     # Linear so we can split the LHS multiply
     # fRbpPBcCF,BFpPC->fRbpcp->pRfbc->pfbRc
-    Ax1 = np.tensordot(cov_Qdag_Ninv_Q, x, axes=((4, 5, 7,8), (3, 0, 4, 1)))
-    Ax1 = (Ax1[:, :, :, range(Npol), :, range(Npol)]).transpose((0,2,3,1,4))
+    Ax1 = np.tensordot(cov_Qdag_Ninv_Q, x, axes=((4, 5, 7, 8), (3, 0, 4, 1)))
+    Ax1 = (Ax1[:, :, :, range(Npol), :, range(Npol)]).transpose((0, 2, 3, 1, 4))
 
     # Second term is identity due to preconditioning
     Ax = (Ax1 + x).transpose((1, 2, 0, 3, 4))
     return Ax
+
 
 def get_std_norm(shape):
     """
@@ -497,12 +570,14 @@ def get_std_norm(shape):
     Returns:
         std_norm (array_like): desired complex samples.
     """
-    std_norm = (np.random.normal(size=shape) + 1.0j * np.random.normal(size=shape)) / np.sqrt(2)
+    std_norm = (
+        np.random.normal(size=shape) + 1.0j * np.random.normal(size=shape)
+    ) / np.sqrt(2)
 
     return std_norm
 
-def construct_rhs(vis, inv_noise_var, mu, bess_trans,
-                  cov_tuple, cho_tuple, flx=True):
+
+def construct_rhs(vis, inv_noise_var, mu, bess_trans, cov_tuple, cho_tuple, flx=True):
     """
     Construct the right hand side of the Gaussian Constrained Realization (GCR)
     equation.
@@ -541,32 +616,35 @@ def construct_rhs(vis, inv_noise_var, mu, bess_trans,
         flx0 = np.zeros(flx0_shape)
         flx1 = np.zeros(flx1_shape)
 
-
-
     Ninv_d = inv_noise_var * vis
     Ninv_sqrt_flx1 = np.sqrt(inv_noise_var) * flx1
 
     # qPftab,qpfta->bfpP
     # qPftab->bPqfta
-    bess_trans_use = bess_trans.transpose((5,1,0,2,3,4))
+    bess_trans_use = bess_trans.transpose((5, 1, 0, 2, 3, 4))
     # Weird factors of sqrt(2) etc since we will split these in a sec
     # bPqfta,pqfta->bpPf->bfpP
 
-    Qdag_terms = np.sum(bess_trans_use.conj()[:,np.newaxis] * (2 * Ninv_d + np.sqrt(2) * Ninv_sqrt_flx1).transpose((1, 0, 2, 3, 4))[:, :, np.newaxis],
-                        axis=(3,5,6)).transpose((0,3,1,2))
-    Qdag_terms = split_real_imag(Qdag_terms, kind='vec')
+    Qdag_terms = np.sum(
+        bess_trans_use.conj()[:, np.newaxis]
+        * (2 * Ninv_d + np.sqrt(2) * Ninv_sqrt_flx1).transpose((1, 0, 2, 3, 4))[
+            :, :, np.newaxis
+        ],
+        axis=(3, 5, 6),
+    ).transpose((0, 3, 1, 2))
+    Qdag_terms = split_real_imag(Qdag_terms, kind="vec")
 
     freq_matr, comp_matr = cov_tuple
     # c,bfpPc->bfpPc Ff,bfpPc->FbpPc
-    cov_Qdag_terms = np.tensordot(freq_matr, (comp_matr * Qdag_terms),
-                                  axes=((1,), (1,)))
+    cov_Qdag_terms = np.tensordot(
+        freq_matr, (comp_matr * Qdag_terms), axes=((1,), (1,))
+    )
 
     freq_cho, comp_cho = cho_tuple
-    flx0 = split_real_imag(flx0, kind='vec')
-    mu_real_imag = split_real_imag(mu, kind='vec')
+    flx0 = split_real_imag(flx0, kind="vec")
+    mu_real_imag = split_real_imag(mu, kind="vec")
 
-    flx0_add = np.tensordot(freq_cho, (comp_cho * flx0),
-                                  axes=((1,), (1,)))
+    flx0_add = np.tensordot(freq_cho, (comp_cho * flx0), axes=((1,), (1,)))
 
     rhs = cov_Qdag_terms + np.swapaxes(mu_real_imag, 0, 1) + flx0_add
 
@@ -591,12 +669,14 @@ def non_norm_gauss(A, sig, x):
             Values of the Gaussian function at positions given by x
     """
 
-    gvals = A * np.exp(-x**2 / (2 * sig**2))
+    gvals = A * np.exp(-(x**2) / (2 * sig**2))
 
     return gvals
 
-def make_prior_cov(freqs, times, ncoeff, std, sig_freq,
-                   constrain_phase=False, constraint=1e-4, ridge=0):
+
+def make_prior_cov(
+    freqs, times, ncoeff, std, sig_freq, constrain_phase=False, constraint=1e-4, ridge=0
+):
     """
     Make a prior covariance for the beam coefficients.
 
@@ -623,13 +703,13 @@ def make_prior_cov(freqs, times, ncoeff, std, sig_freq,
     freq_col[0] += ridge
     freq_matr = toeplitz(freq_col)
     comp_matr = np.ones(2)
-    if constrain_phase: # Make the imaginary variance small compared to the real one
+    if constrain_phase:  # Make the imaginary variance small compared to the real one
         comp_matr[1] = constraint
-
 
     cov_tuple = (freq_matr, comp_matr)
 
     return cov_tuple
+
 
 def do_cov_cho(cov_tuple, check_op=False):
     """
@@ -648,14 +728,16 @@ def do_cov_cho(cov_tuple, check_op=False):
     """
     freq_matr, comp_matr = cov_tuple
     freq_cho = cholesky(freq_matr, lower=True)
-    comp_cho = np.sqrt(comp_matr) # Currently always diagonal
+    comp_cho = np.sqrt(comp_matr)  # Currently always diagonal
 
     cho_tuple = (freq_cho, comp_cho)
     if check_op:
         prod = freq_cho @ freq_cho.T.conj()
         allclose = np.allclose(prod, freq_matr)
-        print(f"Successful cholesky factorization of beam for frequency covariance: "
-              f"{allclose}")
+        print(
+            f"Successful cholesky factorization of beam for frequency covariance: "
+            f"{allclose}"
+        )
         if not allclose:
             raise LinAlgError(f"Cholesky factorization failed for frequency covariance")
 
@@ -682,18 +764,27 @@ def get_beam_from_FB_coeff(beam_coeffs, za, az, nmodes, mmodes):
         beam (array_like): Beam evaluated at a grid of za, az
     """
 
-
     rho = np.sqrt(1 - np.cos(za))
     Rho, Az = np.meshgrid(rho, az)
     B = get_bess_matr(nmodes, mmodes, Rho, Az)
 
-    beam = B@beam_coeffs
+    beam = B @ beam_coeffs
 
     return beam
 
 
-def plot_FB_beam(beam, za, az, vmin=-1, vmax=1, norm=SymLogNorm, linthresh=1e-3, 
-                 cmap="Spectral", save=False, **kwargs):
+def plot_FB_beam(
+    beam,
+    za,
+    az,
+    vmin=-1,
+    vmax=1,
+    norm=SymLogNorm,
+    linthresh=1e-3,
+    cmap="Spectral",
+    save=False,
+    **kwargs,
+):
     """
     Plots a Fourier_Bessel beam at specified zenith angles and azimuths.
 
@@ -714,12 +805,22 @@ def plot_FB_beam(beam, za, az, vmin=-1, vmax=1, norm=SymLogNorm, linthresh=1e-3,
 
     Az, Za = np.meshgrid(az, za)
 
-    fig, ax = plt.subplots(ncols=2, subplot_kw={'projection': 'polar'}, figsize=(16, 8))
-    cax = ax[0].pcolormesh(Az, Za, beam.real,
-                           norm=norm(vmin=vmin, vmax=vmax, linthresh=linthresh, **kwargs), cmap=cmap)
+    fig, ax = plt.subplots(ncols=2, subplot_kw={"projection": "polar"}, figsize=(16, 8))
+    cax = ax[0].pcolormesh(
+        Az,
+        Za,
+        beam.real,
+        norm=norm(vmin=vmin, vmax=vmax, linthresh=linthresh, **kwargs),
+        cmap=cmap,
+    )
     ax[0].set_title("Real Component")
-    ax[1].pcolormesh(Az, Za, beam.imag,
-                     norm=norm(vmin=vmin, vmax=vmax, linthresh=linthresh, **kwargs), cmap=cmap)
+    ax[1].pcolormesh(
+        Az,
+        Za,
+        beam.imag,
+        norm=norm(vmin=vmin, vmax=vmax, linthresh=linthresh, **kwargs),
+        cmap=cmap,
+    )
     ax[1].set_title("Imaginary Component")
     fig.colorbar(cax, ax=ax.ravel().tolist())
     if save:
@@ -742,16 +843,18 @@ def get_zernike_rad(r, n, m):
     Returns:
         rad: radial polynomial of degree (n,m) evaluated at (theta,r)
     """
-    if (n - m) % 2: # odd difference, return 0
-        raise ValueError("Difference between n and m must be even. "
-                         f"n={n} and m={m}.")
+    if (n - m) % 2:  # odd difference, return 0
+        raise ValueError(
+            "Difference between n and m must be even. " f"n={n} and m={m}."
+        )
     else:
         nm_diff = (n - m) // 2
         nm_sum = (n + m) // 2
-        prefac = (-1)**nm_diff * comb(nm_sum, m) * r**m
+        prefac = (-1) ** nm_diff * comb(nm_sum, m) * r**m
         rad = prefac * hyp2f1(1 + nm_sum, -nm_diff, 1 + m, r**2)
 
     return rad
+
 
 def get_zernike_azim(theta, m):
     """
@@ -768,7 +871,7 @@ def get_zernike_azim(theta, m):
         azim = np.cos(m * theta)
     elif m < 0:
         azim = np.sin(np.abs(m) * theta)
-    return(azim)
+    return azim
 
 
 def get_zernike_matrix(nmax, theta, r):
@@ -792,9 +895,22 @@ def get_zernike_matrix(nmax, theta, r):
 
     return zern_matr.transpose((1, 2, 0))
 
-def get_pert_beam(seed, beam_file, trans_std=1e-2, rot_std_deg=1., 
-                  stretch_std=1e-2, mmax=45, nmax=80, sqrt=True, Nfeeds=2,
-                  num_modes_comp=32, save=False, outdir="", load=False):
+
+def get_pert_beam(
+    seed,
+    beam_file,
+    trans_std=1e-2,
+    rot_std_deg=1.0,
+    stretch_std=1e-2,
+    mmax=45,
+    nmax=80,
+    sqrt=True,
+    Nfeeds=2,
+    num_modes_comp=32,
+    save=False,
+    outdir="",
+    load=False,
+):
     """
     Get a perturbed sparse_beam instance.
 
@@ -814,7 +930,7 @@ def get_pert_beam(seed, beam_file, trans_std=1e-2, rot_std_deg=1.,
         nmax (int):
             The maximum radial mode number to use in the FB basis.
         sqrt (bool):
-            Whether to take the square root of the unperturbed beam before 
+            Whether to take the square root of the unperturbed beam before
             fitting. Used for power beams.
         Nfeeds (int):
             Number of feeds. Set to None if using E-field beam, 2 for power beam.
@@ -836,13 +952,22 @@ def get_pert_beam(seed, beam_file, trans_std=1e-2, rot_std_deg=1.,
     sin_pert_coeffs = np.random.normal(size=8)
 
     mmodes = np.arange(-mmax, mmax + 1)
-    sb = sparse_beam(beam_file, nmax, mmodes, Nfeeds=Nfeeds,
-                     num_modes_comp=num_modes_comp, sqrt=sqrt, 
-                     perturb=True, trans_x=trans_x, trans_y=trans_y, 
-                     rot=rot, stretch_x=stretch_x, 
-                     stretch_y=stretch_y, 
-                     sin_pert_coeffs=sin_pert_coeffs)
-    
+    sb = sparse_beam(
+        beam_file,
+        nmax,
+        mmodes,
+        Nfeeds=Nfeeds,
+        num_modes_comp=num_modes_comp,
+        sqrt=sqrt,
+        perturb=True,
+        trans_x=trans_x,
+        trans_y=trans_y,
+        rot=rot,
+        stretch_x=stretch_x,
+        stretch_y=stretch_y,
+        sin_pert_coeffs=sin_pert_coeffs,
+    )
+
     beam_outfile = f"{outdir}/perturbed_beam_beamvals_seed_{seed}.npy"
     if load:
         pert_beam = np.load(beam_outfile)
@@ -853,7 +978,71 @@ def get_pert_beam(seed, beam_file, trans_std=1e-2, rot_std_deg=1.,
 
     if save:
         np.save(beam_outfile, pert_beam)
-        np.save(f"{outdir}/perturbed_beam_fit_coeffs_seed_{seed}.npy", 
-                fit_coeffs)
-    
+        np.save(f"{outdir}/perturbed_beam_fit_coeffs_seed_{seed}.npy", fit_coeffs)
+
     return sb
+
+
+def init_beam_sampler(beams, freqs, beam_mmax, beam_nmax):
+    """ """
+    beam_nmodes, beam_mmodes = np.meshgrid(
+        np.arange(1, beam_nmax + 1), np.arange(-beam_mmax, beam_mmax + 1)
+    )
+    beam_nmodes = beam_nmodes.flatten()
+    beam_mmodes = beam_mmodes.flatten()
+
+    za_fit = np.arange(91) * np.pi / 180
+    rho_fit = np.sqrt(1 - np.cos(za_fit)) / args.rho_const
+    phi_fit = np.linspace(0, 2 * np.pi, num=360)
+    PHI, RHO = np.meshgrid(phi_fit, rho_fit)
+
+    bess_matr_fit = get_bess_matr(beam_nmodes, beam_mmodes, RHO, PHI)
+
+    beam_coeffs_fit = fit_bess_to_beam(
+        beams[0], 1e6 * freqs, beam_nmodes, beam_mmodes, RHO, PHI, force_spw_index=True
+    )
+
+    print("\tBeam best fit dynamic range:")
+    print("\t", np.amax(np.abs(beam_coeffs_fit)), np.amin(np.abs(beam_coeffs_fit)))
+
+    txs, tys, tzs = convert_to_tops(ra, dec, times, array_latitude)
+
+    # area-preserving
+    rho = np.sqrt(1 - tzs) / args.rho_const
+    phi = np.arctan2(tys, txs)
+    bess_matr = hydra.beam_sampler.get_bess_matr(beam_nmodes, beam_mmodes, rho, phi)
+
+    # All the same, so just repeat (for now)
+    beam_coeffs = np.array(Nants * [beam_coeffs_fit])
+    # Want shape ncoeff, Nfreqs, Nants, Npol, Npol
+    beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
+    np.save(os.path.join(output_dir, "best_fit_beam"), beam_coeffs)
+    ncoeffs = beam_coeffs.shape[0]
+
+    if PLOTTING:
+        plot_beam_cross(beam_coeffs, 0, 0, "_best_fit")
+
+    amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
+    flux_use = get_flux_from_ptsrc_amp(amp_use, freqs, beta_ptsrc)
+
+    # Hardcoded parameters. Make variations smooth in time/freq.
+    sig_freq = 0.5 * (freqs[-1] - freqs[0])
+    cov_tuple = hydra.beam_sampler.make_prior_cov(
+        freqs, times, ncoeffs, args.beam_prior_std, sig_freq, ridge=1e-6
+    )
+    cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
+    cov_tuple_0 = hydra.beam_sampler.make_prior_cov(
+        freqs,
+        times,
+        ncoeffs,
+        args.beam_prior_std,
+        sig_freq,
+        ridge=1e-6,
+        constrain_phase=True,
+        constraint=1,
+    )
+    cho_tuple_0 = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
+
+    # Be lazy and just use the initial guess.
+    coeff_mean = beam_coeffs[:, :, 0]
+    bess_outer = hydra.beam_sampler.get_bess_outer(bess_matr)

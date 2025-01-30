@@ -14,6 +14,13 @@ Hydra uses a technique called **Gibbs sampling** to efficiently draw samples fro
 distribution of *all* the parameters. It is implemented in Python and is compatible with the data 
 formats used by the HERA pipeline, such as _UVData_ and _UVBeam_.
 
+## Learn about the code and different 'heads' of Hydra
+
+* See the [API documentation](https://hydraradio.github.io/Hydra/api/)
+* Run the example script, [example.py](https://hydraradio.github.io/Hydra/example.html)
+* Read the [frequently-asked questions](https://hydraradio.github.io/Hydra/faq.html) about the code and maths
+* Learn about the different ["heads"](https://hydraradio.github.io/Hydra/heads.html) (conditional distribution samplers) of Hydra.
+
 ## What is Gibbs sampling?
 
 Gibbs sampling is a way of breaking up the joint posterior distribution for a set of parameters into a 
@@ -55,7 +62,7 @@ we have the following components:
 * Gain sampler (using a linearised gain perturbation model for each antenna gain)
 * Beam sampler (using a Fourier-Bessel model for each E-field beam)
 * Point source sampler (using a simple power-law SED model)
-* Diffuse emission sampler (using a spherical harmonic basis)
+* Diffuse emission sampler (using a spherical harmonic or region-by-region basis)
 * Power spectrum sampler (using a standard bandpower representation of the power spectrum)
 
 All in all, there can be several hundreds of thousands of parameters for a typical array size, sky model 
