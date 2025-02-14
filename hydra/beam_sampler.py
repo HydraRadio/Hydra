@@ -12,7 +12,10 @@ from .vis_simulator import simulate_vis_per_source
 from . import utils
 
 
-def split_real_imag(arr, kind): # TODO: Should this be a utility function instead of hiding in beam_sampler?
+def split_real_imag(
+        arr, 
+        kind
+    ): # TODO: Should this be a utility function instead of hiding in beam_sampler?
     """
     Split an array into real and imaginary components in different ways
     depending on whether the array is an operator or a vector.
@@ -59,7 +62,13 @@ def split_real_imag(arr, kind): # TODO: Should this be a utility function instea
     return new_arr
 
 
-def reshape_data_arr(arr, Nfreqs, Ntimes, Nants, Npol):
+def reshape_data_arr(
+        arr, 
+        Nfreqs, 
+        Ntimes, 
+        Nants, 
+        Npol
+    ):
     """
     Reshape a data-shaped array into a Hermitian matrix representation that is
     more convenient for beam sampling. Makes a copy of the data twice as large
@@ -103,9 +112,14 @@ def reshape_data_arr(arr, Nfreqs, Ntimes, Nants, Npol):
     return arr_beam
 
 
-def get_bess_matr(nmodes, mmodes, rho, phi):
+def get_bess_matr(
+        nmodes, 
+        mmodes, 
+        rho, 
+        phi
+    ):
     """
-    Make the matrix that transforms from the sparse Fourier-Bessel basis to
+    Make the matrix that evaluates the sparse Fourier-Bessel basis at
     source positions in the cylindrical projection defined by rho and phi.
 
     Parameters:
