@@ -161,7 +161,14 @@ def get_bess_matr(
 
 
 def fit_bess_to_beam(
-    beam, freqs, nmodes, mmodes, rho, phi, polarized=False, force_spw_index=False
+    beam, 
+    freqs, 
+    nmodes, 
+    mmodes, 
+    rho, 
+    phi, 
+    polarized=False, 
+    force_spw_index=False
 ):
     """
     Get the best fit Fourier-Bessel coefficients for a beam based on its value at a
@@ -195,11 +202,6 @@ def fit_bess_to_beam(
 
     bess_matr = get_bess_matr(nmodes, mmodes, rho, phi)
     ncoeff = bess_matr.shape[-1]
-    rho_un = np.unique(rho)
-    phi_un = np.unique(phi)
-
-    drho = rho_un[1] - rho_un[0]
-    dphi = phi_un[1] - phi_un[0]
 
     # Before indexing conventions enforced
     rhs_full = beam.interp(
