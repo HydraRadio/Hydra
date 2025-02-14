@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.linalg import toeplitz, cholesky, inv, LinAlgError, solve
+from scipy.linalg import toeplitz, cholesky, LinAlgError, solve
 from scipy.special import comb, hyp2f1, jn_zeros, jn
 
 import matplotlib.pyplot as plt
@@ -10,7 +10,6 @@ from pyuvsim import AnalyticBeam
 from .sparse_beam import sparse_beam
 from .vis_simulator import simulate_vis_per_source
 from . import utils
-from .utils import status
 
 
 def split_real_imag(arr, kind): # TODO: Should this be a utility function instead of hiding in beam_sampler?
