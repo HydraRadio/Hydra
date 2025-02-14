@@ -120,7 +120,7 @@ def get_bess_matr(
     ):
     """
     Make the matrix that evaluates the sparse Fourier-Bessel basis at
-    source positions in the cylindrical projection defined by rho and phi.
+    source positions in a polar projection defined by rho and phi.
 
     Parameters:
         nmodes (array_like):
@@ -171,9 +171,8 @@ def fit_bess_to_beam(
     force_spw_index=False
 ):
     """
-    Get the best fit Fourier-Bessel coefficients for a beam based on its value at a
-    a set direction cosines. A least-squares algorithm is used to perform the
-    fits.
+    Get the least-squares fit Fourier-Bessel coefficients for a beam based on 
+    its value at a set of points in a polar projection defined by rho and phi.
 
     Parameters:
         beam (pyuvsim.Beam):
@@ -188,7 +187,7 @@ def fit_bess_to_beam(
         rho (array_like):
             Radial coordinate on disc.
         phi (array_like):
-            Azimuthal coordinate on disc (usually RA's azimuth angle)
+            Azimuthal coordinate on disc (usually radio astronomer's azimuth angle)
         polarized (bool):
             Whether or not polarized beam inference is being done
 
@@ -249,7 +248,10 @@ def fit_bess_to_beam(
     return fit_beam
 
 
-def get_ant_inds(ant_samp_ind, nants):
+def get_ant_inds(
+        ant_samp_ind,
+        nants,
+    ):
     """
     Get the indices of the antennas that are not being sampled, according to the
     index of the antenna that is being sampled.
@@ -269,7 +271,11 @@ def get_ant_inds(ant_samp_ind, nants):
     return ant_inds
 
 
-def select_subarr(arr, ant_samp_ind, Nants):
+def select_subarr(
+        arr, 
+        ant_samp_ind, 
+        Nants
+    ):
     """
     Select the subarray for anything of the same shape as the visibilities,
     such as the inverse noise variance and its square root.
@@ -289,7 +295,21 @@ def select_subarr(arr, ant_samp_ind, Nants):
     return subarr
 
 
-def get_bess_outer(bess_matr):
+def get_bess_outer(
+        bess_matr
+    ):
+    """
+    Use fancy indexing to get the outer product of the Fourier-Bessel design
+    matrix with itself. The conjugation order is swapped relative to the usual
+    convention.
+
+    Parameters:
+        bess_matr (array_like):
+            The Fourier-Bessel design matrix in question.
+    Returns:
+        bess_matr_outer (array_like):
+            The desired outer product.
+    """
 
     return bess_matr[:, :, np.newaxis] * bess_matr.conj()[:, :, :, np.newaxis]
 
@@ -307,6 +327,42 @@ def get_bess_sky_contraction(
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
 ):
+    """
+    Contract the outer product of Fourier-Bessel (FB) design matrix with the sky model
+    multiplied by the fringe pattern. This is equivalent to doing a visibility 
+    simulation for the array in question for each pair of 2d beam basis functions.
+
+    Parameters:
+        bess_outer (array_like):
+            Outer product of FB design matrix with itself.
+        ants (dict):
+            Dictionary of antenna positions. The keys are the antenna names
+            (integers) and the values are the Cartesian x,y,z positions of the
+            antennas (in meters) relative to the array center.
+        fluxes (array_like):
+            2D array with the flux of each source as a function of frequency,
+            of shape (NSRCS, NFREQS).
+        ra, dec (array_like):
+            Arrays of source RA and Dec positions in radians. RA goes from
+            [0, 2 pi] and Dec from [-pi, +pi].
+        freqs (array_like):
+            Frequency channels for the simulation, in Hz.
+        lsts (array_like):
+            Local sidereal times for the simulation, in radians. Range is
+            [0, 2 pi].
+        polarized (bool):
+            If True, raise a NotImplementedError. Eventually this will use
+            polarized beams.
+        precision (int):
+            Which precision setting to use for :func:`~vis_cpu`. If set to
+            ``1``, uses the (``np.float32``, ``np.complex64``) dtypes. If set
+            to ``2``, uses the (``np.float64``, ``np.complex128``) dtypes.
+        latitude (float):
+            The latitude of the center of the array, in radians. The default is
+            the HERA latitude = -30.7215 * pi / 180.
+        use_feed (str):
+            Which feed to use, default is 'x'. TODO: what is 'x' in cardinal directions?
+    """
 
     Npol = 2 if polarized else 1
     Nfreqs = len(freqs)
@@ -353,8 +409,32 @@ def get_bess_sky_contraction(
 
 
 def get_bess_to_vis_from_contraction(
-    bess_sky_contraction, beam_coeffs, ants, ant_samp_ind
+    bess_sky_contraction, 
+    beam_coeffs, 
+    ants, 
+    ant_samp_ind
 ):
+    """
+    Get the design matrix for the per-antenna Gibbs step, based on precomputed 
+    quantities.
+
+    Parameters:
+        bess_sky_contraction (array_like):
+            The Fourier-Bessel design matrix contracted with the sky to form
+            per-basis-pair visibilities.
+        beam_coeffs (array_like):
+            The current iteration's basis coefficients per antenna/freq.
+        ants (dict):
+            Dictionary of antenna positions. The keys are the antenna names
+            (integers) and the values are the Cartesian x,y,z positions of the
+            antennas (in meters) relative to the array center.
+        ant_samp_ind (int):
+            The index of the antenna being sampled.
+        
+    Returns:
+        bess_trans (array_like):
+            The design matrix for this Gibbs step.
+    """
     Nants = len(ants)
     ant_inds = get_ant_inds(ant_samp_ind, Nants)
     beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds]  # bfApQ -> ApfbQ
@@ -384,6 +464,8 @@ def get_bess_to_vis(
     use_feed="x",
 ):
     """
+    Slower alternative to get_bess_outer -> get_bess_sky_contraction -> get_bess_to_vis_contraction.
+    
     Compute the matrices that act as the quadratic forms by which visibilities
     are made. Calls simulate_vis_per_source to get the Fourier operator, then
     transforms to the Fourier-Bessel basis.
@@ -422,8 +504,8 @@ def get_bess_to_vis(
         latitude (float):
             The latitude of the center of the array, in radians. The default is
             the HERA latitude = -30.7215 * pi / 180.
-
-
+        use_feed (str):
+            Which feed to use, default is 'x'. TODO: what is 'x' in cardinal directions?
     Returns:
         bess_trans (array_like):
             Operator that returns visibilities when supplied with
@@ -684,7 +766,12 @@ def non_norm_gauss(A, sig, x):
 
 
 def make_prior_cov(
-    freqs, times, ncoeff, std, sig_freq, constrain_phase=False, constraint=1e-4, ridge=0
+    freqs, 
+    std,
+    sig_freq, 
+    constrain_phase=False, 
+    constraint=1e-4, 
+    ridge=0
 ):
     """
     Make a prior covariance for the beam coefficients.
@@ -700,10 +787,12 @@ def make_prior_cov(
             Square root of the diagonal entries of the matrix.
         sig_freq (float):
             Correlation length in frequency.
-        contrain_phase (bool):
+        contraint (bool):
             Whether to constrian the phase of the beams or not. Currently just
             constrains them to have only small variations in the imaginary part.
-
+        ridge (float):
+            A ridge adjustment for the freq-freq covariance matrix, to make it
+            better-conditioned when the correlation length is long.
     Returns:
         cov_tuple (array_like):
             Tuple of tensor components of covariance matrix.
@@ -720,7 +809,10 @@ def make_prior_cov(
     return cov_tuple
 
 
-def do_cov_cho(cov_tuple, check_op=False):
+def do_cov_cho(
+        cov_tuple, 
+        check_op=False
+    ):
     """
     Returns the Cholesky decomposition of a matrix factorable over
     time/frequency/complex component with the same
