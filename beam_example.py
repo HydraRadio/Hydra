@@ -275,7 +275,6 @@ if __name__ == '__main__':
                     precision=2,
                     latitude=args.array_lat,
                     use_feed="x",
-                    multiprocess=args.multiprocess,
                     force_no_beam_sqrt=True,
                 )
             if args.beam_type == "pert_sim":
@@ -348,8 +347,7 @@ if __name__ == '__main__':
                                                                        freqs, 
                                                                        times,
                                                                        polarized=False, 
-                                                                       latitude=args.array_lat, 
-                                                                       multiprocess=args.multiprocess)
+                                                                       latitude=args.array_lat,)
     tsc = time.time() - t0
     timing_info(ftime, 0, "(0) bess_sky_contraction", tsc)
     print(f"bess_sky_contraction took {tsc} seconds")

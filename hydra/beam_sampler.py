@@ -291,7 +291,6 @@ def get_bess_sky_contraction(
     precision=1,
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
-    multiprocess=True,
 ):
 
     Npol = 2 if polarized else 1
@@ -322,7 +321,6 @@ def get_bess_sky_contraction(
             precision=precision,
             latitude=latitude,
             use_feed=use_feed,
-            multiprocess=multiprocess,
         )
 
         if not polarized:
@@ -369,7 +367,6 @@ def get_bess_to_vis(
     precision=1,
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
-    multiprocess=True,
 ):
     """
     Compute the matrices that act as the quadratic forms by which visibilities
@@ -410,8 +407,6 @@ def get_bess_to_vis(
         latitude (float):
             The latitude of the center of the array, in radians. The default is
             the HERA latitude = -30.7215 * pi / 180.
-        multiprocess (bool):
-            Whether to use multiprocessing to speed up the calculation
 
 
     Returns:
@@ -439,7 +434,6 @@ def get_bess_to_vis(
         precision=precision,
         latitude=latitude,
         use_feed=use_feed,
-        multiprocess=multiprocess,
         subarr_ant=ant_samp_ind,
     )
     sky_amp_phase = sky_amp_phase[:, :, ant_inds]
