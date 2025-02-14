@@ -242,13 +242,12 @@ if __name__ == '__main__':
                                                       num_modes_comp=32, save=save,
                                                       outdir=args.output_dir, load=load)        
             beams.append(pow_sb)
-        elif args.beam_type == "gaussian":
+        elif args.beam_type in ["gaussian", "airy"]:
             np.random.seed(args.seed + ant_ind)
-            beam = pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14. + np.random.normal(loc=0, scale=0.1))
+            beam = pyuvsim.analyticbeam.AnalyticBeam(args.beam_type, diameter=14. + np.random.normal(loc=0, scale=0.1))
             beams.append(beam)
-            
         else:
-            raise ValueError("beam-type arg must be 'gaussian' or 'pert_sim'")
+            raise ValueError("beam-type arg must be 'gaussian', 'airy', or 'pert_sim'")
             
     mmodes = np.arange(-args.mmax, args.mmax + 1)
     unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
