@@ -13,7 +13,7 @@ from . import utils
 from .utils import status
 
 
-def split_real_imag(arr, kind):
+def split_real_imag(arr, kind): # TODO: Should this be a utility function instead of hiding in beam_sampler?
     """
     Split an array into real and imaginary components in different ways
     depending on whether the array is an operator or a vector.
