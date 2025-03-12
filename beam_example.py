@@ -247,7 +247,11 @@ if __name__ == '__main__':
             beam = pyuvsim.analyticbeam.AnalyticBeam(args.beam_type, diameter=14. + np.random.normal(loc=0, scale=0.1))
             beams.append(beam)
         else:
+<<<<<<< Updated upstream
             raise ValueError("beam-type arg must be 'gaussian', 'airy', or 'pert_sim'")
+=======
+            raise ValueError("beam-type arg must be one of ('gaussian', 'airy', 'pert_sim')")
+>>>>>>> Stashed changes
             
     mmodes = np.arange(-args.mmax, args.mmax + 1)
     unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
@@ -275,7 +279,7 @@ if __name__ == '__main__':
                     precision=2,
                     latitude=args.array_lat,
                     use_feed="x",
-                    force_no_beam_sqrt=True,
+                    force_no_beam_sqrt=False,
                 )
             if args.beam_type == "pert_sim":
                 for beam in beams:
