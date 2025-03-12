@@ -1178,8 +1178,10 @@ def get_loglike_from_bsc(beam_coeffs, bess_sky_contraction, inv_noise_var, data,
                                                          optimize=True)
         
     res_sq = np.abs(data - model)**2
-    loglike_exp = -0.5 * np.sum(res_sq * inv_noise_var)
-    loglike_prefac = -0.5 * (model.size * np.log(2 * np.pi) - np.log(inv_noise_var).sum())
+    # Did not calculate autos above
+    res_sq[:, :, :, :, np.arange(Nants), np.arange(Nants)] = 0.
+    loglike_exp = -np.sum(res_sq * inv_noise_var)
+    loglike_prefac = -(model.size * np.log(2 * np.pi) - np.log(inv_noise_var).sum())
 
     loglike = loglike_exp + loglike_prefac
 
