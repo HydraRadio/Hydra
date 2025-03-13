@@ -579,7 +579,7 @@ def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
             The prior covariance matrix multiplied by the inverse noise covariance
             transformed to the Fourier-Bessel basis.
     """
-    freq_matr, comp_matr = cov_tuple
+    freq_matr, comp_matr, bfunc_matr = cov_tuple
     Nfreqs = freq_matr.shape[0]
 
     # These stay as elementwise multiply since the beam at given times/freqs
@@ -602,15 +602,17 @@ def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
 
     # c,fF->cfF->fcF
     cov_matr = np.swapaxes(comp_matr[:, np.newaxis, np.newaxis] * freq_matr, 0, 1)
-    # fcF,RbpPBCcf->fRbpPBCcF
+    # fcF,RbpPBCcF->fRbpPBCcF
     cov_Qdag_Ninv_Q = (
         cov_matr[
             :, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis, np.newaxis
         ]
         * Qdag_Ninv_Q[np.newaxis]
     )
-    # fRbpPBCcF->fRbpPBcCF
+    # fRbpPBCcF->fRbpPBcCF, doing this because we should have multiplied the left index, but Qdag_Ninv_Q was symmetric on those two indices, so we multiplied the right for convenience
     cov_Qdag_Ninv_Q = np.swapaxes(cov_Qdag_Ninv_Q, -2, -3)
+    # Ab,fRbpPBcCF -> AfRpPBcCF -> fRApPBcCF
+    cov_Qdag_Ninv_Q = np.tensordot(bfunc_matr, cov_Qdag_Ninv_Q, axes=((1,), (2,))).transpose(1, 2, 0, 3, 4, 5, 6, 7, 8)
 
     return cov_Qdag_Ninv_Q
 
@@ -716,17 +718,21 @@ def construct_rhs(vis, inv_noise_var, mu, bess_trans, cov_tuple, cho_tuple, flx=
     ).transpose((0, 3, 1, 2))
     Qdag_terms = split_real_imag(Qdag_terms, kind="vec")
 
-    freq_matr, comp_matr = cov_tuple
-    # c,bfpPc->bfpPc Ff,bfpPc->FbpPc
+    freq_matr, comp_matr, bfunc_matr = cov_tuple
+    # c,bfpPc->bfpPc Bb,bfpPc->BfpPc Ff,bfpPc->FbpPc 
     cov_Qdag_terms = np.tensordot(
-        freq_matr, (comp_matr * Qdag_terms), axes=((1,), (1,))
+        bfunc_matr, (comp_matr * Qdag_terms), axes=1
+    )
+    cov_Qdag_terms = np.tensordot(
+        freq_matr, cov_Qdag_terms, axes=((1,), (1,))
     )
 
-    freq_cho, comp_cho = cho_tuple
+    freq_cho, comp_cho, bfunc_cho = cho_tuple
     flx0 = split_real_imag(flx0, kind="vec")
     mu_real_imag = split_real_imag(mu, kind="vec")
 
-    flx0_add = np.tensordot(freq_cho, (comp_cho * flx0), axes=((1,), (1,)))
+    flx0_add = np.tensordot(bfunc_cho, (comp_cho * flx0), axes=1)
+    flx0_add = np.tensordot(freq_cho, flx0_add, axes=((1,), (1,)))
 
     rhs = cov_Qdag_terms + np.swapaxes(mu_real_imag, 0, 1) + flx0_add
 
