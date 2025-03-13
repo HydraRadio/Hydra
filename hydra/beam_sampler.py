@@ -760,9 +760,11 @@ def make_prior_cov(
     freqs, 
     std,
     sig_freq, 
+    Nbasis,
     constrain_phase=False, 
     constraint=1e-4, 
-    ridge=0
+    ridge=0,
+    cov_file=None,
 ):
     """
     Make a prior covariance for the beam coefficients.
@@ -784,21 +786,34 @@ def make_prior_cov(
         ridge (float):
             A ridge adjustment for the freq-freq covariance matrix, to make it
             better-conditioned when the correlation length is long.
+        cov_file (str):
+            Path to file for covariance matrix.
     Returns:
         cov_tuple (array_like):
             Tuple of tensor components of covariance matrix.
     """
-    freq_col = non_norm_gauss(std**2, sig_freq, freqs - freqs[0])
+    freq_col = non_norm_gauss(1, sig_freq, freqs - freqs[0])
     freq_col[0] += ridge
     freq_matr = toeplitz(freq_col)
     comp_matr = np.ones(2)
     if constrain_phase:  # Make the imaginary variance small compared to the real one
         comp_matr[1] = constraint
+    if cov_file is None:
+        bfunc_matr = np.eye(Nbasis) * std**2
+    else:
+        bfunc_matr = np.load(cov_file)
 
-    cov_tuple = (freq_matr, comp_matr)
+    cov_tuple = (freq_matr, comp_matr, bfunc_matr)
 
     return cov_tuple
 
+def check_cho(cho, cov):
+    prod = cho @ cho.T.conj()
+    allclose = np.allclose(prod, cov)
+    if not allclose:
+        raise LinAlgError(f"Cholesky factorization failed to reproduce covariance")
+
+    return
 
 def do_cov_cho(
         cov_tuple, 
@@ -818,20 +833,15 @@ def do_cov_cho(
         cho_tuple (array_like):
             The factored Cholesky decomposition.
     """
-    freq_matr, comp_matr = cov_tuple
+    freq_matr, comp_matr, bfunc_matr = cov_tuple
     freq_cho = cholesky(freq_matr, lower=True)
     comp_cho = np.sqrt(comp_matr)  # Currently always diagonal
+    bfunc_cho = cholesky(bfunc_matr, lower=True)
 
-    cho_tuple = (freq_cho, comp_cho)
+    cho_tuple = (freq_cho, comp_cho, bfunc_cho)
     if check_op:
-        prod = freq_cho @ freq_cho.T.conj()
-        allclose = np.allclose(prod, freq_matr)
-        print(
-            f"Successful cholesky factorization of beam for frequency covariance: "
-            f"{allclose}"
-        )
-        if not allclose:
-            raise LinAlgError(f"Cholesky factorization failed for frequency covariance")
+        for cho, cov in zip([freq_cho, bfunc_cho], [freq_cov, bfunc_cov]):
+            check_cho(cho, cov)
 
     return cho_tuple
 
