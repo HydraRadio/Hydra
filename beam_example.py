@@ -85,6 +85,8 @@ if __name__ == '__main__':
     parser.add_argument("--multiprocess", action="store_true", dest="multiprocess",
                         required=False,
                         help="Whether to use multiprocessing in vis sim calls.")
+    parser.add_argument("--anneal", action="store_true", required=False,
+                        help="Slowly shift the weight between sampling form the prior and posterior over the course of many iterations.")
     
     # Point source sim params
     parser.add_argument("--ra-bounds", type=float, action="store", default=(0, np.pi + 0.5),
@@ -109,6 +111,7 @@ if __name__ == '__main__':
     parser.add_argument("--beam-prior-std", type=float, action="store", default=1.,
                         required=False, dest="beam_prior_std",
                         help="Std. dev. of beam coefficient prior, in units of FB coefficient")
+    parser.add_argument("--decent-prior", action="store_true", required=False, dest="decent_prior")
     parser.add_argument("--Nbasis", type=int, action="store", required=False, default=32,
                         help="Number of basis functions to use for beam estimation.")
     parser.add_argument("--nmax", type=int, action="store", default=80,
@@ -247,11 +250,7 @@ if __name__ == '__main__':
             beam = pyuvsim.analyticbeam.AnalyticBeam(args.beam_type, diameter=14. + np.random.normal(loc=0, scale=0.1))
             beams.append(beam)
         else:
-<<<<<<< Updated upstream
-            raise ValueError("beam-type arg must be 'gaussian', 'airy', or 'pert_sim'")
-=======
             raise ValueError("beam-type arg must be one of ('gaussian', 'airy', 'pert_sim')")
->>>>>>> Stashed changes
             
     mmodes = np.arange(-args.mmax, args.mmax + 1)
     unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
@@ -301,6 +300,7 @@ if __name__ == '__main__':
     np.save(os.path.join(output_dir, "data0"), data)
 
     inv_noise_var = 1/noise_var
+    np.save(os.path.join(output_dir, "inv_noise_var.npy"), inv_noise_var)
 
     txs, tys, tzs = convert_to_tops(ra, dec, times, args.array_lat)
 
@@ -352,6 +352,7 @@ if __name__ == '__main__':
                                                                        times,
                                                                        polarized=False, 
                                                                        latitude=args.array_lat,)
+    np.save(os.path.join(output_dir, "bsc.npy"), bess_sky_contraction)
     tsc = time.time() - t0
     timing_info(ftime, 0, "(0) bess_sky_contraction", tsc)
     print(f"bess_sky_contraction took {tsc} seconds")
@@ -367,6 +368,11 @@ if __name__ == '__main__':
         print("-"*60)
         t0iter = time.time()
 
+        if args.anneal:
+            temp = max(1000. - n, 1.)
+        else:
+            temp = 1.
+
         for ant_samp_ind in range(Nants):
             bess_trans = hydra.beam_sampler.get_bess_to_vis_from_contraction(bess_sky_contraction,
                                                                              beam_coeffs, 
@@ -376,6 +382,7 @@ if __name__ == '__main__':
             inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var[None, None], # add pol axes of length 1
                                                                  ant_samp_ind, 
                                                                  Nants)
+            inv_noise_var_use /= temp
             data_use = hydra.beam_sampler.select_subarr(data[None, None], ant_samp_ind, Nants)
 
             # Construct RHS vector
