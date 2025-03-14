@@ -87,6 +87,8 @@ if __name__ == '__main__':
                         help="Whether to use multiprocessing in vis sim calls.")
     parser.add_argument("--anneal", action="store_true", required=False,
                         help="Slowly shift the weight between sampling form the prior and posterior over the course of many iterations.")
+    parser.add_argument("--infnoise", action="store_true", required=False,
+                        help="Sets the inverse noise variance to 0 in order to draw samples from the prior.")
     
     # Point source sim params
     parser.add_argument("--ra-bounds", type=float, action="store", default=(0, np.pi + 0.5),
@@ -304,8 +306,9 @@ if __name__ == '__main__':
 
     txs, tys, tzs = convert_to_tops(ra, dec, times, args.array_lat)
 
+    za = np.arccos(tzs).flatten()
     bess_matr, trig_matr = unpert_sb.get_dmatr_interp(np.arctan2(tys, txs).flatten(), 
-                                                      np.arccos(tzs).flatten())
+                                                      za)
     bess_matr = bess_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax)
     trig_matr = trig_matr.reshape(args.Ntimes, args.Nptsrc, 2 * args.mmax + 1)
 
@@ -322,21 +325,35 @@ if __name__ == '__main__':
         BPmatr = np.tensordot(bess_matr, Pmatr, axes=1).transpose(3, 0, 1, 2) # Nbasis, Ntimes, Nsrc, Naz
         Dmatr = np.sum(BPmatr * trig_matr, axis=3).transpose(1, 2, 0) # Ntimes, Nsrc, Nbasis
     else:
-        Dmatr = bess_matr[:, :, :args.Nbasis]              
+        Dmatr = bess_matr[:, :, :args.Nbasis]
+        Q, R = np.linalg.qr(unpert_sb.bess_matr[:, :args.Nbasis]) # orthoganalize radial modes...
+        reshape = (args.Ntimes * args.Nptsrc, args.Nbasis)
+        shape = (args.Ntimes, args.Nptsrc, args.Nbasis)
+        Dmatr = np.linalg.solve(R.T, Dmatr.reshape(reshape).T).T.reshape(shape)
     Dmatr_outer = hydra.beam_sampler.get_bess_outer(Dmatr)
+    np.save(os.path.join(output_dir, "Dmatr.npy"), Dmatr)
+    np.save(os.path.join(output_dir, "dmo.npy"), Dmatr_outer)
+    np.save(os.path.join(output_dir, "za.npy"), za)
     
     beam_coeffs = np.zeros([Nants, args.Nfreqs, args.Nbasis, 1, 1])
-    beam_coeffs[:, :, 0] = 1
+    if args.decent_prior:
+        # FIXME: Hardcode!, start at answer!
+        beam_coeffs += np.load("data/14m_airy_bessel_soln.npy")[None, None, :, None, None] 
+    else:
+        beam_coeffs[:, :, 0] = 1
     # Want shape Nbasis, Nfreqs, Nants, Npol, Npol
     beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
 
     sig_freq = 0.1 * (freqs[-1] - freqs[0])
+    # FIXME: Hardcode!
+    cov_file = "data/ramped_variance_bessel_cov.npy" if args.decent_prior else None
     cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, args.Nbasis,
                                                   args.beam_prior_std, sig_freq,
-                                                  ridge=1e-6)
+                                                  ridge=1e-6,
+                                                  cov_file=cov_file)
     cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
-    # Be lazy and just use the initial guess.
-    coeff_mean = beam_coeffs[:, :, 0]
+    # Be lazy and just use the initial guess -- either the right answer or 1 in the first basis function.
+    coeff_mean = np.copy(beam_coeffs[:, :, 0])
     
     if chain_seed is not None: # shuffle the initial position
         np.random.seed(chain_seed)
@@ -382,7 +399,10 @@ if __name__ == '__main__':
             inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var[None, None], # add pol axes of length 1
                                                                  ant_samp_ind, 
                                                                  Nants)
-            inv_noise_var_use /= temp
+            if args.infnoise:
+                inv_noise_var_use[:] = 0
+            else:
+                inv_noise_var_use /= temp
             data_use = hydra.beam_sampler.select_subarr(data[None, None], ant_samp_ind, Nants)
 
             # Construct RHS vector
@@ -404,7 +424,8 @@ if __name__ == '__main__':
 
             # fPbpQBcCF->fbQcFBpPC
             matr = cov_Qdag_Ninv_Q.transpose((0,2,4,6,8,5,3,1,7)).reshape([axlen, axlen]) + np.eye(axlen)
-
+            
+            # FIXME: This is skipped!
             def beam_lhs_operator(x):
                 y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),
                                                       cov_Qdag_Ninv_Q)
