@@ -222,31 +222,31 @@ def get_config():
         "--ra-bounds",
         type=float,
         action="store",
-        default=(0, 1),
+        default=(0.0, 60.),
         nargs=2,
         required=False,
         dest="ra_bounds",
-        help="Bounds for the Right Ascension of the randomly simulated sources",
+        help="Bounds for the Right Ascension of the randomly simulated sources, in degrees.",
     )
     parser.add_argument(
         "--dec-bounds",
         type=float,
         action="store",
-        default=(-0.6, 0.4),
+        default=(-40.7, -20.7),
         nargs=2,
         required=False,
         dest="dec_bounds",
-        help="Bounds for the Declination of the randomly simulated sources",
+        help="Bounds for the Declination of the randomly simulated sources, in degrees.",
     )
     parser.add_argument(
         "--lst-bounds",
         type=float,
         action="store",
-        default=(0.2, 0.5),
+        default=(0.75, 1.9),
         nargs=2,
         required=False,
         dest="lst_bounds",
-        help="Bounds for the LST range of the simulation, in radians.",
+        help="Bounds for the LST range of the simulation, in hours.",
     )
     parser.add_argument(
         "--freq-bounds",

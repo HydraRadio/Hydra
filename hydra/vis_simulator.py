@@ -112,6 +112,7 @@ def vis_sim_per_source(
     beam_idx: Optional[np.ndarray] = None,
     subarr_ant=None,
     force_no_beam_sqrt=False,
+    apply_fluxes_afterwards=True,
 ):
     """
     Calculate visibility from an input intensity map and beam model. This is
@@ -165,6 +166,11 @@ def vis_sim_per_source(
             with a particular antenna.
         force_no_beam_sqrt (bool):
             Do not take the square root of a beam even if it's a power beam.
+        apply_fluxes_afterwards (bool):
+            If True, use a unit flux for each source in each frequency channel, 
+            and then apply the true fluxes afterwards. This is useful for sky 
+            models with negative values. If False, the 'standard' `matvis` 
+            method of taking the sqrt of the fluxes is used.
 
     Returns:
         vis (array_like):
@@ -206,7 +212,15 @@ def vis_sim_per_source(
     # Intensity distribution (sqrt) and antenna positions. Does not support
     # negative sky. Factor of 0.5 accounts for splitting Stokes I between
     # polarization channels
-    Isqrt = np.sqrt(0.5 * I_sky).astype(real_dtype)
+    if np.any(I_sky < 0.) and not apply_fluxes_afterwards:
+        raise ValueError("Sky model has negative values; use the "
+                         "`apply_fluxes_afterwards` setting to circumvent this.")
+    if apply_fluxes_afterwards:
+        # Unit flux in each channel, for each source (include factor of sqrt(0.5))
+        Isqrt = np.sqrt(0.5).astype(real_dtype)
+    else:
+        Isqrt = np.sqrt(0.5 * I_sky).astype(real_dtype)
+        
     antpos = antpos.astype(real_dtype)
 
     ang_freq = 2.0 * np.pi * freq
@@ -240,6 +254,7 @@ def vis_sim_per_source(
 
         # Primary beam pattern using direct interpolation of UVBeam object
         az, za = conversions.enu_to_az_za(enu_e=tx, enu_n=ty, orientation="uvbeam")
+
         for i, bm in enumerate(beam_list):
             spw_axis_present = utils.get_beam_interp_shape(bm)
             kw = (
@@ -289,11 +304,11 @@ def vis_sim_per_source(
 
         # Complex voltages.
         # v *= Isqrt[above_horizon]
-        v *= Isqrt[:]
+        v *= Isqrt
         v[:, ~above_horizon] *= 0.0  # zero-out sources below the horizon
 
         # Compute visibilities using product of complex voltages (upper triangle).
-        # Input arrays have shape (Nax, Nfeed, [Nants], Nsrcs
+        # Input arrays have shape (Nax, Nfeed, [Nants], Nsrcs)
         v = A_s[:, :, beam_idx] * v[np.newaxis, np.newaxis, :]
 
         # If a subarray is requested, only compute the visibilities that involve
@@ -316,6 +331,11 @@ def vis_sim_per_source(
                 v[:, :, subarr_ant : subarr_ant + 1, :],
                 optimize=True,
             )
+
+    # If requested, apply fluxes once the per-source visibility response has been calculated
+    if apply_fluxes_afterwards:
+        # vis has shape (NAXES, NFEED, NTIMES, NANTS, NANTS, NSRCS)
+        vis *= I_sky[np.newaxis,np.newaxis,np.newaxis,np.newaxis,np.newaxis,:]
 
     # Return visibilities with or without multiple polarization channels
     return vis if polarized else vis[0, 0]
