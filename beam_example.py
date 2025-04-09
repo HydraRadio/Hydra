@@ -158,7 +158,8 @@ if __name__ == '__main__':
     array_lat = np.deg2rad(args.array_lat)
 
     # Check that output directory exists
-    output_dir = args.output_dir
+    output_dir = f"{args.output_dir}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
+    output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/chainseed_{args.chain_seed}"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     print("\nOutput directory:", output_dir)
