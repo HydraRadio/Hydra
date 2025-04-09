@@ -387,7 +387,7 @@ if __name__ == '__main__':
         t0iter = time.time()
 
         if args.anneal:
-            temp = max(10000. - 10 * n, 1.)
+            temp = max(2000. - 2 * n, 1.)
         else:
             temp = 1.
 
