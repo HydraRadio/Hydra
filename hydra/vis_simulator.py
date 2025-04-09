@@ -8,7 +8,8 @@ import warnings
 from astropy.constants import c
 from pyuvdata import UVBeam
 from typing import Optional, Sequence
-from matvis import conversions
+from matvis import coordinates
+from matvis.core.beams import prepare_beam_unpolarized
 import healpy as hp
 import warnings, time
 from datetime import datetime
@@ -112,6 +113,7 @@ def vis_sim_per_source(
     beam_idx: Optional[np.ndarray] = None,
     subarr_ant=None,
     force_no_beam_sqrt=False,
+    power_beam=True,
 ):
     """
     Calculate visibility from an input intensity map and beam model. This is
@@ -239,37 +241,12 @@ def vis_sim_per_source(
         v = np.zeros((nant, nsrcs_up), dtype=complex_dtype)
 
         # Primary beam pattern using direct interpolation of UVBeam object
-        az, za = conversions.enu_to_az_za(enu_e=tx, enu_n=ty, orientation="uvbeam")
+        az, za = coordinates.enu_to_az_za(enu_e=tx, enu_n=ty, orientation="uvbeam")
         for i, bm in enumerate(beam_list):
-            spw_axis_present = utils.get_beam_interp_shape(bm)
-            kw = (
-                {"reuse_spline": True, "check_azza_domain": False}
-                if isinstance(bm, UVBeam)
-                else {}
-            )
-
-            interp_beam = bm.interp(
-                az_array=az, za_array=za, freq_array=np.atleast_1d(freq), **kw
-            )[0]
-
-            if polarized:
-                if spw_axis_present:
-                    interp_beam = interp_beam[:, 0, :, 0, :]
-                else:
-                    interp_beam = interp_beam[:, :, 0, :]
-            else:
-                # Here we have already asserted that the beam is a power beam and
-                # has only one polarization, so we just evaluate that one.
-                if spw_axis_present:
-                    if force_no_beam_sqrt:
-                        interp_beam = interp_beam[0, 0, 0, 0, :]
-                    else:
-                        interp_beam = np.sqrt(interp_beam[0, 0, 0, 0, :])
-                else:
-                    if force_no_beam_sqrt:
-                        interp_beam = interp_beam[0, 0, 0, :]
-                    else:
-                        interp_beam = np.sqrt(interp_beam[0, 0, 0, :])
+            interp_beam = get_interp_beam_for_sim(bm, freq, az, za,
+                                                  polarized=polarized, 
+                                                  force_no_beam_sqrt=force_no_beam_sqrt, 
+                                                  power_beam=power_beam)
 
             A_s[:, :, i] = interp_beam
 
@@ -319,6 +296,52 @@ def vis_sim_per_source(
 
     # Return visibilities with or without multiple polarization channels
     return vis if polarized else vis[0, 0]
+
+def get_interp_beam_for_sim(
+        bm,
+        freq: float, 
+        az: np.ndarray,
+        za: np.ndarray, 
+        polarized: bool = True, 
+        force_no_beam_sqrt = False, 
+        power_beam=True, 
+    ):
+    spw_axis_present = utils.get_beam_interp_shape(bm)
+    is_UVBeam = isinstance(bm, UVBeam)
+    kw = (
+                {"reuse_spline": True, "check_azza_domain": False}
+                if is_UVBeam
+                else {}
+            )
+    if is_UVBeam:
+        interp_beam = bm.interp(
+                    az_array=az, za_array=za, freq_array=np.atleast_1d(freq), **kw
+                )[0]
+    else:
+        if power_beam:
+            interp_beam = bm.power_eval(
+                        az_array=az, za_array=za, freq_array=np.atleast_1d(freq), **kw
+                    )[0]
+
+    if polarized:
+        if spw_axis_present:
+            interp_beam = interp_beam[:, 0, :, 0, :]
+        else:
+            interp_beam = interp_beam[:, :, 0, :]
+    else:
+                # Here we have already asserted that the beam is a power beam and
+                # has only one polarization, so we just evaluate that one.
+        if spw_axis_present:
+            if force_no_beam_sqrt:
+                interp_beam = interp_beam[0, 0, 0, 0, :]
+            else:
+                interp_beam = np.sqrt(interp_beam[0, 0, 0, 0, :])
+        else:
+            if force_no_beam_sqrt:
+                interp_beam = interp_beam[0, 0, 0, :]
+            else:
+                interp_beam = np.sqrt(interp_beam[0, 0, 0, :])
+    return interp_beam
 
 
 def simulate_vis_per_source(
@@ -428,10 +451,10 @@ def simulate_vis_per_source(
     crd_eq = conversions.point_source_crd_eq(ra, dec)
 
     # Get coordinate transforms as a function of LST
-    eq2tops = np.array([conversions.eci_to_enu_matrix(lst, latitude) for lst in lsts])
+    eq2tops = np.array([coordinates.eci_to_enu_matrix(lst, latitude) for lst in lsts])
 
     beams = [
-        conversions.prepare_beam(beam, polarized=polarized, use_feed=use_feed)
+        prepare_beam_unpolarized(beam, polarized=polarized, use_feed=use_feed)
         for beam in beams
     ]
 
@@ -874,6 +897,8 @@ def vis_sim_per_source_new(
     precision: int = 2,
     polarized: bool = False,
     subarr_ant=None,
+    force_no_beam_sqrt=False,
+    power_beam=False
 ):
     """
     Calculate visibility from an input intensity map and beam model. This is
@@ -971,32 +996,10 @@ def vis_sim_per_source_new(
         # Primary beam pattern using direct interpolation of UVBeam object
         za = 0.5 * np.pi - alt
         for i, bm in enumerate(beam_list):
-            spw_axis_present = utils.get_beam_interp_shape(bm)
-            kw = (
-                {"reuse_spline": True, "check_azza_domain": False}
-                if isinstance(bm, UVBeam)
-                else {}
-            )
-
-            interp_beam = bm.interp(
-                az_array=az[tidx],
-                za_array=za[tidx],
-                freq_array=np.atleast_1d(freq),
-                **kw
-            )[0]
-
-            if polarized:
-                if spw_axis_present:
-                    interp_beam = interp_beam[:, 0, :, 0, :]
-                else:
-                    interp_beam = interp_beam[:, :, 0, :]
-            else:
-                # Here we have already asserted that the beam is a power beam and
-                # has only one polarization, so we just evaluate that one.
-                if spw_axis_present:
-                    interp_beam = np.sqrt(interp_beam[0, 0, 0, 0, :])
-                else:
-                    interp_beam = np.sqrt(interp_beam[0, 0, 0, :])
+            interp_beam = get_interp_beam_for_sim(bm, freq, az, za,
+                                                  polarized=polarized, 
+                                                  force_no_beam_sqrt=force_no_beam_sqrt, 
+                                                  power_beam=power_beam)
 
             A_s[:, :, i] = interp_beam
 

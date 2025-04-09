@@ -1,7 +1,7 @@
 import numpy as np
-from matvis import conversions
+from matvis import coordinates
 import pyuvdata
-from pyuvsim import AnalyticBeam
+from pyuvdata.analytic_beam import AnalyticBeam
 
 """
 # Terminal colour codes
@@ -438,10 +438,10 @@ def convert_to_tops(ra, dec, lsts, latitude, precision=1):
     else:
         real_dtype = np.float64
     # Source coordinate transform, from equatorial to Cartesian
-    crd_eq = conversions.point_source_crd_eq(ra, dec)
+    crd_eq = coordinates.point_source_crd_eq(ra, dec)
 
     # Get coordinate transforms as a function of LST
-    eq2tops = np.array([conversions.eci_to_enu_matrix(lst, latitude) for lst in lsts])
+    eq2tops = np.array([coordinates.eci_to_enu_matrix(lst, latitude) for lst in lsts])
 
     txs, tys, tzs = [], [], []
 
