@@ -177,7 +177,7 @@ if __name__ == '__main__':
     print("    Solver:  %s" % args.solver_name)
 
     # Random seed
-    np.random.seed(args.seed)
+    beam_rng = np.random.default_rng(args.seed)
     print("    Seed:    %d" % args.seed)
 
     # Check number of threads available
@@ -249,8 +249,8 @@ if __name__ == '__main__':
                                                       outdir=args.output_dir, load=load)        
             beams.append(pow_sb)
         elif args.beam_type in ["gaussian", "airy"]:
-            np.random.seed(args.seed + ant_ind)
-            beam = pyuvsim.analyticbeam.AnalyticBeam(args.beam_type, diameter=14. + np.random.normal(loc=0, scale=0.1))
+            beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
+            beam = pyuvsim.analyticbeam.AnalyticBeam(args.beam_type, diameter=12. + beam_rng.normal(loc=0, scale=0.2))
             beams.append(beam)
         else:
             raise ValueError("beam-type arg must be one of ('gaussian', 'airy', 'pert_sim')")
@@ -295,7 +295,7 @@ if __name__ == '__main__':
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
 
     #FIXME: technically we need the conjugate noise rzn on conjugate baselines...
-    noise = (np.random.normal(scale=np.sqrt(noise_var)) + 1.j * np.random.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
+    noise = (beam_rng.normal(scale=np.sqrt(noise_var)) + 1.j * beam_rng.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
     data = _sim_vis + _sim_vis.swapaxes(-1,-2).conj() + noise # fix some zeros
     del _sim_vis # Save some memory
     del noise
@@ -357,8 +357,8 @@ if __name__ == '__main__':
     coeff_mean = np.copy(beam_coeffs[:, :, 0])
     
     if chain_seed is not None: # shuffle the initial position
-        np.random.seed(chain_seed)
-        beam_coeffs = np.random.normal(size=beam_coeffs.shape)
+        chain_rng = np.random.default_rng(seed=chain_seed)
+        beam_coeffs = chain_rng.normal(size=beam_coeffs.shape)
     
     t0 = time.time()
     bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
