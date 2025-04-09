@@ -291,11 +291,11 @@ class sparse_beam(UVBeam):
             # Saves loads of memory and time
             az_fit = (
                 data_array @ self.trig_matr.conj()
-            )  # Naxes_vec, 1, Nfeeds, Nfreq, Nza, Nm
+            )  # Naxes_vec, Nfeeds, Nfreq, Nza, Nm
 
             BtB = self.bess_matr.T @ self.bess_matr
-            Baz = self.bess_matr.T @ az_fit  # Naxes_vec, 1, Nfeeds, Nfreq, Nn, Nm
-            Baz = Baz.transpose(4, 5, 0, 1, 2, 3)  # Nn, Nm, Naxes_vec, 1, Nfeeds, Nfreq
+            Baz = self.bess_matr.T @ az_fit  # Naxes_vec, Nfeeds, Nfreq, Nn, Nm
+            Baz = Baz.transpose(3, 4, 0, 1, 2)  # Nn, Nm, Naxes_vec, 1, Nfeeds, Nfreq
 
             fit_coeffs = solve(
                 BtB, Baz, assume_a="sym"
