@@ -8,7 +8,7 @@ import time, os
 import multiprocessing
 from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
                          convert_to_tops
-import pyuvsim
+from pyuvdata.analytic_beam import GaussianBeam, AiryBeam
 
 import argparse
 
@@ -250,7 +250,11 @@ if __name__ == '__main__':
             beams.append(pow_sb)
         elif args.beam_type in ["gaussian", "airy"]:
             beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
-            beam = pyuvsim.analyticbeam.AnalyticBeam(args.beam_type, diameter=12. + beam_rng.normal(loc=0, scale=0.2))
+            diameter = 12. + beam_rng.normal(loc=0, scale=0.2)
+            if args.beam_type == "gaussian":
+                beam = GaussianBeam(diameter=diameter)
+            else:
+                beam = AiryBeam(diameter=diameter)
             beams.append(beam)
         else:
             raise ValueError("beam-type arg must be one of ('gaussian', 'airy', 'pert_sim')")

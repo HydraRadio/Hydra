@@ -5,7 +5,7 @@ from scipy.special import comb, hyp2f1, jn_zeros, jn
 import matplotlib.pyplot as plt
 from matplotlib.colors import SymLogNorm
 
-from pyuvsim import AnalyticBeam
+from pyuvdata.analytic_beam import UniformBeam
 
 from .sparse_beam import sparse_beam
 from .vis_simulator import simulate_vis_per_source
@@ -374,7 +374,7 @@ def get_bess_sky_contraction(
     # tsb,qQftaAs,tsB -> qQftaAbB
     # inner loop is already over frequency, so just loop over that to save mem
     bess_sky_contraction = np.zeros(contract_shape, dtype=complex)
-    beams = [AnalyticBeam("uniform") for ant_ind in range(len(ants))]
+    beams = [UniformBeam() for ant_ind in range(len(ants))]
 
     # for freq_ind, freq in enumerate(freqs):
 
@@ -509,7 +509,7 @@ def get_bess_to_vis(
     Npol = 2 if polarized else 1
 
     # Use uniform beams so that we just get the Fourier operator.
-    beams = [AnalyticBeam("uniform") for ant_ind in range(len(ants))]
+    beams = [UniformBeam() for ant_ind in range(len(ants))]
     sky_amp_phase = simulate_vis_per_source(
         ants,
         fluxes,
