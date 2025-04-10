@@ -295,20 +295,20 @@ class sparse_beam(UVBeam):
 
             BtB = self.bess_matr.T @ self.bess_matr
             Baz = self.bess_matr.T @ az_fit  # Naxes_vec, Nfeeds, Nfreq, Nn, Nm
-            Baz = Baz.transpose(3, 4, 0, 1, 2)  # Nn, Nm, Naxes_vec, 1, Nfeeds, Nfreq
+            Baz = Baz.transpose(3, 4, 0, 1, 2)  # Nn, Nm, Naxes_vec, Nfeeds, Nfreq
 
             fit_coeffs = solve(
                 BtB, Baz, assume_a="sym"
-            )  # Nn, Nm, Naxes_vec, 1, Nfeeds, Nfreq
+            )  # Nn, Nm, Naxes_vec, Nfeeds, Nfreq
 
             # Apply design matrices to get fit beams
             fit_beam_az = np.tensordot(
                 self.trig_matr, fit_coeffs, axes=((1,), (1,))
-            )  # Naz, Nn, Naxes_vec, 1, Nfeeds, Nfreq
+            )  # Naz, Nn, Naxes_vec, Nfeeds, Nfreq
             fit_beam = np.tensordot(
                 self.bess_matr, fit_beam_az, axes=((1,), (1,))
-            )  # Nza, Naz, Naxes_vec, 1, Nfeeds, Nfreq
-            fit_beam = fit_beam.transpose(2, 3, 4, 5, 0, 1)
+            )  # Nza, Naz, Naxes_vec, Nfeeds, Nfreq
+            fit_beam = fit_beam.transpose(2, 3, 4, 0, 1)
 
             np.save(f"{self.save_fn}_bess_fit_coeffs.npy", fit_coeffs)
             np.save(f"{self.save_fn}_bess_fit_beam.npy", fit_beam)
@@ -339,7 +339,7 @@ class sparse_beam(UVBeam):
 
         ps_sort_inds = np.argsort(
             self.bess_ps.reshape(
-                (self.ncoeff_bess, self.Naxes_vec, 1, self.Nfeeds, self.Nfreqs)
+                (self.ncoeff_bess, self.Naxes_vec, self.Nfeeds, self.Nfreqs)
             ),
             axis=0,
         )
@@ -351,14 +351,14 @@ class sparse_beam(UVBeam):
         if make_const_in_freq:
             mid_freq_ind = self.Nfreqs // 2
             nmodes_comp = np.repeat(
-                nmodes_comp[:, :, :, :, mid_freq_ind : mid_freq_ind + 1],
+                nmodes_comp[:, :, :, mid_freq_ind : mid_freq_ind + 1],
                 self.Nfreqs,
-                axis=4,
+                axis=3,
             )
             mmodes_comp = np.repeat(
-                mmodes_comp[:, :, :, :, mid_freq_ind : mid_freq_ind + 1],
+                mmodes_comp[:, :, :, mid_freq_ind : mid_freq_ind + 1],
                 self.Nfreqs,
-                axis=4,
+                axis=3,
             )
 
         return nmodes_comp, mmodes_comp
@@ -395,7 +395,7 @@ class sparse_beam(UVBeam):
         interp_kwargs = [bess_matr, trig_matr, fit_coeffs]
         if do_fit:
             fit_coeffs = np.zeros(
-                [self.Naxes_vec, 1, self.Nfeeds, self.Nfreqs, self.num_modes_comp],
+                [self.Naxes_vec, self.Nfeeds, self.Nfreqs, self.num_modes_comp],
                 dtype=complex,
             )
             if data_array is None:
@@ -409,7 +409,7 @@ class sparse_beam(UVBeam):
             )
         else:
             Npos = bess_matr.shape[0]
-            beam_shape = (self.Naxes_vec, 1, self.Nfeeds, self.Nfreqs, Npos)
+            beam_shape = (self.Naxes_vec, self.Nfeeds, self.Nfreqs, Npos)
             if fit_coeffs is None:  # already have some fits
                 fit_coeffs = self.comp_fits
         fit_beam = np.zeros(beam_shape, dtype=complex)
@@ -420,9 +420,9 @@ class sparse_beam(UVBeam):
             for feed_ind in range(self.Nfeeds):
                 for freq_ind in range(Nfreqs):
                     if do_fit:
-                        dat_iter = data_array[vec_ind, 0, feed_ind, freq_ind]
-                    nmodes_iter = self.nmodes_comp[:, vec_ind, 0, feed_ind, freq_ind]
-                    mmodes_iter = self.mmodes_comp[:, vec_ind, 0, feed_ind, freq_ind]
+                        dat_iter = data_array[vec_ind, feed_ind, freq_ind]
+                    nmodes_iter = self.nmodes_comp[:, vec_ind, feed_ind, freq_ind]
+                    mmodes_iter = self.mmodes_comp[:, vec_ind, feed_ind, freq_ind]
                     unique_mmodes_iter = np.unique(mmodes_iter)
 
                     for mmode in unique_mmodes_iter:
@@ -437,17 +437,17 @@ class sparse_beam(UVBeam):
                             az_fit_mmode = dat_iter @ trig_mode.conj()  # Nza
 
                             fit_coeffs_mmode = lstsq(bess_matr_mmode, az_fit_mmode)[0]
-                            fit_coeffs[vec_ind, 0, feed_ind, freq_ind, mmode_inds] = (
+                            fit_coeffs[vec_ind, feed_ind, freq_ind, mmode_inds] = (
                                 fit_coeffs_mmode
                             )
-                            fit_beam[vec_ind, 0, feed_ind, freq_ind] += np.outer(
+                            fit_beam[vec_ind, feed_ind, freq_ind] += np.outer(
                                 bess_matr_mmode @ fit_coeffs_mmode, trig_mode
                             )
                         else:
                             fit_coeffs_mmode = fit_coeffs[
-                                vec_ind, 0, feed_ind, freq_ind, mmode_inds
+                                vec_ind, feed_ind, freq_ind, mmode_inds
                             ]
-                            fit_beam[vec_ind, 0, feed_ind, freq_ind] += (
+                            fit_beam[vec_ind, feed_ind, freq_ind] += (
                                 bess_matr_mmode @ fit_coeffs_mmode
                             ) * trig_mode
 
@@ -536,7 +536,7 @@ class sparse_beam(UVBeam):
                 fit_coeffs = self.comp_fits
             else:
                 for ind_ob in [self.nmodes_comp, self.mmodes_comp]:
-                    if not np.all(ind_ob == ind_ob[:, :, :, :, :1]):
+                    if not np.all(ind_ob == ind_ob[:, :, :, :1]):
                         raise NotImplementedError(
                             "Basis is not constant in "
                             "frequency. Cannot do "
@@ -547,7 +547,7 @@ class sparse_beam(UVBeam):
                     freq_array
                 )
 
-                fit_coeffs_interp = interp1d(freq_array_knots, self.comp_fits, axis=3)
+                fit_coeffs_interp = interp1d(freq_array_knots, self.comp_fits, axis=2)
                 fit_coeffs = fit_coeffs_interp(freq_array)
             beam_vals = self.sparse_fit_loop(
                 do_fit=False,
@@ -564,11 +564,12 @@ class sparse_beam(UVBeam):
                     freq_array
                 )
                 bess_fits_interp = interp1d(
-                    freq_array_knots, self.bess_fits, axis=5, kind=freq_interp_kind
+                    freq_array_knots, self.bess_fits, axis=4, kind=freq_interp_kind
                 )
                 bess_fits = bess_fits_interp(freq_array)
+            #snm, nmpxf -> pxfs (Naxes_vec, Nfreed, Nfreqs, Nsource_pos)
             beam_vals = np.tensordot(bt_matr, bess_fits, axes=2).transpose(
-                1, 2, 3, 4, 0
+                1, 2, 3, 0
             )
         if self.beam_type == "power":
             # FIXME: This assumes you are reading in a power beam and is just to get rid of the imaginary component
