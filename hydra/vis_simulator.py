@@ -6,7 +6,7 @@ visibilities.
 import numpy as np
 import warnings
 from astropy.constants import c
-from pyuvdata import UVBeam
+from pyuvdata import UVBeam, BeamInterface
 from typing import Optional, Sequence
 from matvis import coordinates
 from matvis.core.beams import prepare_beam_unpolarized
@@ -78,7 +78,7 @@ def run_checks(
         # make sure we interpolate to the right frequency first.
         beam_list = [
             (
-                bm.interp(freq_array=np.array([freq]), new_object=True, run_check=False)
+                bm.compute_response(freq_array=np.array([freq]), new_object=True, run_check=False)
                 if isinstance(bm, UVBeam)
                 else bm
             )
@@ -87,17 +87,17 @@ def run_checks(
 
     if polarized and any(b.beam_type != "efield" for b in beam_list):
         raise ValueError("beam type must be efield if using polarized=True")
-    elif not polarized and any(
-        (
-            b.beam_type != "power"
-            or getattr(b, "Npols", 1) > 1
-            or b.polarization_array[0] not in [-5, -6]
-        )
-        for b in beam_list
-    ):
-        raise ValueError(
-            "beam type must be power and have only one pol (either xx or yy) if polarized=False"
-        )
+    else:
+        cond_list = []
+        for b in beam_list:
+            pow_cond = (b.beam_type != "power")
+            Npol_cond = (getattr(b, "Npols", 1) > 1)
+            pol_cond = (b.polarization_array[0] not in [-5, -6])
+            cond_list.append((pow_cond or Npol_cond or pol_cond))
+        if any(cond_list):
+            raise ValueError(
+                "beam type must be power and have only one pol (either xx or yy) if polarized=False"
+            )
     return beam_idx
 
 
@@ -304,7 +304,6 @@ def get_interp_beam_for_sim(
         za: np.ndarray, 
         polarized: bool = True, 
         force_no_beam_sqrt = False, 
-        power_beam=True, 
     ):
     spw_axis_present = utils.get_beam_interp_shape(bm)
     is_UVBeam = isinstance(bm, UVBeam)
@@ -313,15 +312,10 @@ def get_interp_beam_for_sim(
                 if is_UVBeam
                 else {}
             )
-    if is_UVBeam:
-        interp_beam = bm.interp(
+
+    interp_beam = bm.compute_response(
                     az_array=az, za_array=za, freq_array=np.atleast_1d(freq), **kw
                 )[0]
-    else:
-        if power_beam:
-            interp_beam = bm.power_eval(
-                        az_array=az, za_array=za, freq_array=np.atleast_1d(freq), **kw
-                    )[0]
 
     if polarized:
         if spw_axis_present:
@@ -448,15 +442,18 @@ def simulate_vis_per_source(
     nants = antpos.shape[0]
 
     # Source coordinate transform, from equatorial to Cartesian
-    crd_eq = conversions.point_source_crd_eq(ra, dec)
+    crd_eq = coordinates.point_source_crd_eq(ra, dec)
 
     # Get coordinate transforms as a function of LST
     eq2tops = np.array([coordinates.eci_to_enu_matrix(lst, latitude) for lst in lsts])
 
-    beams = [
-        prepare_beam_unpolarized(beam, polarized=polarized, use_feed=use_feed)
-        for beam in beams
-    ]
+    
+    beam_list = []
+    for beam in beams:
+        beam = BeamInterface(beam, 
+                             beam_type="efield" if polarized else "power",
+                             use_feed=use_feed)
+        beam_list.append(beam)
 
     # Initialise output array
     if polarized:
@@ -477,7 +474,7 @@ def simulate_vis_per_source(
             eq2tops,
             crd_eq,
             fluxes[:, i],
-            beam_list=beams,
+            beam_list=beam_list,
             precision=precision,
             polarized=polarized,
             subarr_ant=subarr_ant,
