@@ -1,6 +1,7 @@
 import numpy as np
 from matvis import coordinates
 import pyuvdata
+from pyuvdata import BeamInterface
 from pyuvdata.analytic_beam import AnalyticBeam
 
 """
@@ -549,7 +550,7 @@ def get_beam_interp_shape(beam):
         spw_axis_present (bool): Whether the spw axis is present.
     """
     # Check beam type to see shape for return of interp method
-    if isinstance(beam, AnalyticBeam):
+    if isinstance(beam, AnalyticBeam) or isinstance(beam, BeamInterface):
         spw_axis_present = False
 
     elif isinstance(beam, pyuvdata.UVBeam):

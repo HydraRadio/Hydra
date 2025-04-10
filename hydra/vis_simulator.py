@@ -113,7 +113,6 @@ def vis_sim_per_source(
     beam_idx: Optional[np.ndarray] = None,
     subarr_ant=None,
     force_no_beam_sqrt=False,
-    power_beam=True,
 ):
     """
     Calculate visibility from an input intensity map and beam model. This is
@@ -245,8 +244,7 @@ def vis_sim_per_source(
         for i, bm in enumerate(beam_list):
             interp_beam = get_interp_beam_for_sim(bm, freq, az, za,
                                                   polarized=polarized, 
-                                                  force_no_beam_sqrt=force_no_beam_sqrt, 
-                                                  power_beam=power_beam)
+                                                  force_no_beam_sqrt=force_no_beam_sqrt)
 
             A_s[:, :, i] = interp_beam
 
@@ -317,24 +315,24 @@ def get_interp_beam_for_sim(
                     az_array=az, za_array=za, freq_array=np.atleast_1d(freq), **kw
                 )[0]
 
-    if polarized:
+    if polarized: # FIXME: Not sure how this goes with BeamInterface objects
         if spw_axis_present:
             interp_beam = interp_beam[:, 0, :, 0, :]
         else:
             interp_beam = interp_beam[:, :, 0, :]
     else:
-                # Here we have already asserted that the beam is a power beam and
-                # has only one polarization, so we just evaluate that one.
-        if spw_axis_present:
-            if force_no_beam_sqrt:
-                interp_beam = interp_beam[0, 0, 0, 0, :]
-            else:
-                interp_beam = np.sqrt(interp_beam[0, 0, 0, 0, :])
-        else:
+        # Here we have already asserted that the beam is a power beam and
+        # has only one polarization, so we just evaluate that one.
+        if spw_axis_present: # TODO: This branch is deprecated if we just mandate up-to-date pyuvdata
             if force_no_beam_sqrt:
                 interp_beam = interp_beam[0, 0, 0, :]
             else:
                 interp_beam = np.sqrt(interp_beam[0, 0, 0, :])
+        else:
+            if force_no_beam_sqrt:
+                interp_beam = interp_beam[0, 0, :]
+            else:
+                interp_beam = np.sqrt(interp_beam[0, 0, :])
     return interp_beam
 
 
@@ -451,8 +449,8 @@ def simulate_vis_per_source(
     beam_list = []
     for beam in beams:
         beam = BeamInterface(beam, 
-                             beam_type="efield" if polarized else "power",
-                             use_feed=use_feed)
+                             beam_type="efield" if polarized else "power")
+        beam = beam.with_feeds([use_feed])
         beam_list.append(beam)
 
     # Initialise output array
@@ -894,8 +892,7 @@ def vis_sim_per_source_new(
     precision: int = 2,
     polarized: bool = False,
     subarr_ant=None,
-    force_no_beam_sqrt=False,
-    power_beam=False
+    force_no_beam_sqrt=False
 ):
     """
     Calculate visibility from an input intensity map and beam model. This is
@@ -995,8 +992,7 @@ def vis_sim_per_source_new(
         for i, bm in enumerate(beam_list):
             interp_beam = get_interp_beam_for_sim(bm, freq, az, za,
                                                   polarized=polarized, 
-                                                  force_no_beam_sqrt=force_no_beam_sqrt, 
-                                                  power_beam=power_beam)
+                                                  force_no_beam_sqrt=force_no_beam_sqrt)
 
             A_s[:, :, i] = interp_beam
 
