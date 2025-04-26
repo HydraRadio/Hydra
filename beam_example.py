@@ -11,6 +11,7 @@ from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
 from pyuvdata.analytic_beam import GaussianBeam, AiryBeam
 
 import argparse
+import glob
 
 if __name__ == '__main__':
 
@@ -45,6 +46,9 @@ if __name__ == '__main__':
     parser.add_argument("--plotting", action="store_true",
                         required=False, dest="plotting",
                         help="Output plots.")
+    parser.add_argument("--roundup", action="store", type=int, required=False,
+                        default=1000, 
+                        help="How often to round files up and save them to one big file")
     
     # Array and data shape options
     parser.add_argument('--hex-array', type=int, action="store", default=(3,4),
@@ -464,6 +468,19 @@ if __name__ == '__main__':
             
         timing_info(ftime, n, "(D) Beam sampler", time.time() - t0)
         np.save(os.path.join(output_dir, "beam_%05d" % n), beam_coeffs)
+
+        np1 = n + 1
+        if not np1 % args.roundup:
+            print(f"Rounding up files for iteration: {np1}")
+            files_to_round_up = glob.glob(f"{output_dir}/beam*.npy")
+            sorted_files = sorted(files_to_round_up)
+            sample_arr = np.zeros((args.roundup,) + beam_coeffs.shape)
+            for file_ind, file in enumerate(sorted_files):
+                if "roundup" in file:
+                    continue
+                sample_arr[file_ind] = np.load(file)
+                os.remove(file)
+            np.save(os.path.join(output_dir, f"beam_roundup_{np1}"), sample_arr)
 
 
      
