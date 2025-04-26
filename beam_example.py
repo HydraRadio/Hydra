@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 
+import time, os
+
 import numpy as np
 import hydra
 
 from scipy.sparse.linalg import cg, gmres, bicgstab
-import time, os
 import multiprocessing
 from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
                          convert_to_tops
@@ -268,7 +269,8 @@ if __name__ == '__main__':
                                               mmodes=mmodes, Nfeeds=2, 
                                               alpha=args.rho_const,
                                               num_modes_comp=32,
-                                              sqrt=True)
+                                              sqrt=True,
+                                              save_fn=f"{output_dir}/unpert_sb")
 
     sim_outpath = os.path.join(output_dir, "model0.npy")
     if not os.path.exists(sim_outpath):
@@ -356,8 +358,8 @@ if __name__ == '__main__':
     sig_freq = 0.1 * (freqs[-1] - freqs[0])
     # FIXME: Hardcode!
     cov_file = "data/ramped_variance_bessel_cov.npy" if args.decent_prior else None
-    cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, args.Nbasis,
-                                                  args.beam_prior_std, sig_freq,
+    cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, args.beam_prior_std,
+                                                  sig_freq, args.Nbasis,
                                                   ridge=1e-6,
                                                   cov_file=cov_file)
     cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
