@@ -856,7 +856,7 @@ def do_cov_cho(
 
     cho_tuple = (freq_cho, comp_cho, bfunc_cho)
     if check_op:
-        for cho, cov in zip([freq_cho, bfunc_cho], [freq_cov, bfunc_cov]):
+        for cho, cov in zip([freq_cho, bfunc_cho], [freq_matr, bfunc_matr]):
             check_cho(cho, cov)
 
     return cho_tuple
