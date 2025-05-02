@@ -387,13 +387,7 @@ if __name__ == '__main__':
                                                   ridge=1e-6,
                                                   cov_file=cov_file)
     cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
-    
-    # shuffle the initial position by pulling from the prior
-    if chain_seed is not None: 
-        chain_rng = np.random.default_rng(seed=chain_seed)
-        beam_coeffs = chain_rng.normal(loc=coeff_mean[:, :, None],
-                                       scale=args.beam_prior_std,
-                                       size=beam_coeffs.shape)
+
     
     t0 = time.time()
     bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
@@ -437,6 +431,12 @@ if __name__ == '__main__':
     else:
         # Be lazy and just use the initial guess -- either the right answer or 1 in the first basis function.
         coeff_mean = np.copy(beam_coeffs[:, :, 0])
+    # shuffle the initial position by pulling from the prior
+    if chain_seed is not None: 
+        chain_rng = np.random.default_rng(seed=chain_seed)
+        beam_coeffs = chain_rng.normal(loc=coeff_mean[:, :, None],
+                                       scale=args.beam_prior_std,
+                                       size=beam_coeffs.shape)
 
     # Iterate the Gibbs sampler
     print("="*60)
