@@ -448,6 +448,33 @@ def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
     return bess_trans
 
 
+def get_lin_approx_bess_to_vis(ref_contraction):
+    Nants = ref_contraction.shape[-3]
+    Npols, Nfreqs, Ntimes, Nants = ref_contraction.shape[1:5]
+    assert Npols == 1, "Polarized analysis is not available for this approximation"
+    Nbls = (Nants * Nants - 1)//2
+    Ncoeff = ref_contraction.shape[-1]
+    lin_approx_bess_to_vis = np.zeros([Npols, Npols, Nfreqs, Ntimes, Nbls, Nants, Ncoeff, 2, 2])
+    sigz = np.array([[1, 0], 
+                     [0, -1]])
+
+    # Ewww, pointer walk
+    bl_start = 0
+    for ant_ind in range(Nants):
+        ant_inds = slice(ant_ind +1, Nants)
+        Nants_this_ant = Nants - 1 - ant_ind
+        bl_stop = bl_start + Nants_this_ant
+        bl_inds = slice(bl_start, bl_stop)
+        ref_this_ant = ref_contraction[:, :, :, :, ant_inds, ant_ind]
+        ref_this_ant_real = split_real_imag(ref_this_ant)
+        lin_approx_bess_to_vis[:, :, :, :, bl_inds, ant_ind] = ref_this_ant_real
+        # Talks to conjugate
+        lin_approx_bess_to_vis[:, :, :, :, bl_inds, ant_inds] = ref_this_ant_real * sigz
+        bl_start += Nants_this_ant
+    
+    return lin_approx_bess_to_vis
+
+
 def get_bess_to_vis(
     bess_matr,
     ants,
