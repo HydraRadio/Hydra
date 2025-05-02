@@ -326,15 +326,18 @@ def get_bess_sky_contraction(
     precision=1,
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
+    power=False,
 ):
     """
     Contract the outer product of Fourier-Bessel (FB) design matrix with the sky model
     multiplied by the fringe pattern. This is equivalent to doing a visibility 
     simulation for the array in question for each pair of 2d beam basis functions.
+    If power=True, instead just do this per beam basis function.
 
     Parameters:
         bess_outer (array_like):
-            Outer product of FB design matrix with itself.
+            Outer product of FB design matrix with itself, unless power=True,
+            in which case this should just be the FB design matrix.
         ants (dict):
             Dictionary of antenna positions. The keys are the antenna names
             (integers) and the values are the Cartesian x,y,z positions of the
@@ -362,6 +365,8 @@ def get_bess_sky_contraction(
             the HERA latitude = -30.7215 * pi / 180.
         use_feed (str):
             Which feed to use, default is 'x'. TODO: what is 'x' in cardinal directions?
+        power (bool):
+            Whether sampling power (baseline) beams rather than antenna beams.
     """
 
     Npol = 2 if polarized else 1
@@ -369,16 +374,15 @@ def get_bess_sky_contraction(
     Ncoeff = bess_outer.shape[-1]
     Ntimes = len(lsts)
     Nants = len(ants)
-    contract_shape = [Npol, Npol, Nfreqs, Ntimes, Nants, Nants, Ncoeff, Ncoeff]
+    contract_shape = [Npol, Npol, Nfreqs, Ntimes, Nants, Nants, Ncoeff]
+    if not power:
+        contract_shape += [Ncoeff,]
 
     # tsb,qQftaAs,tsB -> qQftaAbB
-    # inner loop is already over frequency, so just loop over that to save mem
     bess_sky_contraction = np.zeros(contract_shape, dtype=complex)
     beams = [UniformBeam() for ant_ind in range(len(ants))]
 
-    # for freq_ind, freq in enumerate(freqs):
-
-    # FIXME: can do away with freq loop if we use sparse_beam here but it needs to be rewritten
+    # This explicit for loop is actually faster than calling opt_einsum!
     for time_ind in range(Ntimes):
         sky_amp_phase = simulate_vis_per_source(
             ants,
@@ -429,6 +433,7 @@ def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
     Nants = len(ants)
     ant_inds = get_ant_inds(ant_samp_ind, Nants)
     beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds]  # bfApQ -> ApfbQ
+    # Experimentation with opt_einsum suggests no clever speedups so just call einsum 
     bess_trans = np.einsum(
         "ApfbQ,qQftAbB->pqftAB",
         beam_res.conj(),
@@ -555,6 +560,19 @@ def get_bess_to_vis(
             sky_amp_phase[:, :, :, time_ind], bess_matr[time_ind], axes=((-1,), (0,))
         )
     return bess_trans
+
+def calc_power_beam_cov_sh_updater(bess_matr,
+                                   sh_matr,
+                                   inv_noise_var,
+                                   ants,
+                                   fluxes,
+                                   ra,
+                                   dec,
+                                   freqs,
+                                   lsts,
+                                   precision=1,
+                                   latitude=-30.7215 * np.pi / 180.0,
+                                   use_feed="x",):
 
 
 def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
