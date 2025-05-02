@@ -8,10 +8,42 @@ import time, os
 import multiprocessing
 from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
                          convert_to_tops
-from pyuvdata.analytic_beam import GaussianBeam, AiryBeam
+from pyuvdata.analytic_beam import GaussianBeam, AiryBeam, BeamInterface
+from pyuvdata import UVBeam
 
 import argparse
 import glob
+
+def do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants, ra, dec,
+               fluxes, beams, sim_outpath):
+    if not os.path.exists(sim_outpath):
+        # Run a simulation
+        t0 = time.time()
+        _sim_vis = np.zeros([args.Nfreqs, args.Ntimes, Nants, Nants],
+                            dtype=complex)
+        for tind in range(args.Ntimes):
+            _sim_vis[:, tind:tind + 1] =  hydra.vis_simulator.simulate_vis(
+                    ants=ant_pos,
+                    fluxes=fluxes,
+                    ra=ra,
+                    dec=dec,
+                    freqs=freqs, # Make sure this is in Hz!
+                    lsts=times[tind:tind + 1],
+                    beams=beams,
+                    polarized=False,
+                    precision=2,
+                    latitude=args.array_lat,
+                    use_feed="x",
+                    force_no_beam_sqrt=False,
+                )
+            if args.beam_type == "pert_sim":
+                for beam in beams:
+                    beam.clear_cache() # Otherwise memory gets gigantic
+        timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
+        np.save(sim_outpath, _sim_vis)
+    else:
+        _sim_vis = np.load(sim_outpath)
+    return _sim_vis
 
 if __name__ == '__main__':
 
@@ -93,6 +125,9 @@ if __name__ == '__main__':
                         help="Slowly shift the weight between sampling form the prior and posterior over the course of many iterations.")
     parser.add_argument("--infnoise", action="store_true", required=False,
                         help="Sets the inverse noise variance to 0 in order to draw samples from the prior.")
+    parser.add_argument("--perts-only", action="store_true", required=False,
+                        dest="perts_only",
+                        help="Only constrain perturbations rather than the full beam shape")
     
     # Point source sim params
     parser.add_argument("--ra-bounds", type=float, action="store", default=(0, np.pi + 0.5),
@@ -252,14 +287,18 @@ if __name__ == '__main__':
                                                       num_modes_comp=32, save=save,
                                                       outdir=args.output_dir, load=load)        
             beams.append(pow_sb)
+            if args.perts_only:
+                ref_beam = UVBeam(args.beam_file)
         elif args.beam_type in ["gaussian", "airy"]:
+            # Underillimunated HERA dishes
             beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
             diameter = 12. + beam_rng.normal(loc=0, scale=0.2)
             if args.beam_type == "gaussian":
-                beam = GaussianBeam(diameter=diameter)
+                beam_class = GaussianBeam
             else:
-                beam = AiryBeam(diameter=diameter)
-            beams.append(beam)
+                beam_class = AiryBeam
+            beams.append(beam_class(diameter=diameter))
+            ref_beam = beam_class(diameter=12.)
         else:
             raise ValueError("beam-type arg must be one of ('gaussian', 'airy', 'pert_sim')")
             
@@ -269,35 +308,11 @@ if __name__ == '__main__':
                                               alpha=args.rho_const,
                                               num_modes_comp=32,
                                               sqrt=True)
-
+    
     sim_outpath = os.path.join(output_dir, "model0.npy")
-    if not os.path.exists(sim_outpath):
-        # Run a simulation
-        t0 = time.time()
-        _sim_vis = np.zeros([args.Nfreqs, args.Ntimes, Nants, Nants],
-                            dtype=complex)
-        for tind in range(args.Ntimes):
-            _sim_vis[:, tind:tind + 1] =  hydra.vis_simulator.simulate_vis(
-                    ants=ant_pos,
-                    fluxes=fluxes,
-                    ra=ra,
-                    dec=dec,
-                    freqs=freqs, # Make sure this is in Hz!
-                    lsts=times[tind:tind + 1],
-                    beams=beams,
-                    polarized=False,
-                    precision=2,
-                    latitude=args.array_lat,
-                    use_feed="x",
-                    force_no_beam_sqrt=False,
-                )
-            if args.beam_type == "pert_sim":
-                for beam in beams:
-                    beam.clear_cache() # Otherwise memory gets gigantic
-        timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
-        np.save(sim_outpath, _sim_vis)
-    else:
-        _sim_vis = np.load(sim_outpath)
+    _sim_vis = do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants,
+                           ra, dec, fluxes, beams, sim_outpath)
+
 
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
@@ -309,6 +324,14 @@ if __name__ == '__main__':
     del noise
 
     np.save(os.path.join(output_dir, "data0"), data)
+    if args.perts_only: # Subtract off the vis. made with ref beam
+        ref_sim_outpath = os.path.join(output_dir, "model0_ref.npy")
+        ref_beams = Nants * [ref_beam]
+        ref_beam_vis = do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, 
+                                  Nants, ra, dec, fluxes, ref_beams, sim_outpath)
+        data -= (ref_beam_vis + ref_beam_vis.swapaxes(-1, -2).conj())
+        del ref_beam_vis
+        np.save(os.path.join(output_dir, "data_res"), data)
 
     inv_noise_var = 1/noise_var
     np.save(os.path.join(output_dir, "inv_noise_var.npy"), inv_noise_var)
@@ -316,7 +339,8 @@ if __name__ == '__main__':
     txs, tys, tzs = convert_to_tops(ra, dec, times, args.array_lat)
 
     za = np.arccos(tzs).flatten()
-    bess_matr, trig_matr = unpert_sb.get_dmatr_interp(np.arctan2(tys, txs).flatten(), 
+    az = np.arctan2(tys, txs).flatten()
+    bess_matr, trig_matr = unpert_sb.get_dmatr_interp(az, 
                                                       za)
     bess_matr = bess_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax)
     trig_matr = trig_matr.reshape(args.Ntimes, args.Nptsrc, 2 * args.mmax + 1)
@@ -361,12 +385,13 @@ if __name__ == '__main__':
                                                   ridge=1e-6,
                                                   cov_file=cov_file)
     cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
-    # Be lazy and just use the initial guess -- either the right answer or 1 in the first basis function.
-    coeff_mean = np.copy(beam_coeffs[:, :, 0])
     
-    if chain_seed is not None: # shuffle the initial position
+    # shuffle the initial position by pulling from the prior
+    if chain_seed is not None: 
         chain_rng = np.random.default_rng(seed=chain_seed)
-        beam_coeffs = chain_rng.normal(size=beam_coeffs.shape)
+        beam_coeffs = chain_rng.normal(loc=coeff_mean[:, :, None],
+                                       scale=args.beam_prior_std,
+                                       size=beam_coeffs.shape)
     
     t0 = time.time()
     bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
@@ -382,7 +407,34 @@ if __name__ == '__main__':
     tsc = time.time() - t0
     timing_info(ftime, 0, "(0) bess_sky_contraction", tsc)
     print(f"bess_sky_contraction took {tsc} seconds")
-    
+
+    if args.perts_only:
+        ref_beam_response = BeamInterface(ref_beam, beam_type="power")
+        # FIXME: Hardcode feed x
+        ref_beam_response = ref_beam_response.with_feeds(["x"])
+        ref_beam_response = ref_beam_response.compute_response(az_array=az,
+                                                               za_array=za,
+                                                               freq_array=freqs)
+        ref_beam_response = ref_beam_response.reshape([args.Nfreqs,
+                                                       args.Ntimes,
+                                                       args.Nptsrc,])
+        # Square root of power beam
+        ref_beam_response = np.sqrt(ref_beam_response)
+        ref_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
+                                                                      ant_pos, 
+                                                                      fluxes, 
+                                                                      ra,
+                                                                      dec, 
+                                                                      freqs, 
+                                                                      times,
+                                                                      polarized=False, 
+                                                                      latitude=args.array_lat,
+                                                                      outer=False,
+                                                                      ref_beam_response=ref_beam_response)
+        coeff_mean = np.zeros_like(beam_coeffs)
+    else:
+        # Be lazy and just use the initial guess -- either the right answer or 1 in the first basis function.
+        coeff_mean = np.copy(beam_coeffs[:, :, 0])
 
     # Iterate the Gibbs sampler
     print("="*60)
@@ -413,6 +465,16 @@ if __name__ == '__main__':
             else:
                 inv_noise_var_use /= temp
             data_use = hydra.beam_sampler.select_subarr(data[None, None], ant_samp_ind, Nants)
+            if args.perts_only:
+                # Contract other antenna coefficients with object that has been pre-multiplied by reference beam
+                other_ants_with_ref = hydra.beam_sampler.get_bess_to_vis_from_contraction(ref_contraction,
+                                                                                          beam_coeffs, 
+                                                                                          ants, 
+                                                                                          ant_samp_ind)
+                data_use -= other_ants_with_ref
+                ant_inds = hydra.beam_sampler.get_ant_inds(ant_samp_ind, Nants)
+                # Add the term that contracts the reference beam with current antenna's perturbations
+                bess_trans += ref_contraction[:, :, :, :, ant_inds, ant_samp_ind]
 
             # Construct RHS vector
             rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,

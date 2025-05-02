@@ -326,7 +326,8 @@ def get_bess_sky_contraction(
     precision=1,
     latitude=-30.7215 * np.pi / 180.0,
     use_feed="x",
-    power=False,
+    outer=True,
+    ref_beam_response=None,
 ):
     """
     Contract the outer product of Fourier-Bessel (FB) design matrix with the sky model
@@ -365,8 +366,10 @@ def get_bess_sky_contraction(
             the HERA latitude = -30.7215 * pi / 180.
         use_feed (str):
             Which feed to use, default is 'x'. TODO: what is 'x' in cardinal directions?
-        power (bool):
+        outer (bool):
             Whether sampling power (baseline) beams rather than antenna beams.
+        ref_beam_response (UVBeam):
+            A reference beam response evaluated at the ra and dec in question.
     """
 
     Npol = 2 if polarized else 1
@@ -375,7 +378,7 @@ def get_bess_sky_contraction(
     Ntimes = len(lsts)
     Nants = len(ants)
     contract_shape = [Npol, Npol, Nfreqs, Ntimes, Nants, Nants, Ncoeff]
-    if not power:
+    if outer:
         contract_shape += [Ncoeff,]
 
     # tsb,qQftaAs,tsB -> qQftaAbB
@@ -397,9 +400,10 @@ def get_bess_sky_contraction(
             latitude=latitude,
             use_feed=use_feed,
         )
-
         if not polarized:
             sky_amp_phase = sky_amp_phase[np.newaxis, np.newaxis, :]
+            if ref_beam_response is not None:
+                sky_amp_phase *= ref_beam_response[:, None, None, None, time_ind]
         # Need this conjugation since only lower half of array is filled
         # less memory efficient but this isn't the dominant term
         # makes compute later easier to think about
