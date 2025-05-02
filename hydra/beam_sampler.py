@@ -561,18 +561,6 @@ def get_bess_to_vis(
         )
     return bess_trans
 
-def calc_power_beam_cov_sh_updater(bess_matr,
-                                   sh_matr,
-                                   inv_noise_var,
-                                   ants,
-                                   fluxes,
-                                   ra,
-                                   dec,
-                                   freqs,
-                                   lsts,
-                                   precision=1,
-                                   latitude=-30.7215 * np.pi / 180.0,
-                                   use_feed="x",):
 
 
 def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
