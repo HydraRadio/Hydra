@@ -227,11 +227,11 @@ if __name__ == '__main__':
     array_lat = np.deg2rad(args.array_lat)
 
     # Check that output directory exists
-    output_dir = f"{args.output_dir}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
+    output_dir = f"{args.output_dir}/per_ant/{args.per_ant}/beam_type/{args.beam_type}"
+    output_dir = f"{output_dir}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
     output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/anneal/{args.anneal}"
     output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}"
-    output_dir = f"{output_dir}/perts_only/{args.perts_only}"
-    output_dir = f"{output_dir}/chainseed/{args.chain_seed}"
+    output_dir = f"{output_dir}/perts_only/{args.perts_only}/chainseed/{args.chain_seed}"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     print("\nOutput directory:", output_dir)
@@ -329,13 +329,13 @@ if __name__ == '__main__':
                     ref_beam = beam_class(diameter=12.)
             else:
                 raise ValueError("beam-type arg must be one of ('gaussian', 'airy', 'pert_sim')")
-        else:
-            if args.beam_type == "pert_sim":
-                beams = Nants * [unpert_sb]
-            elif args.beam_type in ["gaussian", "airy"]:
-                beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
-                beam, beam_class = get_analytic_beam(args, beam_rng, beams)
-                beams = Nants * [beam]
+    else:
+        if args.beam_type == "pert_sim":
+            beams = Nants * [UVBeam(args.beam_file)]
+        elif args.beam_type in ["gaussian", "airy"]:
+            beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
+            beam, beam_class = get_analytic_beam(args, beam_rng, beams)
+            beams = Nants * [beam]
 
     sim_outpath = os.path.join(output_dir, "model0.npy")
     _sim_vis = do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants,
@@ -396,85 +396,88 @@ if __name__ == '__main__':
     np.save(os.path.join(output_dir, "dmo.npy"), Dmatr_outer)
     np.save(os.path.join(output_dir, "za.npy"), za)
     
-    beam_coeffs = np.zeros([Nants, args.Nfreqs, args.Nbasis, 1, 1])
-    if not args.perts_only:
-        if args.decent_prior:
-            # FIXME: Hardcode!, start at answer!
-            beam_coeffs += np.load("data/14m_airy_bessel_soln.npy")[None, None, :, None, None] 
+    # Have everything we need to analytically evaluate single-array beam
+    if args.per_ant: 
+    
+        beam_coeffs = np.zeros([Nants, args.Nfreqs, args.Nbasis, 1, 1])
+        if not args.perts_only:
+            if args.decent_prior:
+                # FIXME: Hardcode!, start at answer!
+                beam_coeffs += np.load("data/14m_airy_bessel_soln.npy")[None, None, :, None, None] 
+            else:
+                beam_coeffs[:, :, 0] = 1
+            # Want shape Nbasis, Nfreqs, Nants, Npol, Npol
+        beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
+
+        sig_freq = 0.1 * (freqs[-1] - freqs[0])
+        # FIXME: Hardcode!
+        cov_file = "data/ramped_variance_bessel_cov.npy" if args.decent_prior else None
+        cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, args.beam_prior_std,
+                                                    sig_freq, args.Nbasis,
+                                                    ridge=1e-6,
+                                                    cov_file=cov_file)
+        cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
+
+        bsc_outpath = os.path.join(output_dir, "bsc.npy")
+        if os.path.exists(bsc_outpath):
+            bess_sky_contraction = np.load(bsc_outpath)
         else:
-            beam_coeffs[:, :, 0] = 1
-        # Want shape Nbasis, Nfreqs, Nants, Npol, Npol
-    beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
+            t0 = time.time()
+            bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
+                                                                            ant_pos, 
+                                                                            fluxes, 
+                                                                            ra,
+                                                                            dec, 
+                                                                            freqs, 
+                                                                            times,
+                                                                            polarized=False, 
+                                                                            latitude=args.array_lat,)
+            np.save(bsc_outpath, bess_sky_contraction)
+            tsc = time.time() - t0
+            timing_info(ftime, 0, "(0) bess_sky_contraction", tsc)
+            print(f"bess_sky_contraction took {tsc} seconds")
 
-    sig_freq = 0.1 * (freqs[-1] - freqs[0])
-    # FIXME: Hardcode!
-    cov_file = "data/ramped_variance_bessel_cov.npy" if args.decent_prior else None
-    cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, args.beam_prior_std,
-                                                  sig_freq, args.Nbasis,
-                                                  ridge=1e-6,
-                                                  cov_file=cov_file)
-    cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
+        if args.perts_only:
+            ref_contraction_outpath = os.path.join(output_dir, "ref_constraction.npy")
+            if os.path.exists(ref_contraction_outpath):
+                ref_contraction = np.load(ref_contraction_outpath)
+            else:
+                ref_beam_response = BeamInterface(ref_beam, beam_type="power")
+                # FIXME: Hardcode feed x
+                ref_beam_response = ref_beam_response.with_feeds(["x"])
+                ref_beam_response = ref_beam_response.compute_response(az_array=az,
+                                                                    za_array=za,
+                                                                    freq_array=freqs)
+                ref_beam_response = ref_beam_response.reshape([args.Nfreqs,
+                                                            args.Ntimes,
+                                                            args.Nptsrc,])
+                # Square root of power beam
+                ref_beam_response = np.sqrt(ref_beam_response)
+                ref_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
+                                                                            ant_pos, 
+                                                                            fluxes, 
+                                                                            ra,
+                                                                            dec, 
+                                                                            freqs, 
+                                                                            times,
+                                                                            polarized=False, 
+                                                                            latitude=args.array_lat,
+                                                                            outer=False,
+                                                                            ref_beam_response=ref_beam_response)
 
-    bsc_outpath = os.path.join(output_dir, "bsc.npy")
-    if os.path.exists(bsc_outpath):
-        bess_sky_contraction = np.load(bsc_outpath)
-    else:
-        t0 = time.time()
-        bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
-                                                                        ant_pos, 
-                                                                        fluxes, 
-                                                                        ra,
-                                                                        dec, 
-                                                                        freqs, 
-                                                                        times,
-                                                                        polarized=False, 
-                                                                        latitude=args.array_lat,)
-        np.save(bsc_outpath, bess_sky_contraction)
-        tsc = time.time() - t0
-        timing_info(ftime, 0, "(0) bess_sky_contraction", tsc)
-        print(f"bess_sky_contraction took {tsc} seconds")
-
-    if args.perts_only:
-        ref_contraction_outpath = os.path.join(output_dir, "ref_constraction.npy")
-        if os.path.exists(ref_contraction_outpath):
-            ref_contraction = np.load(ref_contraction_outpath)
+                np.save(ref_contraction_outpath, ref_contraction)
+            coeff_mean = np.zeros_like(beam_coeffs[:, :, 0])
         else:
-            ref_beam_response = BeamInterface(ref_beam, beam_type="power")
-            # FIXME: Hardcode feed x
-            ref_beam_response = ref_beam_response.with_feeds(["x"])
-            ref_beam_response = ref_beam_response.compute_response(az_array=az,
-                                                                za_array=za,
-                                                                freq_array=freqs)
-            ref_beam_response = ref_beam_response.reshape([args.Nfreqs,
-                                                        args.Ntimes,
-                                                        args.Nptsrc,])
-            # Square root of power beam
-            ref_beam_response = np.sqrt(ref_beam_response)
-            ref_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
-                                                                        ant_pos, 
-                                                                        fluxes, 
-                                                                        ra,
-                                                                        dec, 
-                                                                        freqs, 
-                                                                        times,
-                                                                        polarized=False, 
-                                                                        latitude=args.array_lat,
-                                                                        outer=False,
-                                                                        ref_beam_response=ref_beam_response)
+            # Be lazy and just use the initial guess -- either the right answer or 1 in the first basis function.
+            coeff_mean = np.copy(beam_coeffs[:, :, 0])
+        # shuffle the initial position by pulling from the prior
+        if chain_seed is not None: 
+            chain_rng = np.random.default_rng(seed=chain_seed)
+            beam_coeffs = chain_rng.normal(loc=coeff_mean[:, :, None].real,
+                                        scale=args.beam_prior_std,
+                                        size=beam_coeffs.shape).astype(complex)
 
-            np.save(ref_contraction_outpath, ref_contraction)
-        coeff_mean = np.zeros_like(beam_coeffs[:, :, 0])
-    else:
-        # Be lazy and just use the initial guess -- either the right answer or 1 in the first basis function.
-        coeff_mean = np.copy(beam_coeffs[:, :, 0])
-    # shuffle the initial position by pulling from the prior
-    if chain_seed is not None: 
-        chain_rng = np.random.default_rng(seed=chain_seed)
-        beam_coeffs = chain_rng.normal(loc=coeff_mean[:, :, None].real,
-                                       scale=args.beam_prior_std,
-                                       size=beam_coeffs.shape).astype(complex)
 
-    if args.per_ant:
         # Iterate the Gibbs sampler
         print("="*60)
         print("Starting Gibbs sampler (%d iterations)" % args.Niters)
