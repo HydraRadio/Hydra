@@ -382,6 +382,8 @@ def get_bess_sky_contraction(
         contract_shape += [Ncoeff,]
 
     # tsb,qQftaAs,tsB -> qQftaAbB
+    # or #
+    # ts,qQftaAs,tsB -> qQftaAB
     bess_sky_contraction = np.zeros(contract_shape, dtype=complex)
     beams = [UniformBeam() for ant_ind in range(len(ants))]
 
@@ -416,7 +418,7 @@ def get_bess_sky_contraction(
     return bess_sky_contraction
 
 def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
-                                     ant_samp_ind):
+                                     ant_samp_ind, ref_contraction=False):
     """
     Get a linear operator that maps a particular antenna's beam coefficients to 
     visibilities.
@@ -438,8 +440,12 @@ def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
     ant_inds = get_ant_inds(ant_samp_ind, Nants)
     beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds]  # bfApQ -> ApfbQ
     # Experimentation with opt_einsum suggests no clever speedups so just call einsum 
+    if ref_contraction:
+        einstr = "ApfbQ,qQftAb->pqftA"
+    else:
+        einstr = "ApfbQ,qQftAbB->pqftAB"
     bess_trans = np.einsum(
-        "ApfbQ,qQftAbB->pqftAB",
+        einstr,
         beam_res.conj(),
         bess_sky_contraction[:, :, :, :, ant_inds, ant_samp_ind],
         optimize=True,

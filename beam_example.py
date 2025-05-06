@@ -9,8 +9,8 @@ from scipy.sparse.linalg import cg, gmres, bicgstab
 import multiprocessing
 from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
                          convert_to_tops
-from pyuvdata.analytic_beam import GaussianBeam, AiryBeam, BeamInterface
-from pyuvdata import UVBeam
+from pyuvdata.analytic_beam import GaussianBeam, AiryBeam
+from pyuvdata import UVBeam, BeamInterface
 
 import argparse
 import glob
@@ -45,6 +45,32 @@ def do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants, ra, dec,
     else:
         _sim_vis = np.load(sim_outpath)
     return _sim_vis
+
+def get_pert_beam(args, output_dir, ant_ind):
+    load = os.path.exists(f"{output_dir}/perturbed_beam_beamvals_seed_{args.seed + ant_ind}.npy")
+    save = not load
+    pow_sb = hydra.beam_sampler.get_pert_beam(args.seed + ant_ind,
+                                              args.beam_file, 
+                                              trans_std=args.trans_std,
+                                              rot_std_deg=args.rot_std_deg,
+                                              stretch_std=args.stretch_std,
+                                              mmax=args.mmax, 
+                                              nmax=args.nmax,
+                                              sqrt=True, Nfeeds=2, 
+                                              num_modes_comp=32, save=save,
+                                              outdir=args.output_dir, load=load)
+                                              
+    return pow_sb
+
+def get_analytic_beam(args, beam_rng, beams):
+    diameter = 12. + beam_rng.normal(loc=0, scale=0.2)
+    if args.beam_type == "gaussian":
+        beam_class = GaussianBeam
+    else:
+        beam_class = AiryBeam
+    beam = beam_class(diameter=diameter)
+
+    return beam, beam_class
 
 if __name__ == '__main__':
 
@@ -178,6 +204,9 @@ if __name__ == '__main__':
                         dest="beam_type", default="gaussian")
     parser.add_argument("--pca-modes", required=False, type=str,
                         dest="pca_modes", help="Path to saved PCA eigenvectors.")
+    parser.add_argument("--per-ant", required=False, action="store_true",
+                        dest="per_ant",
+                        help="Whether to use a different beam per antenna")
     
     args = parser.parse_args()
     
@@ -199,7 +228,10 @@ if __name__ == '__main__':
 
     # Check that output directory exists
     output_dir = f"{args.output_dir}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
-    output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/chainseed_{args.chain_seed}"
+    output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/anneal/{args.anneal}"
+    output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}"
+    output_dir = f"{output_dir}/perts_only/{args.perts_only}"
+    output_dir = f"{output_dir}/chainseed/{args.chain_seed}"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     print("\nOutput directory:", output_dir)
@@ -271,38 +303,6 @@ if __name__ == '__main__':
     np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
     np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
 
-
-    beams = []
-    for ant_ind in range(Nants):
-        if args.beam_type == "pert_sim":
-            load = os.path.exists(f"{output_dir}/perturbed_beam_beamvals_seed_{args.seed + ant_ind}.npy")
-            save = not load
-            pow_sb = hydra.beam_sampler.get_pert_beam(args.seed + ant_ind,
-                                                      args.beam_file, 
-                                                      trans_std=args.trans_std,
-                                                      rot_std_deg=args.rot_std_deg,
-                                                      stretch_std=args.stretch_std,
-                                                      mmax=args.mmax, 
-                                                      nmax=args.nmax,
-                                                      sqrt=True, Nfeeds=2, 
-                                                      num_modes_comp=32, save=save,
-                                                      outdir=args.output_dir, load=load)        
-            beams.append(pow_sb)
-            if args.perts_only:
-                ref_beam = UVBeam(args.beam_file)
-        elif args.beam_type in ["gaussian", "airy"]:
-            # Underillimunated HERA dishes
-            beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
-            diameter = 12. + beam_rng.normal(loc=0, scale=0.2)
-            if args.beam_type == "gaussian":
-                beam_class = GaussianBeam
-            else:
-                beam_class = AiryBeam
-            beams.append(beam_class(diameter=diameter))
-            ref_beam = beam_class(diameter=12.)
-        else:
-            raise ValueError("beam-type arg must be one of ('gaussian', 'airy', 'pert_sim')")
-            
     mmodes = np.arange(-args.mmax, args.mmax + 1)
     unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
                                               mmodes=mmodes, Nfeeds=2, 
@@ -310,6 +310,32 @@ if __name__ == '__main__':
                                               num_modes_comp=32,
                                               sqrt=True,
                                               save_fn=f"{output_dir}/unpert_sb")
+
+    if args.per_ant:
+        beams = []
+        for ant_ind in range(Nants):
+            ref_cond = args.perts_only and ant_ind == 0
+            if args.beam_type == "pert_sim":
+                pow_sb = get_pert_beam(args, output_dir, ant_ind)        
+                beams.append(pow_sb)
+                if ref_cond:
+                    ref_beam = UVBeam(args.beam_file)
+            elif args.beam_type in ["gaussian", "airy"]:
+                # Underillimunated HERA dishes
+                beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
+                beam, beam_class = get_analytic_beam(args, beam_rng, beams)
+                beams.append(beam)
+                if ref_cond:
+                    ref_beam = beam_class(diameter=12.)
+            else:
+                raise ValueError("beam-type arg must be one of ('gaussian', 'airy', 'pert_sim')")
+        else:
+            if args.beam_type == "pert_sim":
+                beams = Nants * [unpert_sb]
+            elif args.beam_type in ["gaussian", "airy"]:
+                beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
+                beam, beam_class = get_analytic_beam(args, beam_rng, beams)
+                beams = Nants * [beam]
 
     sim_outpath = os.path.join(output_dir, "model0.npy")
     _sim_vis = do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants,
@@ -371,12 +397,13 @@ if __name__ == '__main__':
     np.save(os.path.join(output_dir, "za.npy"), za)
     
     beam_coeffs = np.zeros([Nants, args.Nfreqs, args.Nbasis, 1, 1])
-    if args.decent_prior:
-        # FIXME: Hardcode!, start at answer!
-        beam_coeffs += np.load("data/14m_airy_bessel_soln.npy")[None, None, :, None, None] 
-    else:
-        beam_coeffs[:, :, 0] = 1
-    # Want shape Nbasis, Nfreqs, Nants, Npol, Npol
+    if not args.perts_only:
+        if args.decent_prior:
+            # FIXME: Hardcode!, start at answer!
+            beam_coeffs += np.load("data/14m_airy_bessel_soln.npy")[None, None, :, None, None] 
+        else:
+            beam_coeffs[:, :, 0] = 1
+        # Want shape Nbasis, Nfreqs, Nants, Npol, Npol
     beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
 
     sig_freq = 0.1 * (freqs[-1] - freqs[0])
@@ -388,165 +415,176 @@ if __name__ == '__main__':
                                                   cov_file=cov_file)
     cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
 
-    
-    t0 = time.time()
-    bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
-                                                                       ant_pos, 
-                                                                       fluxes, 
-                                                                       ra,
-                                                                       dec, 
-                                                                       freqs, 
-                                                                       times,
-                                                                       polarized=False, 
-                                                                       latitude=args.array_lat,)
-    np.save(os.path.join(output_dir, "bsc.npy"), bess_sky_contraction)
-    tsc = time.time() - t0
-    timing_info(ftime, 0, "(0) bess_sky_contraction", tsc)
-    print(f"bess_sky_contraction took {tsc} seconds")
+    bsc_outpath = os.path.join(output_dir, "bsc.npy")
+    if os.path.exists(bsc_outpath):
+        bess_sky_contraction = np.load(bsc_outpath)
+    else:
+        t0 = time.time()
+        bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
+                                                                        ant_pos, 
+                                                                        fluxes, 
+                                                                        ra,
+                                                                        dec, 
+                                                                        freqs, 
+                                                                        times,
+                                                                        polarized=False, 
+                                                                        latitude=args.array_lat,)
+        np.save(bsc_outpath, bess_sky_contraction)
+        tsc = time.time() - t0
+        timing_info(ftime, 0, "(0) bess_sky_contraction", tsc)
+        print(f"bess_sky_contraction took {tsc} seconds")
 
     if args.perts_only:
-        ref_beam_response = BeamInterface(ref_beam, beam_type="power")
-        # FIXME: Hardcode feed x
-        ref_beam_response = ref_beam_response.with_feeds(["x"])
-        ref_beam_response = ref_beam_response.compute_response(az_array=az,
-                                                               za_array=za,
-                                                               freq_array=freqs)
-        ref_beam_response = ref_beam_response.reshape([args.Nfreqs,
-                                                       args.Ntimes,
-                                                       args.Nptsrc,])
-        # Square root of power beam
-        ref_beam_response = np.sqrt(ref_beam_response)
-        ref_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
-                                                                      ant_pos, 
-                                                                      fluxes, 
-                                                                      ra,
-                                                                      dec, 
-                                                                      freqs, 
-                                                                      times,
-                                                                      polarized=False, 
-                                                                      latitude=args.array_lat,
-                                                                      outer=False,
-                                                                      ref_beam_response=ref_beam_response)
-        coeff_mean = np.zeros_like(beam_coeffs)
+        ref_contraction_outpath = os.path.join(output_dir, "ref_constraction.npy")
+        if os.path.exists(ref_contraction_outpath):
+            ref_contraction = np.load(ref_contraction_outpath)
+        else:
+            ref_beam_response = BeamInterface(ref_beam, beam_type="power")
+            # FIXME: Hardcode feed x
+            ref_beam_response = ref_beam_response.with_feeds(["x"])
+            ref_beam_response = ref_beam_response.compute_response(az_array=az,
+                                                                za_array=za,
+                                                                freq_array=freqs)
+            ref_beam_response = ref_beam_response.reshape([args.Nfreqs,
+                                                        args.Ntimes,
+                                                        args.Nptsrc,])
+            # Square root of power beam
+            ref_beam_response = np.sqrt(ref_beam_response)
+            ref_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
+                                                                        ant_pos, 
+                                                                        fluxes, 
+                                                                        ra,
+                                                                        dec, 
+                                                                        freqs, 
+                                                                        times,
+                                                                        polarized=False, 
+                                                                        latitude=args.array_lat,
+                                                                        outer=False,
+                                                                        ref_beam_response=ref_beam_response)
+
+            np.save(ref_contraction_outpath, ref_contraction)
+        coeff_mean = np.zeros_like(beam_coeffs[:, :, 0])
     else:
         # Be lazy and just use the initial guess -- either the right answer or 1 in the first basis function.
         coeff_mean = np.copy(beam_coeffs[:, :, 0])
     # shuffle the initial position by pulling from the prior
     if chain_seed is not None: 
         chain_rng = np.random.default_rng(seed=chain_seed)
-        beam_coeffs = chain_rng.normal(loc=coeff_mean[:, :, None],
+        beam_coeffs = chain_rng.normal(loc=coeff_mean[:, :, None].real,
                                        scale=args.beam_prior_std,
-                                       size=beam_coeffs.shape)
+                                       size=beam_coeffs.shape).astype(complex)
 
-    # Iterate the Gibbs sampler
-    print("="*60)
-    print("Starting Gibbs sampler (%d iterations)" % args.Niters)
-    print("="*60)
-    for n in range(args.Niters):
-        print("-"*60)
-        print(">>> Iteration %4d / %4d" % (n+1, args.Niters))
-        print("-"*60)
-        t0iter = time.time()
+    if args.per_ant:
+        # Iterate the Gibbs sampler
+        print("="*60)
+        print("Starting Gibbs sampler (%d iterations)" % args.Niters)
+        print("="*60)
+        for n in range(args.Niters):
+            print("-"*60)
+            print(">>> Iteration %4d / %4d" % (n+1, args.Niters))
+            print("-"*60)
+            t0iter = time.time()
 
-        if args.anneal:
-            temp = max(2000. - 2 * n, 1.)
-        else:
-            temp = 1.
-
-        for ant_samp_ind in range(Nants):
-            bess_trans = hydra.beam_sampler.get_bess_to_vis_from_contraction(bess_sky_contraction,
-                                                                             beam_coeffs, 
-                                                                             ants, 
-                                                                             ant_samp_ind)
-            
-            inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var[None, None], # add pol axes of length 1
-                                                                 ant_samp_ind, 
-                                                                 Nants)
-            if args.infnoise:
-                inv_noise_var_use[:] = 0
+            if args.anneal:
+                temp = max(2000. - 2 * n, 1.)
             else:
-                inv_noise_var_use /= temp
-            data_use = hydra.beam_sampler.select_subarr(data[None, None], ant_samp_ind, Nants)
-            if args.perts_only:
-                # Contract other antenna coefficients with object that has been pre-multiplied by reference beam
-                other_ants_with_ref = hydra.beam_sampler.get_bess_to_vis_from_contraction(ref_contraction,
-                                                                                          beam_coeffs, 
-                                                                                          ants, 
-                                                                                          ant_samp_ind)
-                data_use -= other_ants_with_ref
-                ant_inds = hydra.beam_sampler.get_ant_inds(ant_samp_ind, Nants)
-                # Add the term that contracts the reference beam with current antenna's perturbations
-                bess_trans += ref_contraction[:, :, :, :, ant_inds, ant_samp_ind]
+                temp = 1.
 
-            # Construct RHS vector
-            rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
-                                                             inv_noise_var_use,
-                                                             coeff_mean,
-                                                             bess_trans,
-                                                             cov_tuple,
-                                                             cho_tuple)
-            bbeam = rhs_unflatten.flatten()
+            for ant_samp_ind in range(Nants):
+                bess_trans = hydra.beam_sampler.get_bess_to_vis_from_contraction(bess_sky_contraction,
+                                                                                beam_coeffs, 
+                                                                                ants, 
+                                                                                ant_samp_ind)
                 
+                inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var[None, None], # add pol axes of length 1
+                                                                    ant_samp_ind, 
+                                                                    Nants)
+                if args.infnoise:
+                    inv_noise_var_use[:] = 0
+                else:
+                    inv_noise_var_use /= temp
+                data_use = hydra.beam_sampler.select_subarr(data[None, None], ant_samp_ind, Nants)
+                if args.perts_only:
+                    # Contract other antenna coefficients with object that has been pre-multiplied by reference beam
+                    other_ants_with_ref = hydra.beam_sampler.get_bess_to_vis_from_contraction(ref_contraction,
+                                                                                            beam_coeffs, 
+                                                                                            ants, 
+                                                                                            ant_samp_ind,
+                                                                                            ref_contraction=True)
+                    data_use -= other_ants_with_ref
+                    ant_inds = hydra.beam_sampler.get_ant_inds(ant_samp_ind, Nants)
+                    # Add the term that contracts the reference beam with current antenna's perturbations
+                    bess_trans += ref_contraction[:, :, :, :, ant_inds, ant_samp_ind]
 
-            shape = (args.Nfreqs, args.Nbasis,  1, 1, 2)
-            cov_Qdag_Ninv_Q = hydra.beam_sampler.get_cov_Qdag_Ninv_Q(inv_noise_var_use,
-                                                                     bess_trans,
-                                                                     cov_tuple)
-            
-            axlen = np.prod(shape)
+                # Construct RHS vector
+                rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
+                                                                inv_noise_var_use,
+                                                                coeff_mean,
+                                                                bess_trans,
+                                                                cov_tuple,
+                                                                cho_tuple)
+                bbeam = rhs_unflatten.flatten()
+                    
 
-            # fPbpQBcCF->fbQcFBpPC
-            matr = cov_Qdag_Ninv_Q.transpose((0,2,4,6,8,5,3,1,7)).reshape([axlen, axlen]) + np.eye(axlen)
-            
-            # FIXME: This is skipped!
-            def beam_lhs_operator(x):
-                y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),
-                                                      cov_Qdag_Ninv_Q)
-                return(y.flatten())
+                shape = (args.Nfreqs, args.Nbasis,  1, 1, 2)
+                cov_Qdag_Ninv_Q = hydra.beam_sampler.get_cov_Qdag_Ninv_Q(inv_noise_var_use,
+                                                                        bess_trans,
+                                                                        cov_tuple)
+                
+                axlen = np.prod(shape)
 
-            # What the shape would be if the matrix were represented densely
-            beam_lhs_shape = (axlen, axlen)
-            print("Solving")
-            x_soln = np.linalg.solve(matr, bbeam)
-            print("Done solving")
+                # fPbpQBcCF->fbQcFBpPC
+                matr = cov_Qdag_Ninv_Q.transpose((0,2,4,6,8,5,3,1,7)).reshape([axlen, axlen]) + np.eye(axlen)
+                
+                # FIXME: This is skipped!
+                def beam_lhs_operator(x):
+                    y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),
+                                                        cov_Qdag_Ninv_Q)
+                    return(y.flatten())
 
-
-            if args.test_close:
-                btest = matr @ x_soln
-                allclose = np.allclose(btest, bbeam)
-                if not allclose:
-                    abs_diff = np.abs(btest-bbeam)
-                    wh_max_diff = np.argmax(abs_diff)
-                    max_diff = abs_diff[wh_max_diff]
-                    max_val = bbeam[wh_max_diff]
-                    raise AssertionError(f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}")
-            x_soln_res = np.reshape(x_soln, shape)
-
-            # Has shape Nfreqs, Nbasis, Npol, Npol, ncomp
-            # Want shape Nbasis, Nfreqs, Npol, Npol, ncomp
-            x_soln_swap = np.swapaxes(x_soln_res, 0, 1)
-
-            # Update the coeffs between rounds
-            beam_coeffs[:, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, :, :, 0] \
-                                                + 1.j * x_soln_swap[:, :, :, :, 1]
-            
-        timing_info(ftime, n, "(D) Beam sampler", time.time() - t0)
-        np.save(os.path.join(output_dir, "beam_%05d" % n), beam_coeffs)
-
-        np1 = n + 1
-        if not np1 % args.roundup:
-            print(f"Rounding up files for iteration: {np1}")
-            files_to_round_up = glob.glob(f"{output_dir}/beam*.npy")
-            sorted_files = sorted(files_to_round_up)
-            sample_arr = np.zeros((args.roundup,) + beam_coeffs.shape)
-            for file_ind, file in enumerate(sorted_files):
-                if "roundup" in file:
-                    continue
-                sample_arr[file_ind] = np.load(file)
-                os.remove(file)
-            np.save(os.path.join(output_dir, f"beam_roundup_{np1}"), sample_arr)
+                # What the shape would be if the matrix were represented densely
+                beam_lhs_shape = (axlen, axlen)
+                print("Solving")
+                x_soln = np.linalg.solve(matr, bbeam)
+                print("Done solving")
 
 
-     
+                if args.test_close:
+                    btest = matr @ x_soln
+                    allclose = np.allclose(btest, bbeam)
+                    if not allclose:
+                        abs_diff = np.abs(btest-bbeam)
+                        wh_max_diff = np.argmax(abs_diff)
+                        max_diff = abs_diff[wh_max_diff]
+                        max_val = bbeam[wh_max_diff]
+                        raise AssertionError(f"btest not close to bbeam, max_diff: {max_diff}, max_val: {max_val}")
+                x_soln_res = np.reshape(x_soln, shape)
 
-    
+                # Has shape Nfreqs, Nbasis, Npol, Npol, ncomp
+                # Want shape Nbasis, Nfreqs, Npol, Npol, ncomp
+                x_soln_swap = np.swapaxes(x_soln_res, 0, 1)
+
+                # Update the coeffs between rounds
+                beam_coeffs[:, :, ant_samp_ind] = 1.0 * x_soln_swap[:, :, :, :, 0] \
+                                                    + 1.j * x_soln_swap[:, :, :, :, 1]
+                
+            timing_info(ftime, n, "(D) Beam sampler", time.time() - t0iter)
+            np.save(os.path.join(output_dir, "beam_%05d" % n), beam_coeffs)
+
+            np1 = n + 1
+            if not np1 % args.roundup:
+                print(f"Rounding up files for iteration: {np1}")
+                files_to_round_up = glob.glob(f"{output_dir}/beam*.npy")
+                sorted_files = sorted(files_to_round_up)
+                sample_arr = np.zeros((args.roundup,) + beam_coeffs.shape)
+                for file_ind, file in enumerate(sorted_files):
+                    if "roundup" in file:
+                        continue
+                    sample_arr[file_ind] = np.load(file)
+                    os.remove(file)
+                np.save(os.path.join(output_dir, f"beam_roundup_{np1}"), sample_arr)
+
+
+        
+
+        
