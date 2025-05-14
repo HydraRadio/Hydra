@@ -56,13 +56,13 @@ def get_pert_beam(args, output_dir, ant_ind):
                                               stretch_std=args.stretch_std,
                                               mmax=args.mmax, 
                                               nmax=args.nmax,
-                                              sqrt=True, Nfeeds=2, 
+                                              sqrt=args.per_ant, Nfeeds=2, 
                                               num_modes_comp=32, save=save,
                                               outdir=args.output_dir, load=load)
                                               
     return pow_sb
 
-def get_analytic_beam(args, beam_rng, beams):
+def get_analytic_beam(args, beam_rng):
     diameter = 12. + beam_rng.normal(loc=0, scale=0.2)
     if args.beam_type == "gaussian":
         beam_class = GaussianBeam
@@ -192,10 +192,10 @@ if __name__ == '__main__':
                         help="A constant to define the radial projection for the"
                              " beam spatial basis")
     parser.add_argument("--trans-std", required=False, type=float,
-                    default=1e-2, dest="trans_std",
+                    default=0., dest="trans_std",
                     help="Standard deviation for random tilt of beam")
     parser.add_argument("--rot-std-deg", required=False, type=float, 
-                        dest="rot_std_deg", default=1., 
+                        dest="rot_std_deg", default=0., 
                         help="Standard deviation for random beam rotation, in degrees.")
     parser.add_argument("--stretch-std", required=False, type=float, 
                         dest="stretch_std", default=1e-2, 
@@ -226,8 +226,14 @@ if __name__ == '__main__':
     # Convert from degrees to radian
     array_lat = np.deg2rad(args.array_lat)
 
+    if "Vivaldi" in args.beam_file:
+        unpert_beam = "vivaldi"
+    else:
+        unpert_beam = "dipole"
+
     # Check that output directory exists
     output_dir = f"{args.output_dir}/per_ant/{args.per_ant}/beam_type/{args.beam_type}"
+    output_dir = f"{output_dir}/unpert_beam/{unpert_beam}"
     output_dir = f"{output_dir}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
     output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/anneal/{args.anneal}"
     output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}"
@@ -319,7 +325,8 @@ if __name__ == '__main__':
                 pow_sb = get_pert_beam(args, output_dir, ant_ind)        
                 beams.append(pow_sb)
                 if ref_cond:
-                    ref_beam = UVBeam(args.beam_file)
+                    ref_beam = UVBeam.from_file(args.beam_file)
+                    ref_beam.peak_normalize()
             elif args.beam_type in ["gaussian", "airy"]:
                 # Underillimunated HERA dishes
                 beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
@@ -330,12 +337,17 @@ if __name__ == '__main__':
             else:
                 raise ValueError("beam-type arg must be one of ('gaussian', 'airy', 'pert_sim')")
     else:
-        if args.beam_type == "pert_sim":
-            beams = Nants * [UVBeam(args.beam_file)]
-        elif args.beam_type in ["gaussian", "airy"]:
-            beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
-            beam, beam_class = get_analytic_beam(args, beam_rng, beams)
+        if args.beam_type == "unpert":
+            beam = UVBeam.from_file(args.beam_file)
+            beam.peak_normalize()
             beams = Nants * [beam]
+        elif args.beam_type in ["gaussian", "airy"]:
+            beam_rng = np.random.default_rng(seed=args.seed)
+            beam, beam_class = get_analytic_beam(args, beam_rng)
+            beams = Nants * [beam]
+        elif args.beam_type == "pert_sim":
+            pow_sb = get_pert_beam(args, output_dir, 0) 
+            beams = Nants * [pow_sb]
 
     sim_outpath = os.path.join(output_dir, "model0.npy")
     _sim_vis = do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants,
@@ -375,8 +387,8 @@ if __name__ == '__main__':
 
     if args.beam_type == "pert_sim":
         mid_freq = freqs[args.Nfreqs // 2]
-        closest_chan = np.argmin(np.abs(mid_freq - pow_sb.freq_array))
-        mean_mode = unpert_sb.bess_fits[:, :, 0, 0, 0, closest_chan]
+        closest_chan = np.argmin(np.abs(mid_freq - unpert_sb.freq_array))
+        mean_mode = unpert_sb.bess_fits[:, :, 0, 0, closest_chan]
         mean_mode = mean_mode / np.sqrt(np.sum(np.abs(mean_mode)**2))
         pca_modes = np.load(args.pca_modes)[:, :args.Nbasis - 1].reshape(args.nmax, 2 * args.mmax + 1, args.Nbasis - 1) 
 
@@ -395,6 +407,7 @@ if __name__ == '__main__':
     np.save(os.path.join(output_dir, "Dmatr.npy"), Dmatr)
     np.save(os.path.join(output_dir, "dmo.npy"), Dmatr_outer)
     np.save(os.path.join(output_dir, "za.npy"), za)
+    np.save(os.path.join(output_dir, "az.npy"), az)
     
     # Have everything we need to analytically evaluate single-array beam
     if args.per_ant: 
