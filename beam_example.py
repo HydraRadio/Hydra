@@ -721,7 +721,7 @@ if __name__ == '__main__':
         fig.colorbar(im, ax=ax[0,1])
 
         if args.pert_sim:
-            input_beam = pow_sb.fit_beam[0, 0, midchan]
+            input_beam = pow_sb.bess_beam[0, 0, midchan]
         else:
             input_beam = unpert_sb.data_array[0, 0, midchan]
         errors = np.abs(input_beam - plotbeam)
