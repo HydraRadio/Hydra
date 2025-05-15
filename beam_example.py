@@ -320,7 +320,7 @@ if __name__ == '__main__':
                                               mmodes=mmodes, Nfeeds=2, 
                                               alpha=args.rho_const,
                                               num_modes_comp=args.Nbasis,
-                                              freq_range=(np.amin(freqs), np.amax(freqs))
+                                              freq_range=(np.amin(freqs), np.amax(freqs)),
                                               sqrt=args.efield,
                                               save_fn=f"{output_dir}/unpert_sb")
 
