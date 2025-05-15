@@ -11,6 +11,8 @@ from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
                          convert_to_tops
 from pyuvdata.analytic_beam import GaussianBeam, AiryBeam
 from pyuvdata import UVBeam, BeamInterface
+import matplotlib.pyplot as plt
+from matplotlib.colors import SymLogNorm, LogNorm
 
 import argparse
 import glob
@@ -56,7 +58,7 @@ def get_pert_beam(args, output_dir, ant_ind):
                                               stretch_std=args.stretch_std,
                                               mmax=args.mmax, 
                                               nmax=args.nmax,
-                                              sqrt=args.per_ant, Nfeeds=2, 
+                                              sqrt=args.efield, Nfeeds=2, 
                                               num_modes_comp=32, save=save,
                                               outdir=args.output_dir, load=load)
                                               
@@ -155,9 +157,12 @@ if __name__ == '__main__':
     parser.add_argument("--perts-only", action="store_true", required=False,
                         dest="perts_only",
                         help="Only constrain perturbations rather than the full beam shape")
+    parser.add_argument("--efield", action="store_true", required=False,
+                        help="Do per-antenna beam sampling")
     
     # Point source sim params
-    parser.add_argument("--ra-bounds", type=float, action="store", default=(0, np.pi + 0.5),
+    parser.add_argument("--ra-bounds", type=float, action="store",
+                        default=(0, np.pi + 0.5),
                         nargs=2, required=False, dest="ra_bounds",
                         help="Bounds for the Right Ascension of the randomly simulated sources")
     parser.add_argument("--dec-bounds", type=float, action="store", 
@@ -180,7 +185,8 @@ if __name__ == '__main__':
                         required=False, dest="beam_prior_std",
                         help="Std. dev. of beam coefficient prior, in units of FB coefficient")
     parser.add_argument("--decent-prior", action="store_true", required=False, dest="decent_prior")
-    parser.add_argument("--Nbasis", type=int, action="store", required=False, default=32,
+    parser.add_argument("--Nbasis", type=int, action="store", required=False, 
+                        default=256,
                         help="Number of basis functions to use for beam estimation.")
     parser.add_argument("--nmax", type=int, action="store", default=80,
                         required=False, help="Maximum radial mode for beam modeling.")
@@ -313,8 +319,9 @@ if __name__ == '__main__':
     unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
                                               mmodes=mmodes, Nfeeds=2, 
                                               alpha=args.rho_const,
-                                              num_modes_comp=32,
-                                              sqrt=True,
+                                              num_modes_comp=args.Nbasis,
+                                              freq_range=(np.amin(freqs), np.amax(freqs))
+                                              sqrt=args.efield,
                                               save_fn=f"{output_dir}/unpert_sb")
 
     if args.per_ant:
@@ -410,7 +417,7 @@ if __name__ == '__main__':
     np.save(os.path.join(output_dir, "az.npy"), az)
     
     # Have everything we need to analytically evaluate single-array beam
-    if args.per_ant: 
+    if args.efield: 
     
         beam_coeffs = np.zeros([Nants, args.Nfreqs, args.Nbasis, 1, 1])
         if not args.perts_only:
@@ -599,6 +606,142 @@ if __name__ == '__main__':
                     sample_arr[file_ind] = np.load(file)
                     os.remove(file)
                 np.save(os.path.join(output_dir, f"beam_roundup_{np1}"), sample_arr)
+    else:
+        comp_inds = unpert_sb.get_comp_inds()
+        nmodes = comp_inds[0][:, 0, 0, 0]
+        mmodes = comp_inds[1][:, 0, 0, 0]
+        bsparse = bess_matr[:, nmodes[:args.Nbasis]]
+        tsparse = trig_matr[:, mmodes[:args.Nbasis]]
+        per_source_Dmatr = (bsparse * tsparse).reshape(args.Ntimes, 
+                                                       args.Nptsrc, 
+                                                       args.Nbasis)
+
+        Dmatr_start = time.time()
+        pow_beam_Dmatr = hydra.beam_sampler.get_bess_sky_contraction(per_source_Dmatr, 
+                                                                     ant_pos, 
+                                                                     fluxes, 
+                                                                     ra,
+                                                                     dec, 
+                                                                     freqs, 
+                                                                     times,
+                                                                     polarized=False, 
+                                                                     latitude=array_lat,
+                                                                     outer=False)
+        Dmatr_end = time.time()
+        print(f"Dmatr calculation took {Dmatr_end - Dmatr_start} seconds")
+
+        pow_beam_Dmatr = pow_beam_Dmatr[0, 0]
+        mean_beam_cov_inv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis], 
+                                     dtype=complex)
+        triu_inds = np.triu_indices(Nants, k=1)
+        pow_beam_Dmatr = pow_beam_Dmatr[:, :, triu_inds[0], triu_inds[1]] # ftub
+        inv_noise_var = inv_noise_var[:, :, triu_inds[0], triu_inds[1]] # ftu
+        # Fast, just use einsum
+        Bdag_NinvB= np.einsum("ftub,ftu,ftuB->fbB",
+                              pow_beam_Dmatr.conj(),
+                              inv_noise_var,
+                              pow_beam_Dmatr,
+                              optimize=True)
+                                       
+        data = data[:, :, triu_inds[0], triu_inds[1]]
+
+        Ninvd = inv_noise_var * data
+        Bdag_Ninvd = np.einsum("ftub,ftu->fb",
+                               pow_beam_Dmatr.conj(),
+                               Ninvd,
+                               optimize=True)
+        
+        if args.decent_prior:
+            prior_mean = unpert_sb.comp_fits[0, 0]
+            inv_prior_var = 1/(0.1 * prior_mean)**2 # 10% uncertainty
+            prior_Cinv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis],
+                                     dtype=complex)
+            prior_Cinv = [np.diag(inv_prior_var[chan]) for chan in range(args.Nfreqs)]
+            prior_Cinv = np.array(prior_Cinv)
+        else:
+            prior_Cinv = np.repeat(np.eye(args.Nbasis)[None], args.Nfreqs, axis=0)
+            prior_Cinv /= args.beam_prior_std**2
+            prior_mean = np.zeros([args.Nfreqs, args.Nbasis], dtype=complex)
+        prior_Cinv_mean = np.einsum("fbB,fB->fb",
+                                    prior_Cinv,
+                                    prior_mean,
+                                    optimize=True)
+
+        LHS = Bdag_NinvB + prior_Cinv
+        RHS = Bdag_Ninvd + prior_Cinv_mean
+
+
+        post_cov = np.linalg.inv(LHS)
+        MAP_soln = np.linalg.solve(LHS, RHS)
+
+        np.save(os.path.join(output_dir, "post_cov_inv"), LHS)
+        np.save(os.path.join(output_dir, "MAP_soln"), MAP_soln)
+        np.save(os.path.join(output_dir, "post_cov"), post_cov)
+
+        sparse_bmatr = unpert_sb.bess_matr[:, nmodes[:args.Nbasis]]
+        sparse_tmatr = unpert_sb.trig_matr[:, mmodes[:args.Nbasis]]
+    
+        sparse_dmatr_recon = sparse_bmatr[:, None] * sparse_tmatr[None, :]
+
+        # fb,zab->fza but without einsum as the middleman
+        MAP_beam = np.tensordot(MAP_soln,
+                                sparse_dmatr_recon,
+                                axes=((-1,), (-1,)))
+
+        midchan = args.Nfreqs // 2
+        plotbeam = MAP_beam[midchan]
+        Az, Za = np.meshgrid(unpert_sb.axis1_array, unpert_sb.axis2_array)
+
+        fig, ax = plt.subplots(ncols=2, nrows=2, 
+                               subplot_kw={"projection": "polar"}, 
+                               figsize=(6.5, 6.5))
+        im = ax[0, 0].pcolormesh(
+            Az,
+            Za,
+            plotbeam.real,
+            norm=LogNorm(),
+            cmap="inferno",
+        )
+        ax[0, 0].set_title("Reconstructed Beam (real)")
+        fig.colorbar(im, ax=ax[0,0])
+
+        image_var = np.einsum("bB,azb,azB->az",
+                              post_cov[midchan],
+                              sparse_dmatr_recon,
+                              sparse_dmatr_recon.conj(),
+                              optimize=True)
+        image_std = np.sqrt(image_var)
+        im = ax[0, 1].pcolormesh(
+            Az,
+            Za,
+            image_std,
+            norm=LogNorm()
+        )
+        ax[0, 1].set_title("Posterior uncertainty")
+        fig.colorbar(im, ax=ax[0,1])
+
+        if args.pert_sim:
+            input_beam = pow_sb.fit_beam[0, 0, midchan]
+        else:
+            input_beam = unpert_sb.data_array[0, 0, midchan]
+        errors = np.abs(input_beam - plotbeam)
+        im = ax[1, 0].pcolormesh(
+            Az,
+            Za,
+            errors,
+            norm=LogNorm(),
+            cmap="inferno",
+        )
+        ax[1, 0].set_title("MAP Errors")
+
+        im = ax[1, 1].pcolormesh(
+            Az,
+            Za,
+            errors/image_std,
+            norm=LogNorm(),
+            cmap="inferno",
+        )
+        ax[1, 1].set_title("$z$ score")
 
 
         
