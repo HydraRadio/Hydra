@@ -610,11 +610,9 @@ if __name__ == '__main__':
         comp_inds = unpert_sb.get_comp_inds()
         nmodes = comp_inds[0][:, 0, 0, 0]
         mmodes = comp_inds[1][:, 0, 0, 0]
-        bsparse = bess_matr[:, nmodes[:args.Nbasis]]
-        tsparse = trig_matr[:, mmodes[:args.Nbasis]]
-        per_source_Dmatr = (bsparse * tsparse).reshape(args.Ntimes, 
-                                                       args.Nptsrc, 
-                                                       args.Nbasis)
+        bsparse = bess_matr[:, :, nmodes[:args.Nbasis]]
+        tsparse = trig_matr[:, :, mmodes[:args.Nbasis]]
+        per_source_Dmatr = bsparse * tsparse
 
         Dmatr_start = time.time()
         pow_beam_Dmatr = hydra.beam_sampler.get_bess_sky_contraction(per_source_Dmatr, 
