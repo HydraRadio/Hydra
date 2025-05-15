@@ -674,9 +674,9 @@ if __name__ == '__main__':
         post_cov = np.linalg.inv(LHS)
         MAP_soln = np.linalg.solve(LHS, RHS)
 
-        np.save(os.path.join(output_dir, "post_cov_inv"), LHS)
-        np.save(os.path.join(output_dir, "MAP_soln"), MAP_soln)
-        np.save(os.path.join(output_dir, "post_cov"), post_cov)
+        np.save(os.path.join(output_dir, "post_cov_inv.npy"), LHS)
+        np.save(os.path.join(output_dir, "MAP_soln.npy"), MAP_soln)
+        np.save(os.path.join(output_dir, "post_cov.npy"), post_cov)
 
         sparse_bmatr = unpert_sb.bess_matr[:, nmodes[:args.Nbasis]]
         sparse_tmatr = unpert_sb.trig_matr[:, mmodes[:args.Nbasis]]
@@ -742,6 +742,7 @@ if __name__ == '__main__':
             cmap="inferno",
         )
         ax[1, 1].set_title("$z$ score")
+        fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
 
 
         
