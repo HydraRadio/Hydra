@@ -303,7 +303,7 @@ if __name__ == '__main__':
     # Load in/construct unpert_sb
     unpert_beamdir = os.path.join(
         skymodel_dir,
-        f"efield/{args.efield}/unpert_beam/{unpert_beam}/"
+        f"efield/{args.efield}/unpert_beam/{unpert_beam}"
     )
     if args.efield:
         if args.beam_type not in ["airy", "gaussian"]:
@@ -362,10 +362,10 @@ if __name__ == '__main__':
         elif args.beam_type == "pert_sim":
             pow_sb = get_pert_beam(args, pert_beamdir, 0) 
             beams = Nants * [pow_sb]
-    datastr_tup = (args.noise_seed, args.integration_depth)
+    datastr_tup = (args.noise_seed, args.integration_depth, args.Ntimes)
     datadir = os.path.join(
         pert_beamdir, 
-        "noise_seed/%i/integration_depth/%.1f" % datastr_tup
+        "noise_seed/%i/integration_depth/%.1f/Ntimes/%i" % datastr_tup
     )
     check_and_make_dir(datadir)
     # Timing file
