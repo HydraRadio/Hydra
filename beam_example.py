@@ -12,12 +12,12 @@ from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
 from pyuvdata.analytic_beam import GaussianBeam, AiryBeam
 from pyuvdata import UVBeam, BeamInterface
 import matplotlib.pyplot as plt
-from matplotlib.colors import SymLogNorm, LogNorm
+from matplotlib.colors import LogNorm
 
 import argparse
 import glob
 
-def do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants, ra, dec,
+def do_vis_sim(args, ftime, times, freqs, ant_pos, Nants, ra, dec,
                fluxes, beams, sim_outpath):
     if not os.path.exists(sim_outpath):
         # Run a simulation
@@ -74,6 +74,11 @@ def get_analytic_beam(args, beam_rng):
 
     return beam, beam_class
 
+def check_and_make_dir(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    return
+
 if __name__ == '__main__':
 
     description = "Example Gibbs sampling of the joint posterior of beam "  \
@@ -85,8 +90,8 @@ if __name__ == '__main__':
     parser.add_argument("--chain-seed", type=str, action="store", default="None",
                         required=False, dest="chain_seed", 
                         help="Set a separate seed for initializing the Gibbs chain")
-    parser.add_argument("--flux-seed", type=int, action="store", default=654,
-                        dest="chain_seed")
+    parser.add_argument("--sky-seed", type=int, action="store", default=654,
+                        dest="sky_seed")
     
     # Misc
     parser.add_argument("--recalc-sc-op", action="store_true", required=False,
@@ -143,9 +148,6 @@ if __name__ == '__main__':
                         help="Fine channel width for visibilities, in Hz.")
     
     # Computational nuances
-    parser.add_argument("--solver", type=str, action="store",
-                        default='cg', required=False, dest="solver_name",
-                        help="Which sparse matrix solver to use for linear systems ('cg' or 'gmres' or 'bicgstab').")
     parser.add_argument("--output-dir", type=str, action="store",
                         default="./output", required=False, dest="output_dir",
                         help="Output directory.")
@@ -164,11 +166,11 @@ if __name__ == '__main__':
     
     # Point source sim params
     parser.add_argument("--ra-bounds", type=float, action="store",
-                        default=(0, np.pi + 0.5),
+                        default=(0, 2 * np.pi),
                         nargs=2, required=False, dest="ra_bounds",
                         help="Bounds for the Right Ascension of the randomly simulated sources")
     parser.add_argument("--dec-bounds", type=float, action="store", 
-                        default=(-np.pi/2, 1.),
+                        default=(-np.pi/2, np.pi / 2),
                         nargs=2, required=False, dest="dec_bounds",
                         help="Bounds for the Declination of the randomly simulated sources")
     parser.add_argument("--lst-bounds", type=float, action="store", 
@@ -176,7 +178,7 @@ if __name__ == '__main__':
                         nargs=2, required=False, dest="lst_bounds",
                         help="Bounds for the LST range of the simulation, in radians.")
     parser.add_argument("--freq-low", type=float, action="store", required=False,
-                        default=145e6, dest="freq_low", 
+                        default=150e6, dest="freq_low", 
                         help="Lowest frequency in the simulation, in Hz.")
     
     # Beam parameters
@@ -217,6 +219,55 @@ if __name__ == '__main__':
                         help="Whether to use a different beam per antenna")
     
     args = parser.parse_args()
+
+    ########################
+    # Generate a sky model #
+    ########################
+
+    freqs = np.arange(
+        args.freq_low, 
+        args.freq_low + args.Nfreqs * args.ch_wid, 
+        args.ch_wid
+    )
+    freqstr_tup = (args.freq_low * 1e-6, args.Nfreqs, args.ch_wid * 1e-6)
+    freqstr = "freq_low/%.0f/Nfreqs/%i/ch_wid/%.1f" % freqstr_tup
+    freqdir = os.path.join(args.output_dir, freqstr)
+    # In case these are passed out of order, also shorter names
+    ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
+    dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
+    
+    skymodel_dir = os.path.join(
+        freqdir, 
+        f"sky_seed/{args.sky_seed}/Nptsrc/{args.Nptsrc}"
+    )
+    check_and_make_dir(skymodel_dir)
+    ampfile = os.path.join(skymodel_dir, "ptsrc_amps0.npy")
+    radec_file = os.path.join(skymodel_dir, "ptsrc_coords0.npy")
+    if os.path.exists(ampfile) and os.path.exists(radec_file):
+        ptsrc_amps = np.load(ampfile)
+        ra, dec = np.load(radec_file)
+    else:
+        skyrng = np.random.default_rng(args.sky_seed)
+        print("    Sky Seed:    %d" % args.sky_seed)
+
+        # Generate random point source locations
+        # RA goes from [0, 2 pi] and Dec from [-pi / 2, +pi / 2].
+        ra = skyrng.uniform(low=ra_low, high=ra_high, size=args.Nptsrc)
+        # inversion sample to get them uniform on the sphere, in case wide bounds are used
+        U = skyrng.uniform(low=0, high=1, size=args.Nptsrc)
+        dsin = np.sin(dec_high) - np.sin(dec_low)
+        dec = np.arcsin(U * dsin + np.sin(dec_low)) # np.arcsin returns on [-pi / 2, +pi / 2]
+
+        ptsrc_amps = 10.**skyrng.uniform(low=-1., high=2., size=args.Nptsrc)
+        np.save(ampfile, ptsrc_amps)
+        np.save(radec_file, np.column_stack((ra, dec)).T)
+    # Generate fluxes
+    beta_ptsrc = -2.7
+    fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs * 1e-6, beta_ptsrc) # Have to put this in MHz...
+
+
+
+    lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
     
     if args.chain_seed == "None":
         chain_seed = None
@@ -226,12 +277,11 @@ if __name__ == '__main__':
     hex_array = tuple(args.hex_array)
     assert len(args.hex_array) == 2, "hex-array argument must have length 2."
 
+ 
+    output_dir = os.path.join(skymodel_dir, f"hex_array/{min(hex_array)}/{max(hex_array)}")
 
 
-    # In case these are passed out of order, also shorter names
-    ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
-    dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
-    lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
+
 
     # Convert from degrees to radian
     array_lat = np.deg2rad(args.array_lat)
@@ -252,21 +302,9 @@ if __name__ == '__main__':
         os.makedirs(output_dir)
     print("\nOutput directory:", output_dir)
 
-
-    # Linear solver to use
-    if args.solver_name == 'cg':
-        solver = cg
-    elif args.solver_name == 'gmres':
-        solver = gmres
-    elif args.solver_name == 'bicgstab':
-        solver = bicgstab
-    else:
-        raise ValueError("Solver '%s' not recognised." % args.solver_name)
-    print("    Solver:  %s" % args.solver_name)
-
     # Random seed
     beam_rng = np.random.default_rng(args.seed)
-    print("    Seed:    %d" % args.seed)
+    print("    Beam Seed:    %d" % args.seed)
 
     # Check number of threads available
     Nthreads = os.environ.get('OMP_NUM_THREADS')
@@ -285,7 +323,6 @@ if __name__ == '__main__':
 
     # Simulate some data
     times = np.linspace(lst_min, lst_max, args.Ntimes)
-    freqs = np.arange(args.freq_low, args.freq_low + args.Nfreqs * args.ch_wid, args.ch_wid)
 
     ant_pos = build_hex_array(hex_spec=hex_array, d=14.6)
     ants = np.array(list(ant_pos.keys()))
@@ -302,22 +339,11 @@ if __name__ == '__main__':
 
     ants1, ants2 = list(zip(*antpairs))
 
-    # Generate random point source locations
-    # RA goes from [0, 2 pi] and Dec from [-pi / 2, +pi / 2].
-    ra = np.random.uniform(low=ra_low, high=ra_high, size=args.Nptsrc)
-    
-    # inversion sample to get them uniform on the sphere, in case wide bounds are used
-    U = np.random.uniform(low=0, high=1, size=args.Nptsrc)
-    dsin = np.sin(dec_high) - np.sin(dec_low)
-    dec = np.arcsin(U * dsin + np.sin(dec_low)) # np.arcsin returns on [-pi / 2, +pi / 2]
 
-    # Generate fluxes
-    beta_ptsrc = -2.7
-    ptsrc_amps = 10.**np.random.uniform(low=-1., high=2., size=args.Nptsrc)
-    fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs * 1e-6, beta_ptsrc) # Have to put this in MHz...
-    print("pstrc amps (input):", ptsrc_amps[:5])
-    np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
-    np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
+    
+
+
+
 
     mmodes = np.arange(-args.mmax, args.mmax + 1)
     unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
