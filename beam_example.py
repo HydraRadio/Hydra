@@ -392,7 +392,7 @@ if __name__ == '__main__':
     bess_matr = bess_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax)
     trig_matr = trig_matr.reshape(args.Ntimes, args.Nptsrc, 2 * args.mmax + 1)
 
-    if args.beam_type == "pert_sim":
+    if args.beam_type in ["pert_sim", "unpert"]:
 #        mid_freq = freqs[args.Nfreqs // 2]
 #        closest_chan = np.argmin(np.abs(mid_freq - unpert_sb.freq_array))
 #        mean_mode = unpert_sb.bess_fits[:, :, 0, 0, closest_chan]
@@ -663,8 +663,8 @@ if __name__ == '__main__':
                                     prior_mean,
                                     optimize=True)
 
-        LHS = Bdag_NinvB + prior_Cinv
-        RHS = Bdag_Ninvd + prior_Cinv_mean
+        LHS = Bdag_NinvB #+ prior_Cinv
+        RHS = Bdag_Ninvd #+ prior_Cinv_mean
 
         post_cov = np.linalg.inv(LHS)
         MAP_soln = np.linalg.solve(LHS, RHS[:, :, None])[:, :, 0]
@@ -741,27 +741,27 @@ if __name__ == '__main__':
         fig.colorbar(im, ax=ax[1,1])
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
-
-        fig, ax = plt.subplots(figsize=(3.25, 6.5),
-                               subplot_kw={"projection": "polar"},
-                               nrows=2)
-        im = ax[0].pcolormesh(
-            Az,
-            Za,
-            unpert_sb.data_array[0, 0, midchan].real,
-            norm=LogNorm(),
-            cmap="inferno",
-        )
-        fig.colorbar(im, ax=ax[0], label="Base Beam")
-        im = ax[1].pcolormesh(
-            Az,
-            Za,
-            (input_beam - unpert_sb.data_array[0, 0, midchan]).real,
-            norm=LogNorm(),
-            cmap="inferno",
-        )
-        fig.colorbar(im, ax=ax[1], label="Perturbations")
-        fig.savefig(os.path.join(output_dir, "base_beam_plot.pdf"))
+        if args.beam_type != "unpert":
+            fig, ax = plt.subplots(figsize=(3.25, 6.5),
+                                   subplot_kw={"projection": "polar"},
+                                   nrows=2)
+            im = ax[0].pcolormesh(
+                Az,
+                Za,
+                unpert_sb.data_array[0, 0, midchan].real,
+                norm=LogNorm(),
+                cmap="inferno",
+            )
+            fig.colorbar(im, ax=ax[0], label="Base Beam")
+            im = ax[1].pcolormesh(
+                Az,
+                Za,
+                np.abs(input_beam - unpert_sb.data_array[0, 0, midchan]),
+                norm=LogNorm(),
+                cmap="inferno",
+            )
+            fig.colorbar(im, ax=ax[1], label="Perturbations")
+            fig.savefig(os.path.join(output_dir, "base_beam_plot.pdf"))
 
 
 
