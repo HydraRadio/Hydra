@@ -742,6 +742,29 @@ if __name__ == '__main__':
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
 
+        fig, ax = plt.subplots(figsize=(3.25, 6.5),
+                               subplot_kw={"projection": "polar"},
+                               nrows=2)
+        im = ax[0].pcolormesh(
+            Az,
+            Za,
+            unpert_sb.data_array[0, 0, midchan].real,
+            norm=LogNorm(),
+            cmap="inferno",
+        )
+        fig.colorbar(im, ax=ax[0], label="Base Beam")
+        im = ax[1].pcolormesh(
+            Az,
+            Za,
+            (input_beam - unpert_sb.data_array[0, 0, midchan]).real,
+            norm=LogNorm(),
+            cmap="inferno",
+        )
+        fig.colorbar(im, ax=ax[1], label="Perturbations")
+        fig.savefig(os.path.join(output_dir, "base_beam_plot.pdf"))
+
+
+
 
         
 
