@@ -79,12 +79,14 @@ if __name__ == '__main__':
     description = "Example Gibbs sampling of the joint posterior of beam "  \
                   "parameters from a simulated visibility data set " 
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--seed", type=int, action="store", default=1001,
-                        required=False, dest="seed",
-                        help="Set the random seed.")
+    parser.add_argument("--beam-seed", type=int, action="store", default=1001,
+                        required=False, dest="beam_seed",
+                        help="Set the random seed for beam perturbation.")
     parser.add_argument("--chain-seed", type=str, action="store", default="None",
                         required=False, dest="chain_seed", 
                         help="Set a separate seed for initializing the Gibbs chain")
+    parser.add_argument("--flux-seed", type=int, action="store", default=654,
+                        dest="chain_seed")
     
     # Misc
     parser.add_argument("--recalc-sc-op", action="store_true", required=False,
@@ -223,6 +225,8 @@ if __name__ == '__main__':
 
     hex_array = tuple(args.hex_array)
     assert len(args.hex_array) == 2, "hex-array argument must have length 2."
+
+
 
     # In case these are passed out of order, also shorter names
     ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
