@@ -49,9 +49,9 @@ def do_vis_sim(args, ftime, times, freqs, ant_pos, Nants, ra, dec,
     return _sim_vis
 
 def get_pert_beam(args, output_dir, ant_ind):
-    load = os.path.exists(f"{output_dir}/perturbed_beam_beamvals_seed_{args.seed + ant_ind}.npy")
+    load = os.path.exists(f"{output_dir}/perturbed_beam_beamvals_seed_{args.beam_seed + ant_ind}.npy")
     save = not load
-    pow_sb = hydra.beam_sampler.get_pert_beam(args.seed + ant_ind,
+    pow_sb = hydra.beam_sampler.get_pert_beam(args.beam_seed + ant_ind,
                                               args.beam_file, 
                                               trans_std=args.trans_std,
                                               rot_std_deg=args.rot_std_deg,
@@ -91,7 +91,9 @@ if __name__ == '__main__':
                         required=False, dest="chain_seed", 
                         help="Set a separate seed for initializing the Gibbs chain")
     parser.add_argument("--sky-seed", type=int, action="store", default=654,
-                        dest="sky_seed")
+                        dest="sky_seed", required=False)
+    parser.add_argument("--noise-seed", type=int, required=False, default=7254,
+                        dest="noise_seed")
     
     # Misc
     parser.add_argument("--recalc-sc-op", action="store_true", required=False,
@@ -174,7 +176,7 @@ if __name__ == '__main__':
                         nargs=2, required=False, dest="dec_bounds",
                         help="Bounds for the Declination of the randomly simulated sources")
     parser.add_argument("--lst-bounds", type=float, action="store", 
-                        default=(np.pi/2, np.pi/2+0.5),
+                        default=(0, np.pi/2),
                         nargs=2, required=False, dest="lst_bounds",
                         help="Bounds for the LST range of the simulation, in radians.")
     parser.add_argument("--freq-low", type=float, action="store", required=False,
@@ -219,6 +221,7 @@ if __name__ == '__main__':
                         help="Whether to use a different beam per antenna")
     
     args = parser.parse_args()
+
 
     ########################
     # Generate a sky model #
@@ -265,108 +268,77 @@ if __name__ == '__main__':
     beta_ptsrc = -2.7
     fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs * 1e-6, beta_ptsrc) # Have to put this in MHz...
 
+    ######################
+    # Generate some data #
+    ######################
 
-
-    lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
-    
-    if args.chain_seed == "None":
-        chain_seed = None
-    else:
-        chain_seed = int(args.chain_seed)
-
+    # array configuration
     hex_array = tuple(args.hex_array)
     assert len(args.hex_array) == 2, "hex-array argument must have length 2."
-
- 
-    output_dir = os.path.join(skymodel_dir, f"hex_array/{min(hex_array)}/{max(hex_array)}")
-
-
-
-
-    # Convert from degrees to radian
-    array_lat = np.deg2rad(args.array_lat)
-
-    if "Vivaldi" in args.beam_file:
-        unpert_beam = "vivaldi"
-    else:
-        unpert_beam = "dipole"
-
-    # Check that output directory exists
-    output_dir = f"{args.output_dir}/per_ant/{args.per_ant}/beam_type/{args.beam_type}"
-    output_dir = f"{output_dir}/unpert_beam/{unpert_beam}"
-    output_dir = f"{output_dir}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
-    output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/anneal/{args.anneal}"
-    output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}"
-    output_dir = f"{output_dir}/perts_only/{args.perts_only}/chainseed/{args.chain_seed}"
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    print("\nOutput directory:", output_dir)
-
-    # Random seed
-    beam_rng = np.random.default_rng(args.seed)
-    print("    Beam Seed:    %d" % args.seed)
-
-    # Check number of threads available
-    Nthreads = os.environ.get('OMP_NUM_THREADS')
-    if Nthreads is None:
-        Nthreads = multiprocessing.cpu_count()
-    else:
-        Nthreads = int(Nthreads)
-    print("    Threads: %d available" % Nthreads)
-
-    # Timing file
-    ftime = os.path.join(output_dir, "timing.dat")
-
-    #-------------------------------------------------------------------------------
-    # (1) Simulate some data
-    #-------------------------------------------------------------------------------
-
-    # Simulate some data
-    times = np.linspace(lst_min, lst_max, args.Ntimes)
-
     ant_pos = build_hex_array(hex_spec=hex_array, d=14.6)
     ants = np.array(list(ant_pos.keys()))
     Nants = len(ants)
     print("Nants =", Nants)
-
     antpairs = []
     for i in range(Nants):
         for j in range(i, Nants):
             if i != j:
                 # Exclude autos
                 antpairs.append((i,j))
-
-
     ants1, ants2 = list(zip(*antpairs))
-
-
     
+    # Convert from degrees to radian
+    array_lat = np.deg2rad(args.array_lat)
 
+    # Observing configuration
+    lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
+    times = np.linspace(lst_min, lst_max, args.Ntimes)
 
+    # Beam configuration
+    if "Vivaldi" in args.beam_file:
+        unpert_beam = "vivaldi"
+    else:
+        unpert_beam = "dipole"
 
-
+    # Load in/construct unpert_sb
+    unpert_beamdir = os.path.join(
+        skymodel_dir,
+        f"unpert_beam/{unpert_beam}/"
+    )
+    check_and_make_dir(unpert_beamdir)
     mmodes = np.arange(-args.mmax, args.mmax + 1)
+    unpert_sb_file = f"{unpert_beamdir}/unpert_sb"
+    fits_exist = os.path.exists(f"{unpert_sb_file}_bess_fit_coeffs.npy")
+    beam_exists = os.path.exists(f"{unpert_sb_file}_bess_fit_beam.npy")
+    load = (fits_exist and beam_exists)
     unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
                                               mmodes=mmodes, Nfeeds=2, 
                                               alpha=args.rho_const,
                                               num_modes_comp=args.Nbasis,
                                               freq_range=(np.amin(freqs), np.amax(freqs)),
                                               sqrt=args.efield,
-                                              save_fn=f"{output_dir}/unpert_sb")
+                                              save_fn=unpert_sb_file,
+                                              load=load)
+    print(f"freqs in unpert_sb: {unpert_sb.freq_array}")
+
+    pert_beamdir = os.path.join(
+        unpert_beamdir,
+        f"beam_seed/{args.beam_seed}/per_ant/{args.per_ant}/beam_type/{args.beam_type}/perts_only/{args.perts_only}"
+    )
 
     if args.per_ant:
         beams = []
         for ant_ind in range(Nants):
             ref_cond = args.perts_only and ant_ind == 0
             if args.beam_type == "pert_sim":
-                pow_sb = get_pert_beam(args, output_dir, ant_ind)        
+                pow_sb = get_pert_beam(args, pert_beamdir, ant_ind)        
                 beams.append(pow_sb)
                 if ref_cond:
                     ref_beam = UVBeam.from_file(args.beam_file)
                     ref_beam.peak_normalize()
             elif args.beam_type in ["gaussian", "airy"]:
                 # Underillimunated HERA dishes
-                beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
+                beam_rng = np.random.default_rng(seed=args.beam_seed + ant_ind)
                 beam, beam_class = get_analytic_beam(args, beam_rng, beams)
                 beams.append(beam)
                 if ref_cond:
@@ -379,28 +351,47 @@ if __name__ == '__main__':
             beam.peak_normalize()
             beams = Nants * [beam]
         elif args.beam_type in ["gaussian", "airy"]:
-            beam_rng = np.random.default_rng(seed=args.seed)
+            beam_rng = np.random.default_rng(seed=args.beam_seed)
             beam, beam_class = get_analytic_beam(args, beam_rng)
             beams = Nants * [beam]
         elif args.beam_type == "pert_sim":
-            pow_sb = get_pert_beam(args, output_dir, 0) 
+            pow_sb = get_pert_beam(args, pert_beamdir, 0) 
             beams = Nants * [pow_sb]
-
-    sim_outpath = os.path.join(output_dir, "model0.npy")
-    _sim_vis = do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants,
+    datastr_tup = (args.noise_seed, args.integration_depth)
+    datadir = os.path.join(
+        pert_beamdir, 
+        "noise_seed/%i/integration_depth/%.1f" % datastr_tup
+    )
+    check_and_make_dir(datadir)
+    # Timing file
+    ftime = os.path.join(datadir, "timing.dat")
+    sim_outpath = os.path.join(datadir, "model0.npy")
+    _sim_vis = do_vis_sim(args, datadir, ftime, times, freqs, ant_pos, Nants,
                            ra, dec, fluxes, beams, sim_outpath)
 
 
-    autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
-    noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
 
-    #FIXME: technically we need the conjugate noise rzn on conjugate baselines...
-    noise = (beam_rng.normal(scale=np.sqrt(noise_var)) + 1.j * beam_rng.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
-    data = _sim_vis + _sim_vis.swapaxes(-1,-2).conj() + noise # fix some zeros
-    del _sim_vis # Save some memory
-    del noise
-
-    np.save(os.path.join(output_dir, "data0"), data)
+    inv_path = os.path.join(datadir, "inv_noise_var.npy")
+    if not os.path.exists(inv_path):
+        autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
+        noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
+        inv_noise_var = 1/noise_var 
+        np.save(inv_path, inv_noise_var)
+    else:
+        inv_noise_var = np.load(inv_path)
+        noise_var = 1/inv_noise_var
+    
+    data_file = os.path.join(datadir, "data0.npy")
+    if not os.path.exists(data_file):
+        #FIXME: technically we need the conjugate noise rzn on conjugate baselines...
+        noise_rng = np.random.default_rng(args.noise_seed)
+        noise = (noise_rng.normal(scale=np.sqrt(noise_var)) + 1.j * beam_rng.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
+        data = _sim_vis + _sim_vis.swapaxes(-1,-2).conj() + noise # fix some zeros
+        del _sim_vis # Save some memory
+        del noise
+        np.save(data_file, data)
+    else:
+        data = np.load(data_file)
     if args.perts_only: # Subtract off the vis. made with ref beam
         ref_sim_outpath = os.path.join(output_dir, "model0_ref.npy")
         ref_beams = Nants * [ref_beam]
@@ -408,10 +399,9 @@ if __name__ == '__main__':
                                   Nants, ra, dec, fluxes, ref_beams, sim_outpath)
         data -= (ref_beam_vis + ref_beam_vis.swapaxes(-1, -2).conj())
         del ref_beam_vis
-        np.save(os.path.join(output_dir, "data_res"), data)
+        np.save(os.path.join(datadir, "data_res"), data)
 
-    inv_noise_var = 1/noise_var
-    np.save(os.path.join(output_dir, "inv_noise_var.npy"), inv_noise_var)
+
 
     txs, tys, tzs = convert_to_tops(ra, dec, times, args.array_lat)
 
@@ -448,9 +438,15 @@ if __name__ == '__main__':
     np.save(os.path.join(output_dir, "Dmatr.npy"), Dmatr)
     np.save(os.path.join(output_dir, "za.npy"), za)
     np.save(os.path.join(output_dir, "az.npy"), az)
+
+
     
     # Have everything we need to analytically evaluate single-array beam
     if args.efield: 
+        if args.chain_seed == "None":
+            chain_seed = None
+        else:
+            chain_seed = int(args.chain_seed)
         Dmatr_outer = hydra.beam_sampler.get_bess_outer(Dmatr)
         np.save(os.path.join(output_dir, "Dmatr.npy"), Dmatr)
 
