@@ -393,32 +393,37 @@ if __name__ == '__main__':
     trig_matr = trig_matr.reshape(args.Ntimes, args.Nptsrc, 2 * args.mmax + 1)
 
     if args.beam_type == "pert_sim":
-        mid_freq = freqs[args.Nfreqs // 2]
-        closest_chan = np.argmin(np.abs(mid_freq - unpert_sb.freq_array))
-        mean_mode = unpert_sb.bess_fits[:, :, 0, 0, closest_chan]
-        mean_mode = mean_mode / np.sqrt(np.sum(np.abs(mean_mode)**2))
-        pca_modes = np.load(args.pca_modes)[:, :args.Nbasis - 1].reshape(args.nmax, 2 * args.mmax + 1, args.Nbasis - 1) 
+#        mid_freq = freqs[args.Nfreqs // 2]
+#        closest_chan = np.argmin(np.abs(mid_freq - unpert_sb.freq_array))
+#        mean_mode = unpert_sb.bess_fits[:, :, 0, 0, closest_chan]
+#        mean_mode = mean_mode / np.sqrt(np.sum(np.abs(mean_mode)**2))
+#        pca_modes = np.load(args.pca_modes)[:, :args.Nbasis - 1].reshape(args.nmax, 2 * args.mmax + 1, args.Nbasis - 1) 
 
 
-        Pmatr = np.concatenate([mean_mode[:, :, None], pca_modes], axis=2)
+#        Pmatr = np.concatenate([mean_mode[:, :, None], pca_modes], axis=2)
 
-        BPmatr = np.tensordot(bess_matr, Pmatr, axes=1).transpose(3, 0, 1, 2) # Nbasis, Ntimes, Nsrc, Naz
-        Dmatr = np.sum(BPmatr * trig_matr, axis=3).transpose(1, 2, 0) # Ntimes, Nsrc, Nbasis
+#       BPmatr = np.tensordot(bess_matr, Pmatr, axes=1).transpose(3, 0, 1, 2) # Nbasis, Ntimes, Nsrc, Naz
+        comp_inds = unpert_sb.get_comp_inds()
+        nmodes = comp_inds[0][:, 0, 0, 0]
+        mmodes = comp_inds[1][:, 0, 0, 0]
+        bsparse = bess_matr[:, :, nmodes[:args.Nbasis]]
+        tsparse = trig_matr[:, :, mmodes[:args.Nbasis]]
+        Dmatr = bsparse * tsparse
     else:
         Dmatr = bess_matr[:, :, :args.Nbasis]
         Q, R = np.linalg.qr(unpert_sb.bess_matr[:, :args.Nbasis]) # orthoganalize radial modes...
         reshape = (args.Ntimes * args.Nptsrc, args.Nbasis)
         shape = (args.Ntimes, args.Nptsrc, args.Nbasis)
         Dmatr = np.linalg.solve(R.T, Dmatr.reshape(reshape).T).T.reshape(shape)
-    Dmatr_outer = hydra.beam_sampler.get_bess_outer(Dmatr)
     np.save(os.path.join(output_dir, "Dmatr.npy"), Dmatr)
-    np.save(os.path.join(output_dir, "dmo.npy"), Dmatr_outer)
     np.save(os.path.join(output_dir, "za.npy"), za)
     np.save(os.path.join(output_dir, "az.npy"), az)
     
     # Have everything we need to analytically evaluate single-array beam
     if args.efield: 
-    
+        Dmatr_outer = hydra.beam_sampler.get_bess_outer(Dmatr)
+        np.save(os.path.join(output_dir, "Dmatr.npy"), Dmatr)
+
         beam_coeffs = np.zeros([Nants, args.Nfreqs, args.Nbasis, 1, 1])
         if not args.perts_only:
             if args.decent_prior:
@@ -607,15 +612,8 @@ if __name__ == '__main__':
                     os.remove(file)
                 np.save(os.path.join(output_dir, f"beam_roundup_{np1}"), sample_arr)
     else:
-        comp_inds = unpert_sb.get_comp_inds()
-        nmodes = comp_inds[0][:, 0, 0, 0]
-        mmodes = comp_inds[1][:, 0, 0, 0]
-        bsparse = bess_matr[:, :, nmodes[:args.Nbasis]]
-        tsparse = trig_matr[:, :, mmodes[:args.Nbasis]]
-        per_source_Dmatr = bsparse * tsparse
-
         Dmatr_start = time.time()
-        pow_beam_Dmatr = hydra.beam_sampler.get_bess_sky_contraction(per_source_Dmatr, 
+        pow_beam_Dmatr = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
                                                                      ant_pos, 
                                                                      fluxes, 
                                                                      ra,
@@ -668,9 +666,8 @@ if __name__ == '__main__':
         LHS = Bdag_NinvB + prior_Cinv
         RHS = Bdag_Ninvd + prior_Cinv_mean
 
-
         post_cov = np.linalg.inv(LHS)
-        MAP_soln = np.linalg.solve(LHS, RHS)
+        MAP_soln = np.linalg.solve(LHS, RHS[:, :, None])[:, :, 0]
 
         np.save(os.path.join(output_dir, "post_cov_inv.npy"), LHS)
         np.save(os.path.join(output_dir, "MAP_soln.npy"), MAP_soln)
@@ -708,7 +705,7 @@ if __name__ == '__main__':
                               sparse_dmatr_recon,
                               sparse_dmatr_recon.conj(),
                               optimize=True)
-        image_std = np.sqrt(image_var)
+        image_std = np.sqrt(np.abs(image_var))
         im = ax[0, 1].pcolormesh(
             Az,
             Za,
@@ -718,7 +715,7 @@ if __name__ == '__main__':
         ax[0, 1].set_title("Posterior uncertainty")
         fig.colorbar(im, ax=ax[0,1])
 
-        if args.pert_sim:
+        if args.beam_type == "pert_sim":
             input_beam = pow_sb.bess_beam[0, 0, midchan]
         else:
             input_beam = unpert_sb.data_array[0, 0, midchan]
@@ -731,6 +728,7 @@ if __name__ == '__main__':
             cmap="inferno",
         )
         ax[1, 0].set_title("MAP Errors")
+        fig.colorbar(im, ax=ax[1,0])
 
         im = ax[1, 1].pcolormesh(
             Az,
@@ -740,6 +738,8 @@ if __name__ == '__main__':
             cmap="inferno",
         )
         ax[1, 1].set_title("$z$ score")
+        fig.colorbar(im, ax=ax[1,1])
+        fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
 
 
