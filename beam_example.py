@@ -303,8 +303,14 @@ if __name__ == '__main__':
     # Load in/construct unpert_sb
     unpert_beamdir = os.path.join(
         skymodel_dir,
-        f"unpert_beam/{unpert_beam}/"
+        f"efield/{args.efield}/unpert_beam/{unpert_beam}/"
     )
+    if args.efield:
+        if args.beam_type not in ["airy", "gaussian"]:
+            assert "efield" in args.beam_file
+    else:
+        assert "power" in args.beam_file
+    
     check_and_make_dir(unpert_beamdir)
     mmodes = np.arange(-args.mmax, args.mmax + 1)
     unpert_sb_file = f"{unpert_beamdir}/unpert_sb"
@@ -316,7 +322,6 @@ if __name__ == '__main__':
                                               alpha=args.rho_const,
                                               num_modes_comp=args.Nbasis,
                                               freq_range=(np.amin(freqs), np.amax(freqs)),
-                                              sqrt=args.efield,
                                               save_fn=unpert_sb_file,
                                               load=load)
     print(f"freqs in unpert_sb: {unpert_sb.freq_array}")
@@ -379,7 +384,7 @@ if __name__ == '__main__':
         np.save(inv_path, inv_noise_var)
     else:
         inv_noise_var = np.load(inv_path)
-        noise_var = 1/inv_noise_var
+        noise_var = 1/inv_noise_var 
     
     data_file = os.path.join(datadir, "data0.npy")
     if not os.path.exists(data_file):
@@ -393,20 +398,27 @@ if __name__ == '__main__':
     else:
         data = np.load(data_file)
     if args.perts_only: # Subtract off the vis. made with ref beam
-        ref_sim_outpath = os.path.join(output_dir, "model0_ref.npy")
+        ref_sim_outpath = os.path.join(datadir, "model0_ref.npy")
         ref_beams = Nants * [ref_beam]
-        ref_beam_vis = do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, 
+        ref_beam_vis = do_vis_sim(args, datadir, ftime, times, freqs, ant_pos, 
                                   Nants, ra, dec, fluxes, ref_beams, sim_outpath)
         data -= (ref_beam_vis + ref_beam_vis.swapaxes(-1, -2).conj())
         del ref_beam_vis
-        np.save(os.path.join(datadir, "data_res"), data)
+        np.save(os.path.join(datadir, "data_res.npy"), data)
 
-
-
+    #########################
+    # Set up beam inference #
+    #########################
+    inference_dir = os.path.join(
+        datadir,
+        f"Nbasis/{args.Nbasis}/chain_seed/{args.chain_seed}/decent_prior/{args.decent_prior}/beam_prior_std/{args.beam_prior_std}"
+    )
     txs, tys, tzs = convert_to_tops(ra, dec, times, args.array_lat)
 
     za = np.arccos(tzs).flatten()
     az = np.arctan2(tys, txs).flatten()
+    np.save(os.path.join(datadir, "za.npy"), za)
+    np.save(os.path.join(datadir, "az.npy"), az)
     bess_matr, trig_matr = unpert_sb.get_dmatr_interp(az, 
                                                       za)
     bess_matr = bess_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax)
@@ -435,9 +447,7 @@ if __name__ == '__main__':
         reshape = (args.Ntimes * args.Nptsrc, args.Nbasis)
         shape = (args.Ntimes, args.Nptsrc, args.Nbasis)
         Dmatr = np.linalg.solve(R.T, Dmatr.reshape(reshape).T).T.reshape(shape)
-    np.save(os.path.join(output_dir, "Dmatr.npy"), Dmatr)
-    np.save(os.path.join(output_dir, "za.npy"), za)
-    np.save(os.path.join(output_dir, "az.npy"), az)
+    np.save(os.path.join(inference_dir, "Dmatr.npy"), Dmatr)
 
 
     
@@ -448,7 +458,7 @@ if __name__ == '__main__':
         else:
             chain_seed = int(args.chain_seed)
         Dmatr_outer = hydra.beam_sampler.get_bess_outer(Dmatr)
-        np.save(os.path.join(output_dir, "Dmatr.npy"), Dmatr)
+        np.save(os.path.join(inference_dir, "Dmatr_outer.npy"), Dmatr)
 
         beam_coeffs = np.zeros([Nants, args.Nfreqs, args.Nbasis, 1, 1])
         if not args.perts_only:
@@ -469,39 +479,41 @@ if __name__ == '__main__':
                                                     cov_file=cov_file)
         cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
 
-        bsc_outpath = os.path.join(output_dir, "bsc.npy")
+        bsc_outpath = os.path.join(inference_dir, "bsc.npy")
         if os.path.exists(bsc_outpath):
             bess_sky_contraction = np.load(bsc_outpath)
         else:
             t0 = time.time()
             bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
-                                                                            ant_pos, 
-                                                                            fluxes, 
-                                                                            ra,
-                                                                            dec, 
-                                                                            freqs, 
-                                                                            times,
-                                                                            polarized=False, 
-                                                                            latitude=args.array_lat,)
+                                                                               ant_pos, 
+                                                                               fluxes, 
+                                                                               ra,
+                                                                               dec, 
+                                                                               freqs, 
+                                                                               times,
+                                                                               polarized=False, 
+                                                                               latitude=args.array_lat,)
             np.save(bsc_outpath, bess_sky_contraction)
             tsc = time.time() - t0
             timing_info(ftime, 0, "(0) bess_sky_contraction", tsc)
             print(f"bess_sky_contraction took {tsc} seconds")
 
         if args.perts_only:
-            ref_contraction_outpath = os.path.join(output_dir, "ref_constraction.npy")
+            raise NotImplementedError("This is not implemented for efield beams")
+            ref_contraction_outpath = os.path.join(inference_dir, "ref_contraction.npy")
             if os.path.exists(ref_contraction_outpath):
                 ref_contraction = np.load(ref_contraction_outpath)
             else:
-                ref_beam_response = BeamInterface(ref_beam, beam_type="power")
+
+                ref_beam_response = BeamInterface(ref_beam, beam_type="efield")
                 # FIXME: Hardcode feed x
                 ref_beam_response = ref_beam_response.with_feeds(["x"])
                 ref_beam_response = ref_beam_response.compute_response(az_array=az,
-                                                                    za_array=za,
-                                                                    freq_array=freqs)
+                                                                       za_array=za,
+                                                                       freq_array=freqs)
                 ref_beam_response = ref_beam_response.reshape([args.Nfreqs,
-                                                            args.Ntimes,
-                                                            args.Nptsrc,])
+                                                               args.Ntimes,
+                                                               args.Nptsrc,])
                 # Square root of power beam
                 ref_beam_response = np.sqrt(ref_beam_response)
                 ref_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
@@ -559,6 +571,7 @@ if __name__ == '__main__':
                     inv_noise_var_use /= temp
                 data_use = hydra.beam_sampler.select_subarr(data[None, None], ant_samp_ind, Nants)
                 if args.perts_only:
+                    raise NotImplementedError("perts_only is not implemented for efield beams")
                     # Contract other antenna coefficients with object that has been pre-multiplied by reference beam
                     other_ants_with_ref = hydra.beam_sampler.get_bess_to_vis_from_contraction(ref_contraction,
                                                                                             beam_coeffs, 
@@ -623,12 +636,12 @@ if __name__ == '__main__':
                                                     + 1.j * x_soln_swap[:, :, :, :, 1]
                 
             timing_info(ftime, n, "(D) Beam sampler", time.time() - t0iter)
-            np.save(os.path.join(output_dir, "beam_%05d" % n), beam_coeffs)
+            np.save(os.path.join(inference_dir, "beam_%05d" % n), beam_coeffs)
 
             np1 = n + 1
             if not np1 % args.roundup:
                 print(f"Rounding up files for iteration: {np1}")
-                files_to_round_up = glob.glob(f"{output_dir}/beam*.npy")
+                files_to_round_up = glob.glob(f"{inference_dir}/beam*.npy")
                 sorted_files = sorted(files_to_round_up)
                 sample_arr = np.zeros((args.roundup,) + beam_coeffs.shape)
                 for file_ind, file in enumerate(sorted_files):
@@ -636,7 +649,7 @@ if __name__ == '__main__':
                         continue
                     sample_arr[file_ind] = np.load(file)
                     os.remove(file)
-                np.save(os.path.join(output_dir, f"beam_roundup_{np1}"), sample_arr)
+                np.save(os.path.join(inference_dir, f"beam_roundup_{np1}"), sample_arr)
     else:
         Dmatr_start = time.time()
         pow_beam_Dmatr = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
@@ -654,7 +667,7 @@ if __name__ == '__main__':
 
         pow_beam_Dmatr = pow_beam_Dmatr[0, 0]
         mean_beam_cov_inv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis], 
-                                     dtype=complex)
+                                      dtype=complex)
         triu_inds = np.triu_indices(Nants, k=1)
         pow_beam_Dmatr = pow_beam_Dmatr[:, :, triu_inds[0], triu_inds[1]] # ftub
         inv_noise_var = inv_noise_var[:, :, triu_inds[0], triu_inds[1]] # ftu
@@ -695,9 +708,9 @@ if __name__ == '__main__':
         post_cov = np.linalg.inv(LHS)
         MAP_soln = np.linalg.solve(LHS, RHS[:, :, None])[:, :, 0]
 
-        np.save(os.path.join(output_dir, "post_cov_inv.npy"), LHS)
-        np.save(os.path.join(output_dir, "MAP_soln.npy"), MAP_soln)
-        np.save(os.path.join(output_dir, "post_cov.npy"), post_cov)
+        np.save(os.path.join(inference_dir, "post_cov_inv.npy"), LHS)
+        np.save(os.path.join(inference_dir, "MAP_soln.npy"), MAP_soln)
+        np.save(os.path.join(inference_dir, "post_cov.npy"), post_cov)
 
         sparse_bmatr = unpert_sb.bess_matr[:, nmodes[:args.Nbasis]]
         sparse_tmatr = unpert_sb.trig_matr[:, mmodes[:args.Nbasis]]
@@ -766,7 +779,7 @@ if __name__ == '__main__':
         ax[1, 1].set_title("$z$ score")
         fig.colorbar(im, ax=ax[1,1])
         fig.tight_layout()
-        fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
+        fig.savefig(os.path.join(inference_dir, "reconstruction_residual_plot.pdf"))
         if args.beam_type != "unpert":
             fig, ax = plt.subplots(figsize=(3.25, 6.5),
                                    subplot_kw={"projection": "polar"},
@@ -787,7 +800,7 @@ if __name__ == '__main__':
                 cmap="inferno",
             )
             fig.colorbar(im, ax=ax[1], label="Perturbations")
-            fig.savefig(os.path.join(output_dir, "base_beam_plot.pdf"))
+            fig.savefig(os.path.join(inference_dir, "base_beam_plot.pdf"))
 
 
 
