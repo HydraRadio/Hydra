@@ -85,6 +85,8 @@ if __name__ == '__main__':
                         help="Set a separate seed for initializing the Gibbs chain")
     parser.add_argument("--sky-seed", type=int, action="store", default=654,
                         dest="sky_seed")
+    parser.add_argument("--noise-seed", type=int, required=False, default=7254,
+                        dest="noise_seed")
     
     # Misc
     parser.add_argument("--recalc-sc-op", action="store_true", required=False,
@@ -357,7 +359,8 @@ if __name__ == '__main__':
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
 
     #FIXME: technically we need the conjugate noise rzn on conjugate baselines...
-    noise = (beam_rng.normal(scale=np.sqrt(noise_var)) + 1.j * beam_rng.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
+    noise_rng = np.random.default_rng(args.noise_seed)
+    noise = (noise_rng.normal(scale=np.sqrt(noise_var)) + 1.j * noise_rng.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
     data = _sim_vis + _sim_vis.swapaxes(-1,-2).conj() + noise # fix some zeros
     del _sim_vis # Save some memory
     del noise
