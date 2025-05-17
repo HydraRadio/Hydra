@@ -226,9 +226,14 @@ if __name__ == '__main__':
     # Convert from degrees to radian
     array_lat = np.deg2rad(args.array_lat)
 
+    if "Vivaldi" in args.beam_file:
+        unpert_beam = "vivaldi"
+    else:
+        unpert_beam = "dipole"
+
     # Check that output directory exists
     output_dir = f"{args.output_dir}/per_ant/{args.per_ant}/beam_type/{args.beam_type}"
-    output_dir = f"{output_dir}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
+    output_dir = f"{output_dir}/unpert_beam/{unpert_beam}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
     output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/anneal/{args.anneal}"
     output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}"
     output_dir = f"{output_dir}/perts_only/{args.perts_only}/chainseed/{args.chain_seed}"
@@ -305,7 +310,7 @@ if __name__ == '__main__':
 
     mmodes = np.arange(-args.mmax, args.mmax + 1)
     unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
-                                              mmodes=mmodes, Nfeeds=2, 
+                                              mmodes=mmodes, Nfeeds=None, 
                                               alpha=args.rho_const,
                                               num_modes_comp=32,
                                               sqrt=True,
@@ -330,8 +335,10 @@ if __name__ == '__main__':
             else:
                 raise ValueError("beam-type arg must be one of ('gaussian', 'airy', 'pert_sim')")
     else:
-        if args.beam_type == "pert_sim":
-            beams = Nants * [UVBeam(args.beam_file)]
+        if args.beam_type == "unpert":
+            bm = UVBeam.from_file(args.beam_file)
+            bm.peak_normalize()
+            beams = Nants * [bm]
         elif args.beam_type in ["gaussian", "airy"]:
             beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
             beam, beam_class = get_analytic_beam(args, beam_rng, beams)
@@ -395,6 +402,7 @@ if __name__ == '__main__':
     np.save(os.path.join(output_dir, "Dmatr.npy"), Dmatr)
     np.save(os.path.join(output_dir, "dmo.npy"), Dmatr_outer)
     np.save(os.path.join(output_dir, "za.npy"), za)
+    np.save(os.path.join(output_dir, "az.npy"), az)
     
     # Have everything we need to analytically evaluate single-array beam
     if args.per_ant: 
