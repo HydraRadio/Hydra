@@ -14,9 +14,11 @@ from pyuvdata import UVBeam, BeamInterface
 
 import argparse
 import glob
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 
 def do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants, ra, dec,
-               fluxes, beams, sim_outpath):
+               fluxes, beams, array_lat, sim_outpath):
     if not os.path.exists(sim_outpath):
         # Run a simulation
         t0 = time.time()
@@ -33,7 +35,7 @@ def do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants, ra, dec,
                     beams=beams,
                     polarized=False,
                     precision=2,
-                    latitude=args.array_lat,
+                    latitude=array_lat,
                     use_feed="x",
                     force_no_beam_sqrt=False,
                 )
@@ -56,7 +58,7 @@ def get_pert_beam(args, output_dir, ant_ind):
                                               stretch_std=args.stretch_std,
                                               mmax=args.mmax, 
                                               nmax=args.nmax,
-                                              sqrt=True, Nfeeds=2, 
+                                              sqrt=args.per_ant, Nfeeds=2, 
                                               num_modes_comp=32, save=save,
                                               outdir=args.output_dir, load=load)
                                               
@@ -227,8 +229,8 @@ if __name__ == '__main__':
     dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
     lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
 
-    # Convert from degrees to radian
-    array_lat = np.deg2rad(args.array_lat)
+    # Do not convert from degrees to radian!!!
+    array_lat = args.array_lat
 
     if "Vivaldi" in args.beam_file:
         unpert_beam = "vivaldi"
@@ -317,8 +319,8 @@ if __name__ == '__main__':
     unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
                                               mmodes=mmodes, Nfeeds=None, 
                                               alpha=args.rho_const,
-                                              num_modes_comp=32,
-                                              sqrt=True,
+                                              num_modes_comp=args.Nbasis,
+                                              sqrt=args.per_ant,
                                               save_fn=f"{output_dir}/unpert_sb")
 
     if args.per_ant:
@@ -352,7 +354,7 @@ if __name__ == '__main__':
 
     sim_outpath = os.path.join(output_dir, "model0.npy")
     _sim_vis = do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants,
-                           ra, dec, fluxes, beams, sim_outpath)
+                           ra, dec, fluxes, beams, array_lat, sim_outpath)
 
 
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
@@ -378,7 +380,7 @@ if __name__ == '__main__':
     inv_noise_var = 1/noise_var
     np.save(os.path.join(output_dir, "inv_noise_var.npy"), inv_noise_var)
 
-    txs, tys, tzs = convert_to_tops(ra, dec, times, args.array_lat)
+    txs, tys, tzs = convert_to_tops(ra, dec, times, array_lat)
 
     za = np.arccos(tzs).flatten()
     az = np.arctan2(tys, txs).flatten()
@@ -399,20 +401,27 @@ if __name__ == '__main__':
 
         BPmatr = np.tensordot(bess_matr, Pmatr, axes=1).transpose(3, 0, 1, 2) # Nbasis, Ntimes, Nsrc, Naz
         Dmatr = np.sum(BPmatr * trig_matr, axis=3).transpose(1, 2, 0) # Ntimes, Nsrc, Nbasis
+    elif args.beam_type == "unpert":
+        comp_inds = unpert_sb.get_comp_inds()
+        nmodes = comp_inds[0][:, 0, 0, 0]
+        mmodes = comp_inds[1][:, 0, 0, 0]
+        bsparse = bess_matr[:, :, nmodes[:args.Nbasis]]
+        tsparse = trig_matr[:, :, mmodes[:args.Nbasis]]
+        Dmatr = bsparse * tsparse
     else:
         Dmatr = bess_matr[:, :, :args.Nbasis]
         Q, R = np.linalg.qr(unpert_sb.bess_matr[:, :args.Nbasis]) # orthoganalize radial modes...
         reshape = (args.Ntimes * args.Nptsrc, args.Nbasis)
         shape = (args.Ntimes, args.Nptsrc, args.Nbasis)
         Dmatr = np.linalg.solve(R.T, Dmatr.reshape(reshape).T).T.reshape(shape)
-    Dmatr_outer = hydra.beam_sampler.get_bess_outer(Dmatr)
     np.save(os.path.join(output_dir, "Dmatr.npy"), Dmatr)
-    np.save(os.path.join(output_dir, "dmo.npy"), Dmatr_outer)
     np.save(os.path.join(output_dir, "za.npy"), za)
     np.save(os.path.join(output_dir, "az.npy"), az)
     
     # Have everything we need to analytically evaluate single-array beam
     if args.per_ant: 
+        Dmatr_outer = hydra.beam_sampler.get_bess_outer(Dmatr)
+        np.save(os.path.join(output_dir, "dmo.npy"), Dmatr_outer)
     
         beam_coeffs = np.zeros([Nants, args.Nfreqs, args.Nbasis, 1, 1])
         if not args.perts_only:
@@ -446,7 +455,7 @@ if __name__ == '__main__':
                                                                             freqs, 
                                                                             times,
                                                                             polarized=False, 
-                                                                            latitude=args.array_lat,)
+                                                                            latitude=array_lat,)
             np.save(bsc_outpath, bess_sky_contraction)
             tsc = time.time() - t0
             timing_info(ftime, 0, "(0) bess_sky_contraction", tsc)
@@ -476,7 +485,7 @@ if __name__ == '__main__':
                                                                             freqs, 
                                                                             times,
                                                                             polarized=False, 
-                                                                            latitude=args.array_lat,
+                                                                            latitude=array_lat,
                                                                             outer=False,
                                                                             ref_beam_response=ref_beam_response)
 
@@ -601,6 +610,150 @@ if __name__ == '__main__':
                     sample_arr[file_ind] = np.load(file)
                     os.remove(file)
                 np.save(os.path.join(output_dir, f"beam_roundup_{np1}"), sample_arr)
+    else:
+        Dmatr_start = time.time()
+        pow_beam_Dmatr = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
+                                                                     ant_pos, 
+                                                                     fluxes, 
+                                                                     ra,
+                                                                     dec, 
+                                                                     freqs, 
+                                                                     times,
+                                                                     polarized=False, 
+                                                                     latitude=array_lat,
+                                                                     outer=False)
+        Dmatr_end = time.time()
+        print(f"Dmatr calculation took {Dmatr_end - Dmatr_start} seconds")
+
+
+        pow_beam_Dmatr = pow_beam_Dmatr[0, 0]
+        np.save(os.path.join(output_dir, "pow_beam_Dmatr.npy"), pow_beam_Dmatr)
+        mean_beam_cov_inv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis], 
+                                     dtype=complex)
+        triu_inds = np.triu_indices(Nants, k=1)
+        pow_beam_Dmatr_fast = pow_beam_Dmatr[:, :, triu_inds[0], triu_inds[1]] # ftub
+        Ninv = inv_noise_var[:, :, triu_inds[0], triu_inds[1]] # ftu
+        # Fast, just use einsum
+        Bdag_NinvB= np.einsum("ftub,ftu,ftuB->fbB",
+                              pow_beam_Dmatr_fast.conj(),
+                              Ninv,
+                              pow_beam_Dmatr_fast,
+                              optimize=True)
+        mean_beam_cov_inv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis], 
+                                     dtype=complex)
+        for ant_ind1 in range(Nants):
+            for ant_ind2 in range(ant_ind1 + 1, Nants):
+                #Dmatr_this_time_antpair = pow_beam_Dmatr[:, time_ind, ant_ind1, ant_ind2]
+                #Dmatr_outer_this_time_antpair = Dmatr_this_time_antpair[:, :, None].conj() * Dmatr_this_time_antpair[:, None, :]
+                #mean_beam_cov_inv +=  pow_beam_cov_inv[:, ant_ind1, ant_ind2]
+                mean_beam_cov_inv +=  np.einsum("ftb,ft,ftB->fbB",
+                                                pow_beam_Dmatr[:, :, ant_ind1, ant_ind2].conj(),
+                                                inv_noise_var[:, :, ant_ind1, ant_ind2],
+                                                pow_beam_Dmatr[:, :, ant_ind1, ant_ind2],
+                                                optimize=True)
+                                       
+        data = data[:, :, triu_inds[0], triu_inds[1]]
+
+        Ninvd = Ninv * data
+        Bdag_Ninvd = np.einsum("ftub,ftu->fb",
+                               pow_beam_Dmatr_fast.conj(),
+                               Ninvd,
+                               optimize=True)
+        
+        if args.decent_prior:
+            prior_mean = unpert_sb.comp_fits[0, 0]
+            inv_prior_var = 1/(0.1 * prior_mean)**2 # 10% uncertainty
+            prior_Cinv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis],
+                                     dtype=complex)
+            prior_Cinv = [np.diag(inv_prior_var[chan]) for chan in range(args.Nfreqs)]
+            prior_Cinv = np.array(prior_Cinv)
+        else:
+            prior_Cinv = np.repeat(np.eye(args.Nbasis)[None], args.Nfreqs, axis=0)
+            prior_Cinv /= args.beam_prior_std**2
+            prior_mean = np.zeros([args.Nfreqs, args.Nbasis], dtype=complex)
+        prior_Cinv_mean = np.einsum("fbB,fB->fb",
+                                    prior_Cinv,
+                                    prior_mean,
+                                    optimize=True)
+
+        LHS = Bdag_NinvB #+ prior_Cinv
+        #LHS = mean_beam_cov_inv + prior_Cinv
+        RHS = Bdag_Ninvd + prior_Cinv_mean
+
+        post_cov = np.linalg.inv(LHS)
+        MAP_soln = np.linalg.solve(LHS, RHS[:, :, None])[:, :, 0]
+
+        np.save(os.path.join(output_dir, "other_cov_inv"), mean_beam_cov_inv)
+        np.save(os.path.join(output_dir, "post_cov_inv"), LHS)
+        np.save(os.path.join(output_dir, "MAP_soln"), MAP_soln)
+        np.save(os.path.join(output_dir, "post_cov"), post_cov)
+
+        sparse_bmatr = unpert_sb.bess_matr[:, nmodes[:args.Nbasis]]
+        sparse_tmatr = unpert_sb.trig_matr[:, mmodes[:args.Nbasis]]
+    
+        sparse_dmatr_recon = sparse_bmatr[:, None] * sparse_tmatr[None, :]
+
+        # fb,zab->fza but without einsum as the middleman
+        MAP_beam = np.tensordot(MAP_soln,
+                                sparse_dmatr_recon,
+                                axes=((-1,), (-1,)))
+
+        midchan = args.Nfreqs // 2
+        plotbeam = MAP_beam[midchan]
+        Az, Za = np.meshgrid(unpert_sb.axis1_array, unpert_sb.axis2_array)
+
+        fig, ax = plt.subplots(ncols=2, nrows=2, 
+                               subplot_kw={"projection": "polar"}, 
+                               figsize=(6.5, 6.5))
+        im = ax[0, 0].pcolormesh(
+            Az,
+            Za,
+            plotbeam.real,
+            norm=LogNorm(),
+            cmap="inferno",
+        )
+        ax[0, 0].set_title("Reconstructed Beam (real)")
+        fig.colorbar(im, ax=ax[0,0])
+
+        image_var = np.einsum("bB,azb,azB->az",
+                              post_cov[midchan],
+                              sparse_dmatr_recon,
+                              sparse_dmatr_recon.conj(),
+                              optimize=True)
+        image_std = np.sqrt(np.abs(image_var))
+        im = ax[0, 1].pcolormesh(
+            Az,
+            Za,
+            image_std,
+            norm=LogNorm()
+        )
+        ax[0, 1].set_title("Posterior uncertainty")
+        fig.colorbar(im, ax=ax[0,1])
+
+        if args.beam_type == "pert_sim":
+            input_beam = pow_sb.fit_beam[0, 0, midchan]
+        else:
+            input_beam = unpert_sb.data_array[0, 0, midchan]
+        errors = np.abs(input_beam - plotbeam)
+        im = ax[1, 0].pcolormesh(
+            Az,
+            Za,
+            errors,
+            norm=LogNorm(),
+            cmap="inferno",
+        )
+        ax[1, 0].set_title("MAP Errors")
+
+        im = ax[1, 1].pcolormesh(
+            Az,
+            Za,
+            errors/image_std,
+            norm=LogNorm(),
+            cmap="inferno",
+        )
+        ax[1, 1].set_title("$z$ score")
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
 
 
         
