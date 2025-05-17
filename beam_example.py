@@ -327,7 +327,8 @@ if __name__ == '__main__':
                 pow_sb = get_pert_beam(args, output_dir, ant_ind)        
                 beams.append(pow_sb)
                 if ref_cond:
-                    ref_beam = UVBeam(args.beam_file)
+                    ref_beam = UVBeam.from_file(args.beam_file)
+                    ref_beam.peak_normalize()
             elif args.beam_type in ["gaussian", "airy"]:
                 # Underillimunated HERA dishes
                 beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
