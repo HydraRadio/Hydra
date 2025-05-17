@@ -83,6 +83,8 @@ if __name__ == '__main__':
     parser.add_argument("--chain-seed", type=str, action="store", default="None",
                         required=False, dest="chain_seed", 
                         help="Set a separate seed for initializing the Gibbs chain")
+    parser.add_argument("--sky-seed", type=int, action="store", default=654,
+                        dest="sky_seed")
     
     # Misc
     parser.add_argument("--recalc-sc-op", action="store_true", required=False,
@@ -291,18 +293,19 @@ if __name__ == '__main__':
 
     ants1, ants2 = list(zip(*antpairs))
 
+    skyrng = np.random.default_rng(args.sky_seed)
     # Generate random point source locations
     # RA goes from [0, 2 pi] and Dec from [-pi / 2, +pi / 2].
-    ra = np.random.uniform(low=ra_low, high=ra_high, size=args.Nptsrc)
+    ra = skyrng.uniform(low=ra_low, high=ra_high, size=args.Nptsrc)
     
     # inversion sample to get them uniform on the sphere, in case wide bounds are used
-    U = np.random.uniform(low=0, high=1, size=args.Nptsrc)
+    U = skyrng.uniform(low=0, high=1, size=args.Nptsrc)
     dsin = np.sin(dec_high) - np.sin(dec_low)
     dec = np.arcsin(U * dsin + np.sin(dec_low)) # np.arcsin returns on [-pi / 2, +pi / 2]
 
     # Generate fluxes
     beta_ptsrc = -2.7
-    ptsrc_amps = 10.**np.random.uniform(low=-1., high=2., size=args.Nptsrc)
+    ptsrc_amps = 10.**skyrng.uniform(low=-1., high=2., size=args.Nptsrc)
     fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs * 1e-6, beta_ptsrc) # Have to put this in MHz...
     print("pstrc amps (input):", ptsrc_amps[:5])
     np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
