@@ -743,6 +743,7 @@ if __name__ == '__main__':
             cmap="inferno",
         )
         ax[1, 0].set_title("MAP Errors")
+        fig.colorbar(im, ax=ax[1, 0])
 
         im = ax[1, 1].pcolormesh(
             Az,
@@ -752,6 +753,7 @@ if __name__ == '__main__':
             cmap="inferno",
         )
         ax[1, 1].set_title("$z$ score")
+        fig.colorbar(im, ax=ax[1,1])
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
 
