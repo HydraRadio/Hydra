@@ -12,7 +12,7 @@ from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
 from pyuvdata.analytic_beam import GaussianBeam, AiryBeam
 from pyuvdata import UVBeam, BeamInterface
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, SymLogNorm
 
 import argparse
 import glob
@@ -371,8 +371,8 @@ if __name__ == '__main__':
     # Timing file
     ftime = os.path.join(datadir, "timing.dat")
     sim_outpath = os.path.join(datadir, "model0.npy")
-    _sim_vis = do_vis_sim(args, datadir, ftime, times, freqs, ant_pos, Nants,
-                           ra, dec, fluxes, beams, sim_outpath)
+    _sim_vis = do_vis_sim(args, ftime, times, freqs, ant_pos, Nants,
+                          ra, dec, fluxes, beams, sim_outpath)
 
 
 
@@ -390,7 +390,7 @@ if __name__ == '__main__':
     if not os.path.exists(data_file):
         #FIXME: technically we need the conjugate noise rzn on conjugate baselines...
         noise_rng = np.random.default_rng(args.noise_seed)
-        noise = (noise_rng.normal(scale=np.sqrt(noise_var)) + 1.j * beam_rng.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
+        noise = (noise_rng.normal(scale=np.sqrt(noise_var)) + 1.j * noise_rng.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
         data = _sim_vis + _sim_vis.swapaxes(-1,-2).conj() + noise # fix some zeros
         del _sim_vis # Save some memory
         del noise
@@ -413,12 +413,13 @@ if __name__ == '__main__':
         datadir,
         f"Nbasis/{args.Nbasis}/chain_seed/{args.chain_seed}/decent_prior/{args.decent_prior}/beam_prior_std/{args.beam_prior_std}"
     )
+    check_and_make_dir(inference_dir)
     txs, tys, tzs = convert_to_tops(ra, dec, times, args.array_lat)
 
     za = np.arccos(tzs).flatten()
     az = np.arctan2(tys, txs).flatten()
-    np.save(os.path.join(datadir, "za.npy"), za)
-    np.save(os.path.join(datadir, "az.npy"), az)
+    np.save(os.path.join(inference_dir, "za.npy"), za)
+    np.save(os.path.join(inference_dir, "az.npy"), az)
     bess_matr, trig_matr = unpert_sb.get_dmatr_interp(az, 
                                                       za)
     bess_matr = bess_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax)
@@ -702,8 +703,8 @@ if __name__ == '__main__':
                                     prior_mean,
                                     optimize=True)
 
-        LHS = Bdag_NinvB #+ prior_Cinv
-        RHS = Bdag_Ninvd #+ prior_Cinv_mean
+        LHS = Bdag_NinvB + prior_Cinv
+        RHS = Bdag_Ninvd + prior_Cinv_mean
 
         post_cov = np.linalg.inv(LHS)
         MAP_soln = np.linalg.solve(LHS, RHS[:, :, None])[:, :, 0]
@@ -749,7 +750,7 @@ if __name__ == '__main__':
             Az,
             Za,
             image_std,
-            norm=LogNorm()
+            norm=SymLogNorm(vmin=-1, vmax=1, linthresh=1e-3)
         )
         ax[0, 1].set_title("Posterior uncertainty")
         fig.colorbar(im, ax=ax[0,1])
@@ -801,9 +802,11 @@ if __name__ == '__main__':
             )
             fig.colorbar(im, ax=ax[1], label="Perturbations")
             fig.savefig(os.path.join(inference_dir, "base_beam_plot.pdf"))
-
-
-
+        fig, ax = plt.subplots()
+        ax.plot(MAP_beam[midchan, :, 0].real)
+        ax.plot(sparse_dmatr_recon[:, 0, 0])
+        ax.set_yscale("log")
+        fig.savefig(os.path.join(inference_dir, "test_lineplot.pdf"))
 
         
 
