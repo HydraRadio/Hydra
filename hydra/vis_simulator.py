@@ -26,6 +26,7 @@ def run_checks(
     precision: int = 1,
     polarized: bool = False,
     beam_idx: Optional[np.ndarray] = None,
+    freq_interp_kind: str = "cubic",
 ):
     """
     Check that the inputs to vis_sim() are valid.
@@ -78,7 +79,9 @@ def run_checks(
         # make sure we interpolate to the right frequency first.
         beam_list = [
             (
-                bm.compute_response(freq_array=np.array([freq]), new_object=True, run_check=False)
+                bm.compute_response(freq_array=np.array([freq]), 
+                                    new_object=True, run_check=False,
+                                    freq_interp_kind=freq_interp_kind) 
                 if isinstance(bm, UVBeam)
                 else bm
             )
@@ -302,12 +305,15 @@ def get_interp_beam_for_sim(
         za: np.ndarray, 
         polarized: bool = True, 
         force_no_beam_sqrt = False, 
+        freq_interp_kind: str = "cubic",
     ):
     spw_axis_present = utils.get_beam_interp_shape(bm)
     is_UVBeam = isinstance(bm, UVBeam)
+    is_BI_from_UVB = (isinstance(bm, BeamInterface) and bm._isuvbeam)
     kw = (
-                {"reuse_spline": True, "check_azza_domain": False}
-                if is_UVBeam
+                {"reuse_spline": True, "check_azza_domain": False,
+                 "freq_interp_kind": freq_interp_kind}
+                if (is_UVBeam or is_BI_from_UVB)
                 else {}
             )
 
