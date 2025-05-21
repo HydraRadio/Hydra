@@ -705,6 +705,8 @@ if __name__ == '__main__':
         plotbeam = MAP_beam[midchan]
         np.save(os.path.join(output_dir, "MAP_beam.npy"), plotbeam)
         Az, Za = np.meshgrid(unpert_sb.axis1_array, unpert_sb.axis2_array)
+        beam_color_scale = {"vmin": 1e-4, "vmax": 1}
+        residual_color_scale = {"vmin": 1e-6, "vmax": 1e-2}
 
         fig, ax = plt.subplots(ncols=2, nrows=2, 
                                subplot_kw={"projection": "polar"}, 
@@ -713,7 +715,7 @@ if __name__ == '__main__':
             Az,
             Za,
             plotbeam.real,
-            norm=LogNorm(),
+            norm=LogNorm(**beam_color_scale),
             cmap="inferno",
         )
         ax[0, 0].set_title("Reconstructed Beam (real)")
@@ -736,7 +738,12 @@ if __name__ == '__main__':
         fig.colorbar(im, ax=ax[0,1])
 
         if args.beam_type == "pert_sim":
-            input_beam = pow_sb.bess_beam[0, 0, midchan]
+            input_beam, _ = pow_sb.interp(
+                az_array=Az.flatten(),
+                za_array=Za.flatten(),
+                freq_array=freqs,
+            )
+            input_beam = input_beam[0, 0, midchan].reshape(Az.shape)
         else:
             input_beam = unpert_sb.data_array[0, 0, midchan]
         errors = np.abs(input_beam - plotbeam)
@@ -744,7 +751,7 @@ if __name__ == '__main__':
             Az,
             Za,
             errors,
-            norm=LogNorm(),
+            norm=LogNorm(**residual_color_scale),
             cmap="inferno",
         )
         ax[1, 0].set_title("MAP Errors")
@@ -763,13 +770,14 @@ if __name__ == '__main__':
         fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
 
         if args.beam_type == "pert_sim":
-            fig, ax = plt.subplots(ncols=2, figsize=(6.5, 3.25))
+            fig, ax = plt.subplots(ncols=2, figsize=(6.5, 3.25),
+                                   subplot_kw={"projection": "polar"})
             unpert_beam = unpert_sb.data_array[0, 0, midchan]
             im = ax[0].pcolormesh(
                 Az,
                 Za,
                 input_beam,
-                norm=LogNorm(),
+                norm=LogNorm(**beam_color_scale),
                 cmap="inferno",
             )
             ax[0].set_title("Input Beam")
@@ -779,7 +787,7 @@ if __name__ == '__main__':
                 Az,
                 Za,
                 np.abs(input_beam - unpert_beam),
-                norm=LogNorm(),
+                norm=LogNorm(**residual_color_scale),
                 cmap="inferno",
             )
             ax[1].set_title("Residuals")
