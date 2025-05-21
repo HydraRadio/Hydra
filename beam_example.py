@@ -163,11 +163,11 @@ if __name__ == '__main__':
                         help="Only constrain perturbations rather than the full beam shape")
     
     # Point source sim params
-    parser.add_argument("--ra-bounds", type=float, action="store", default=(0, np.pi + 0.5),
+    parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 2*np.pi),
                         nargs=2, required=False, dest="ra_bounds",
                         help="Bounds for the Right Ascension of the randomly simulated sources")
     parser.add_argument("--dec-bounds", type=float, action="store", 
-                        default=(-np.pi/2, 1.),
+                        default=(-np.pi/2, np.pi/2.),
                         nargs=2, required=False, dest="dec_bounds",
                         help="Bounds for the Declination of the randomly simulated sources")
     parser.add_argument("--lst-bounds", type=float, action="store", 
@@ -230,7 +230,7 @@ if __name__ == '__main__':
     lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
 
     # Do not convert from degrees to radian!!!
-    array_lat = args.array_lat
+    array_lat = np.deg2rad(args.array_lat)
 
     if "Vivaldi" in args.beam_file:
         unpert_beam = "vivaldi"
@@ -321,6 +321,7 @@ if __name__ == '__main__':
                                               alpha=args.rho_const,
                                               num_modes_comp=args.Nbasis,
                                               sqrt=args.per_ant,
+                                              freq_range=(np.amin(freqs), np.amax(freqs)),
                                               save_fn=f"{output_dir}/unpert_sb")
 
     if args.per_ant:
@@ -700,6 +701,7 @@ if __name__ == '__main__':
 
         midchan = args.Nfreqs // 2
         plotbeam = MAP_beam[midchan]
+        np.save(os.path.join(output_dir, "MAP_beam.npy"), plotbeam)
         Az, Za = np.meshgrid(unpert_sb.axis1_array, unpert_sb.axis2_array)
 
         fig, ax = plt.subplots(ncols=2, nrows=2, 
