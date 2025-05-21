@@ -58,7 +58,7 @@ def get_pert_beam(args, output_dir, ant_ind):
                                               stretch_std=args.stretch_std,
                                               mmax=args.mmax, 
                                               nmax=args.nmax,
-                                              sqrt=args.per_ant, Nfeeds=None, 
+                                              sqrt=args.per_ant, Nfeeds=2, 
                                               num_modes_comp=args.Nbasis, save=save,
                                               outdir=args.output_dir, load=load)
                                               
@@ -317,7 +317,7 @@ if __name__ == '__main__':
 
     mmodes = np.arange(-args.mmax, args.mmax + 1)
     unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
-                                              mmodes=mmodes, Nfeeds=None, 
+                                              mmodes=mmodes, Nfeeds=2, 
                                               alpha=args.rho_const,
                                               num_modes_comp=args.Nbasis,
                                               sqrt=args.per_ant,
@@ -393,7 +393,7 @@ if __name__ == '__main__':
     bess_matr = bess_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax)
     trig_matr = trig_matr.reshape(args.Ntimes, args.Nptsrc, 2 * args.mmax + 1)
 
-    if args.beam_type == "pert_sim":
+    if args.beam_type == "pert_sim" and args.per_ant:
         mid_freq = freqs[args.Nfreqs // 2]
         closest_chan = np.argmin(np.abs(mid_freq - pow_sb.freq_array))
         mean_mode = unpert_sb.bess_fits[:, :, 0, 0, 0, closest_chan]
@@ -405,7 +405,7 @@ if __name__ == '__main__':
 
         BPmatr = np.tensordot(bess_matr, Pmatr, axes=1).transpose(3, 0, 1, 2) # Nbasis, Ntimes, Nsrc, Naz
         Dmatr = np.sum(BPmatr * trig_matr, axis=3).transpose(1, 2, 0) # Ntimes, Nsrc, Nbasis
-    elif args.beam_type == "unpert":
+    elif args.beam_type in ["unpert", "pert_sim"]:
         comp_inds = unpert_sb.get_comp_inds()
         nmodes = comp_inds[0][:, 0, 0, 0]
         mmodes = comp_inds[1][:, 0, 0, 0]
@@ -680,8 +680,7 @@ if __name__ == '__main__':
                                     prior_mean,
                                     optimize=True)
 
-        LHS = Bdag_NinvB #+ prior_Cinv
-        #LHS = mean_beam_cov_inv + prior_Cinv
+        LHS = Bdag_NinvB + prior_Cinv
         RHS = Bdag_Ninvd + prior_Cinv_mean
 
         post_cov = np.linalg.inv(LHS)
@@ -730,13 +729,14 @@ if __name__ == '__main__':
             Az,
             Za,
             image_std,
-            norm=LogNorm()
+            norm=LogNorm(),
+            cmap="inferno"
         )
         ax[0, 1].set_title("Posterior uncertainty")
         fig.colorbar(im, ax=ax[0,1])
 
         if args.beam_type == "pert_sim":
-            input_beam = pow_sb.fit_beam[0, 0, midchan]
+            input_beam = pow_sb.bess_beam[0, 0, midchan]
         else:
             input_beam = unpert_sb.data_array[0, 0, midchan]
         errors = np.abs(input_beam - plotbeam)
@@ -761,6 +761,31 @@ if __name__ == '__main__':
         fig.colorbar(im, ax=ax[1,1])
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
+
+        if args.beam_type == "pert_sim":
+            fig, ax = plt.subplots(ncols=2, figsize=(6.5, 3.25))
+            unpert_beam = unpert_sb.data_array[0, 0, midchan]
+            im = ax[0].pcolormesh(
+                Az,
+                Za,
+                input_beam,
+                norm=LogNorm(),
+                cmap="inferno",
+            )
+            ax[0].set_title("Input Beam")
+            fig.colorbar(im, ax=ax[0])
+
+            im = ax[1].pcolormesh(
+                Az,
+                Za,
+                np.abs(input_beam - unpert_beam),
+                norm=LogNorm(),
+                cmap="inferno",
+            )
+            ax[1].set_title("Residuals")
+            fig.colorbar(im, ax=ax[1])
+            fig.tight_layout()
+            fig.savefig(os.path.join(output_dir, "input_residual_plot.pdf"))
 
 
         
