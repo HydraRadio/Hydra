@@ -6,6 +6,7 @@ import numpy as np
 import hydra
 
 from scipy.sparse.linalg import cg, gmres, bicgstab
+from scipy.stats import norm
 import multiprocessing
 from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
                          convert_to_tops
@@ -643,18 +644,6 @@ if __name__ == '__main__':
                               Ninv,
                               pow_beam_Dmatr_fast,
                               optimize=True)
-        mean_beam_cov_inv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis], 
-                                     dtype=complex)
-        for ant_ind1 in range(Nants):
-            for ant_ind2 in range(ant_ind1 + 1, Nants):
-                #Dmatr_this_time_antpair = pow_beam_Dmatr[:, time_ind, ant_ind1, ant_ind2]
-                #Dmatr_outer_this_time_antpair = Dmatr_this_time_antpair[:, :, None].conj() * Dmatr_this_time_antpair[:, None, :]
-                #mean_beam_cov_inv +=  pow_beam_cov_inv[:, ant_ind1, ant_ind2]
-                mean_beam_cov_inv +=  np.einsum("ftb,ft,ftB->fbB",
-                                                pow_beam_Dmatr[:, :, ant_ind1, ant_ind2].conj(),
-                                                inv_noise_var[:, :, ant_ind1, ant_ind2],
-                                                pow_beam_Dmatr[:, :, ant_ind1, ant_ind2],
-                                                optimize=True)
                                        
         data = data[:, :, triu_inds[0], triu_inds[1]]
 
@@ -794,6 +783,58 @@ if __name__ == '__main__':
             fig.colorbar(im, ax=ax[1])
             fig.tight_layout()
             fig.savefig(os.path.join(output_dir, "input_residual_plot.pdf"))
+
+        postdicted_mean = np.einsum(
+            "ftub,fb->ftu",
+            pow_beam_Dmatr_fast,
+            MAP_soln,
+            optimize=True
+        )
+        def get_z_scores(model, post_pred=False):
+            if post_pred:
+                var_post = np.einsum(
+                    "ftub,fbB,ftuB->ftu",
+                    pow_beam_Dmatr_fast,
+                    post_cov,
+                    pow_beam_Dmatr_fast.conj(),
+                    optimize=True
+                )
+                var_ppd = 1/Ninv + np.abs(var_post)
+                isig = np.sqrt(2 / var_ppd)
+            else:
+                isig = np.sqrt(2 * Ninv)
+
+
+            zscore = (data - model) * isig
+            zreal = zscore.real.flatten()
+            zimag = zscore.imag.flatten()
+            to_hist = np.array([zreal, zimag]).T
+
+            return to_hist
+        to_hist = get_z_scores(postdicted_mean)
+        to_hist_ppd = get_z_scores(postdicted_mean, post_pred=True)
+
+        fig, ax = plt.subplots(figsize=(3.25, 2.5))
+        bins = np.linspace(-10, 10, num=100)
+        counts, _, _ = ax.hist(
+            to_hist, 
+            bins=bins,
+            histtype="step",
+            density=True,
+        )
+        ax.hist(to_hist_ppd, bins=bins, histtype="step", density=True)
+
+        ax.set_xlabel(r"$z$-score")
+        ax.set_ylabel("counts")
+        lbins = bins[:-1]
+        rbins = bins[1:]
+        bin_cent = (lbins + rbins) * 0.5
+        pbin = norm.cdf(rbins) - norm.cdf(lbins)
+        std_norm_counts = pbin * np.sum(counts)
+        ax.plot(bin_cent, norm.pdf(bin_cent), linestyle="--", color="black")
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_dir, "residual_hist.pdf"))
+
 
 
         
