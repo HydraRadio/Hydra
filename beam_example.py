@@ -64,7 +64,7 @@ def get_pert_beam(args, output_dir, ant_ind):
                                               
     return pow_sb
 
-def get_analytic_beam(args, beam_rng, beams):
+def get_analytic_beam(args, beam_rng):
     diameter = 12. + beam_rng.normal(loc=0, scale=0.2)
     if args.beam_type == "gaussian":
         beam_class = GaussianBeam
@@ -337,7 +337,7 @@ if __name__ == '__main__':
             elif args.beam_type in ["gaussian", "airy"]:
                 # Underillimunated HERA dishes
                 beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
-                beam, beam_class = get_analytic_beam(args, beam_rng, beams)
+                beam, beam_class = get_analytic_beam(args, beam_rng)
                 beams.append(beam)
                 if ref_cond:
                     ref_beam = beam_class(diameter=12.)
@@ -352,8 +352,8 @@ if __name__ == '__main__':
             pow_sb = get_pert_beam(args, output_dir, 0)
             beams = Nants * [pow_sb]
         elif args.beam_type in ["gaussian", "airy"]:
-            beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
-            beam, beam_class = get_analytic_beam(args, beam_rng, beams)
+            beam_rng = np.random.default_rng(seed=args.seed)
+            beam, beam_class = get_analytic_beam(args, beam_rng)
             beams = Nants * [beam]
 
     sim_outpath = os.path.join(output_dir, "model0.npy")
