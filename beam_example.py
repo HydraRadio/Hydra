@@ -229,7 +229,7 @@ if __name__ == '__main__':
     dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
     lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
 
-    # Do not convert from degrees to radian!!!
+    # Convert to radians
     array_lat = np.deg2rad(args.array_lat)
 
     if "Vivaldi" in args.beam_file:
