@@ -58,8 +58,8 @@ def get_pert_beam(args, output_dir, ant_ind):
                                               stretch_std=args.stretch_std,
                                               mmax=args.mmax, 
                                               nmax=args.nmax,
-                                              sqrt=args.per_ant, Nfeeds=2, 
-                                              num_modes_comp=32, save=save,
+                                              sqrt=args.per_ant, Nfeeds=None, 
+                                              num_modes_comp=args.Nbasis, save=save,
                                               outdir=args.output_dir, load=load)
                                               
     return pow_sb
@@ -198,10 +198,10 @@ if __name__ == '__main__':
                         help="A constant to define the radial projection for the"
                              " beam spatial basis")
     parser.add_argument("--trans-std", required=False, type=float,
-                    default=1e-2, dest="trans_std",
+                    default=0, dest="trans_std",
                     help="Standard deviation for random tilt of beam")
     parser.add_argument("--rot-std-deg", required=False, type=float, 
-                        dest="rot_std_deg", default=1., 
+                        dest="rot_std_deg", default=0., 
                         help="Standard deviation for random beam rotation, in degrees.")
     parser.add_argument("--stretch-std", required=False, type=float, 
                         dest="stretch_std", default=1e-2, 
@@ -348,6 +348,9 @@ if __name__ == '__main__':
             bm = UVBeam.from_file(args.beam_file)
             bm.peak_normalize()
             beams = Nants * [bm]
+        elif args.beam_type == "pert_sim":
+            pow_sb = get_pert_beam(args, output_dir, 0)
+            beams = Nants * [pow_sb]
         elif args.beam_type in ["gaussian", "airy"]:
             beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
             beam, beam_class = get_analytic_beam(args, beam_rng, beams)
