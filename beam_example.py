@@ -17,6 +17,7 @@ import argparse
 import glob
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
+from matplotlib.gridspec import GridSpec
 
 def do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants, ra, dec,
                fluxes, beams, array_lat, sim_outpath):
@@ -759,28 +760,53 @@ if __name__ == '__main__':
         fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
 
         if args.beam_type == "pert_sim":
-            fig, ax = plt.subplots(ncols=2, figsize=(6.5, 3.25),
-                                   subplot_kw={"projection": "polar"})
+            fig = plt.figure(figsze=[6.5, 6.5])
+            gs = GridSpec(2, 2)
+            unpert_ax = fig.add_subplot(gs[0, 0],
+                                        subplot_kw={"projection": "polar"})
             unpert_beam = unpert_sb.data_array[0, 0, midchan]
-            im = ax[0].pcolormesh(
+            im = unpert_ax.pcolormesh(
                 Az,
                 Za,
-                input_beam,
+                unpert_beam,
                 norm=LogNorm(**beam_color_scale),
                 cmap="inferno",
             )
-            ax[0].set_title("Input Beam")
-            fig.colorbar(im, ax=ax[0])
+            unpert_ax.set_title("Unperturbed Beam")
+            fig.colorbar(im, ax=unpert_ax)
 
-            im = ax[1].pcolormesh(
+            pert_ax = fig.add_subplot(gs[0, 1],
+                                      subplot_kw={"projection": "polar"})
+            im = pert_ax.pcolormesh(
                 Az,
                 Za,
                 np.abs(input_beam - unpert_beam),
                 norm=LogNorm(**residual_color_scale),
                 cmap="inferno",
             )
-            ax[1].set_title("Residuals")
-            fig.colorbar(im, ax=ax[1])
+            pert_ax.set_title("Perturbations")
+            fig.colorbar(im, ax=pert_ax)
+
+            line_ax = fig.add_subplot(gs[1, :])
+            beam_obs = [unpert_beam, input_beam]
+            beam_labels = ["Unperturbed", "Perturbed"]
+            linestyles = ["--", "-"]
+            colors = ["mediumturquoise", "mediumpurple"]
+            markers = [".", "^"]
+            angles = [0, 90]
+            for ob, label, linestyle, marker in zip(beam_obs, beam_labels, linestyles):
+                for angle, color, marker in zip(angles, colors, markers):
+                    label = "%s, $\phi=$%i$^\circ$" % (label, angle)
+                    line_ax.plot(
+                        ob[:, 0], 
+                        label=label,
+                        color=color,
+                        linestyle=linestyle,
+                        marker=marker
+                    )
+            line_ax.set_xlabel("Zenith Angle (degrees)")
+            line_ax.set_ylabel("Beam Response")
+
             fig.tight_layout()
             fig.savefig(os.path.join(output_dir, "input_residual_plot.pdf"))
 
