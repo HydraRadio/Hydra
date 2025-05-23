@@ -703,7 +703,7 @@ if __name__ == '__main__':
                                figsize=(6.5, 6.5))
         im = ax[0, 0].pcolormesh(
             Az,
-            Za,
+            Za * 180/np.pi,
             plotbeam.real,
             norm=LogNorm(**beam_color_scale),
             cmap="inferno",
@@ -719,7 +719,7 @@ if __name__ == '__main__':
         image_std = np.sqrt(np.abs(image_var))
         im = ax[0, 1].pcolormesh(
             Az,
-            Za,
+            Za * 180/np.pi,
             image_std,
             norm=LogNorm(),
             cmap="inferno"
@@ -739,7 +739,7 @@ if __name__ == '__main__':
         errors = np.abs(input_beam - plotbeam)
         im = ax[1, 0].pcolormesh(
             Az,
-            Za,
+            Za * 180/np.pi,
             errors,
             norm=LogNorm(**residual_color_scale),
             cmap="inferno",
@@ -749,13 +749,23 @@ if __name__ == '__main__':
 
         im = ax[1, 1].pcolormesh(
             Az,
-            Za,
+            Za * 180/np.pi,
             errors/image_std,
             norm=LogNorm(),
             cmap="inferno",
         )
         ax[1, 1].set_title("$z$ score")
         fig.colorbar(im, ax=ax[1,1])
+
+        for row_ind in range(2):
+            for col_ind in range(2):
+                yticks = np.arange(20, 100, 20)
+                ax_ob = ax[row_ind, col_ind]
+                ax_ob.set_xticks([])
+                ax_ob.set_yticks(yticks)
+                ax_ob.set_yticklabels(yticks.astype(str), color="white")
+                ax_ob.grid(visible=False, axis="x")
+                ax_ob.grid(visible=True, axis="y", linestyle=":", color="white")
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
 
@@ -767,7 +777,7 @@ if __name__ == '__main__':
             unpert_beam = unpert_sb.data_array[0, 0, midchan]
             im = unpert_ax.pcolormesh(
                 Az,
-                Za,
+                Za * 180/np.pi,
                 unpert_beam,
                 norm=LogNorm(**beam_color_scale),
                 cmap="inferno",
@@ -779,7 +789,7 @@ if __name__ == '__main__':
                                       subplot_kw={"projection": "polar"})
             im = pert_ax.pcolormesh(
                 Az,
-                Za,
+                Za * 180/np.pi,
                 np.abs(input_beam - unpert_beam),
                 norm=LogNorm(**residual_color_scale),
                 cmap="inferno",
