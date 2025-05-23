@@ -173,7 +173,7 @@ if __name__ == '__main__':
                         nargs=2, required=False, dest="dec_bounds",
                         help="Bounds for the Declination of the randomly simulated sources")
     parser.add_argument("--lst-bounds", type=float, action="store", 
-                        default=(np.pi/2, np.pi/2+0.5),
+                        default=(np.pi/2, np.pi/2+np.pi/12),
                         nargs=2, required=False, dest="lst_bounds",
                         help="Bounds for the LST range of the simulation, in radians.")
     parser.add_argument("--freq-low", type=float, action="store", required=False,
@@ -634,11 +634,13 @@ if __name__ == '__main__':
 
         pow_beam_Dmatr = pow_beam_Dmatr[0, 0]
         np.save(os.path.join(output_dir, "pow_beam_Dmatr.npy"), pow_beam_Dmatr)
-        mean_beam_cov_inv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis], 
-                                     dtype=complex)
+
+
         triu_inds = np.triu_indices(Nants, k=1)
-        pow_beam_Dmatr_fast = pow_beam_Dmatr[:, :, triu_inds[0], triu_inds[1]] # ftub
-        Ninv = inv_noise_var[:, :, triu_inds[0], triu_inds[1]] # ftu
+        pow_beam_Dmatr_fast = pow_beam_Dmatr[
+            :, :args.Ntimes//2, triu_inds[0], triu_inds[1]
+        ] # ftub
+        Ninv = inv_noise_var[:, :args.Ntimes//2, triu_inds[0], triu_inds[1]] # ftu
         # Fast, just use einsum
         Bdag_NinvB= np.einsum("ftub,ftu,ftuB->fbB",
                               pow_beam_Dmatr_fast.conj(),
@@ -646,9 +648,9 @@ if __name__ == '__main__':
                               pow_beam_Dmatr_fast,
                               optimize=True)
                                        
-        data = data[:, :, triu_inds[0], triu_inds[1]]
+        inference_data = data[:, :args.Ntimes//2, triu_inds[0], triu_inds[1]]
 
-        Ninvd = Ninv * data
+        Ninvd = Ninv * inference_data
         Bdag_Ninvd = np.einsum("ftub,ftu->fb",
                                pow_beam_Dmatr_fast.conj(),
                                Ninvd,
@@ -675,8 +677,7 @@ if __name__ == '__main__':
 
         post_cov = np.linalg.inv(LHS)
         MAP_soln = np.linalg.solve(LHS, RHS[:, :, None])[:, :, 0]
-
-        np.save(os.path.join(output_dir, "other_cov_inv"), mean_beam_cov_inv)
+        
         np.save(os.path.join(output_dir, "post_cov_inv"), LHS)
         np.save(os.path.join(output_dir, "MAP_soln"), MAP_soln)
         np.save(os.path.join(output_dir, "post_cov"), post_cov)
@@ -820,9 +821,11 @@ if __name__ == '__main__':
             fig.tight_layout()
             fig.savefig(os.path.join(output_dir, "input_residual_plot.pdf"))
 
+        PPD_Dmatr = pow_beam_Dmatr[:, args.Ntimes//2:, triu_inds[0], triu_inds[1]]
+
         postdicted_mean = np.einsum(
             "ftub,fb->ftu",
-            pow_beam_Dmatr_fast,
+            PPD_Dmatr,
             MAP_soln,
             optimize=True
         )
@@ -830,9 +833,9 @@ if __name__ == '__main__':
             if post_pred:
                 var_post = np.einsum(
                     "ftub,fbB,ftuB->ftu",
-                    pow_beam_Dmatr_fast,
+                    PPD_Dmatr,
                     post_cov,
-                    pow_beam_Dmatr_fast.conj(),
+                    PPD_Dmatr.conj(),
                     optimize=True
                 )
                 var_ppd = 1/Ninv + np.abs(var_post)
@@ -840,8 +843,8 @@ if __name__ == '__main__':
             else:
                 isig = np.sqrt(2 * Ninv)
 
-
-            zscore = (data - model) * isig
+            PPD_data = data[:, args.Ntimes//2:, triu_inds[0], triu_inds[1]]
+            zscore = (PPD_data - model) * isig
             zreal = zscore.real.flatten()
             zimag = zscore.imag.flatten()
             to_hist = np.array([zreal, zimag]).T
