@@ -20,7 +20,7 @@ from matplotlib.colors import LogNorm, SymLogNorm
 from matplotlib.gridspec import GridSpec
 
 def do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants, ra, dec,
-               fluxes, beams, array_lat, sim_outpath):
+               fluxes, beams, array_lat, sim_outpath, ref=False):
     if not os.path.exists(sim_outpath):
         # Run a simulation
         t0 = time.time()
@@ -41,7 +41,7 @@ def do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants, ra, dec,
                     use_feed="x",
                     force_no_beam_sqrt=False,
                 )
-            if args.beam_type == "pert_sim":
+            if (args.beam_type == "pert_sim") and (not ref):
                 for beam in beams:
                     beam.clear_cache() # Otherwise memory gets gigantic
         timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
@@ -377,7 +377,7 @@ if __name__ == '__main__':
         unpert_beam_UVB.peak_normalize()
         unpert_beam_list = Nants * [unpert_beam_UVB]
         unpert_vis = do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants,
-                                ra, dec, fluxes, unpert_beam_list, array_lat, unpert_sim_outpath)
+                                ra, dec, fluxes, unpert_beam_list, array_lat, unpert_sim_outpath, ref=True)
 
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
@@ -759,7 +759,7 @@ if __name__ == '__main__':
             Za * 180/np.pi,
             errors,
             norm=SymLogNorm(**residual_color_scale),
-            cmap="spectral",
+            cmap="Spectral",
         )
         ax[1, 0].set_title("MAP Errors")
         fig.colorbar(im, ax=ax[1, 0])
@@ -805,7 +805,7 @@ if __name__ == '__main__':
                 Za * 180/np.pi,
                 (input_beam - unpert_beam).real,
                 norm=SymLogNorm(**residual_color_scale),
-                cmap="spectral",
+                cmap="Spectral",
             )
             pert_ax.set_title("Perturbations")
             adjust_beamplot(pert_ax)
