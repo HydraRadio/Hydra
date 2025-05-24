@@ -16,7 +16,7 @@ from pyuvdata import UVBeam, BeamInterface
 import argparse
 import glob
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, SymLogNorm
 from matplotlib.gridspec import GridSpec
 
 def do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants, ra, dec,
@@ -703,7 +703,7 @@ if __name__ == '__main__':
         np.save(os.path.join(output_dir, "MAP_beam.npy"), plotbeam)
         Az, Za = np.meshgrid(unpert_sb.axis1_array, unpert_sb.axis2_array)
         beam_color_scale = {"vmin": 1e-4, "vmax": 1}
-        residual_color_scale = {"vmin": 1e-6, "vmax": 1e-2}
+        residual_color_scale = {"vmin": -1e-2, "vmax": 1e-2, "linthresh": 1e-4}
 
         fig, ax = plt.subplots(ncols=2, nrows=2, 
                                subplot_kw={"projection": "polar"}, 
@@ -715,7 +715,7 @@ if __name__ == '__main__':
             norm=LogNorm(**beam_color_scale),
             cmap="inferno",
         )
-        ax[0, 0].set_title("Reconstructed Beam (real)")
+        ax[0, 0].set_title("Reconstructed Beam")
         fig.colorbar(im, ax=ax[0,0])
 
         image_var = np.einsum("bB,azb,azB->az",
@@ -743,13 +743,13 @@ if __name__ == '__main__':
             input_beam = input_beam[0, 0, midchan].reshape(Az.shape)
         else:
             input_beam = unpert_sb.data_array[0, 0, midchan]
-        errors = np.abs(input_beam - plotbeam)
+        errors = (input_beam - plotbeam).real
         im = ax[1, 0].pcolormesh(
             Az,
             Za * 180/np.pi,
             errors,
-            norm=LogNorm(**residual_color_scale),
-            cmap="inferno",
+            norm=SymLogNorm(**residual_color_scale),
+            cmap="spectral",
         )
         ax[1, 0].set_title("MAP Errors")
         fig.colorbar(im, ax=ax[1, 0])
@@ -757,7 +757,7 @@ if __name__ == '__main__':
         im = ax[1, 1].pcolormesh(
             Az,
             Za * 180/np.pi,
-            errors/image_std,
+            np.abs(errors)/image_std,
             norm=LogNorm(),
             cmap="inferno",
         )
@@ -797,9 +797,9 @@ if __name__ == '__main__':
             im = pert_ax.pcolormesh(
                 Az,
                 Za * 180/np.pi,
-                np.abs(input_beam - unpert_beam),
-                norm=LogNorm(**residual_color_scale),
-                cmap="inferno",
+                (input_beam - unpert_beam).real,
+                norm=SymLogNorm(**residual_color_scale),
+                cmap="spectral",
             )
             pert_ax.set_title("Perturbations")
             fig.colorbar(im, ax=pert_ax)
@@ -870,11 +870,11 @@ if __name__ == '__main__':
             density=True,
             label="Unperturbed Beam",
         )
-        ax.hist(to_hist_ppd, bins=bins, histtype="step", density=True, 
+        ax.hist(to_hist_ppd.flatten(), bins=bins, histtype="step", density=True, 
                 label="Inferred Beam")
 
         ax.set_xlabel(r"$z$-score")
-        ax.set_ylabel("counts")
+        ax.set_ylabel("Probability Density")
         lbins = bins[:-1]
         rbins = bins[1:]
         bin_cent = (lbins + rbins) * 0.5
