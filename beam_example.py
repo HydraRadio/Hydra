@@ -253,7 +253,7 @@ if __name__ == '__main__':
     output_dir = f"{args.output_dir}/per_ant/{args.per_ant}/beam_type/{args.beam_type}"
     output_dir = f"{output_dir}/unpert_beam/{unpert_beam}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
     output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/Nbasis/{args.Nbasis}"
-    output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}"
+    output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}/stretch_std/{args.stretch_std}"
     output_dir = f"{output_dir}/perts_only/{args.perts_only}/chainseed/{args.chain_seed}"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -820,10 +820,10 @@ if __name__ == '__main__':
             angles = [0, 90]
             for ob, label, linestyle in zip(beam_obs, beam_labels, linestyles):
                 for angle, color, marker in zip(angles, colors, markers):
-                    label = "%s, $\phi=$%i$^\circ$" % (label, angle)
+                    the_label = "%s, $\phi=$%i$^\circ$" % (label, angle)
                     line_ax.plot(
                         ob[:, angle], 
-                        label=label,
+                        label=the_label,
                         color=color,
                         linestyle=linestyle,
                         marker=marker
