@@ -173,7 +173,7 @@ if __name__ == '__main__':
                         nargs=2, required=False, dest="dec_bounds",
                         help="Bounds for the Declination of the randomly simulated sources")
     parser.add_argument("--lst-bounds", type=float, action="store", 
-                        default=(np.pi/2, np.pi/2+np.pi/12),
+                        default=(np.pi/2, np.pi),
                         nargs=2, required=False, dest="lst_bounds",
                         help="Bounds for the LST range of the simulation, in radians.")
     parser.add_argument("--freq-low", type=float, action="store", required=False,
