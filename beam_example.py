@@ -771,10 +771,10 @@ if __name__ == '__main__':
         fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
 
         if args.beam_type == "pert_sim":
-            fig = plt.figure(figsze=[6.5, 6.5])
+            fig = plt.figure(figsize=[6.5, 6.5])
             gs = GridSpec(2, 2)
             unpert_ax = fig.add_subplot(gs[0, 0],
-                                        subplot_kw={"projection": "polar"})
+                                        projection="polar")
             unpert_beam = unpert_sb.data_array[0, 0, midchan]
             im = unpert_ax.pcolormesh(
                 Az,
@@ -787,7 +787,7 @@ if __name__ == '__main__':
             fig.colorbar(im, ax=unpert_ax)
 
             pert_ax = fig.add_subplot(gs[0, 1],
-                                      subplot_kw={"projection": "polar"})
+                                      projection="polar")
             im = pert_ax.pcolormesh(
                 Az,
                 Za * 180/np.pi,
@@ -805,11 +805,11 @@ if __name__ == '__main__':
             colors = ["mediumturquoise", "mediumpurple"]
             markers = [".", "^"]
             angles = [0, 90]
-            for ob, label, linestyle, marker in zip(beam_obs, beam_labels, linestyles):
+            for ob, label, linestyle in zip(beam_obs, beam_labels, linestyles):
                 for angle, color, marker in zip(angles, colors, markers):
                     label = "%s, $\phi=$%i$^\circ$" % (label, angle)
                     line_ax.plot(
-                        ob[:, 0], 
+                        ob[:, angle], 
                         label=label,
                         color=color,
                         linestyle=linestyle,
@@ -817,6 +817,7 @@ if __name__ == '__main__':
                     )
             line_ax.set_xlabel("Zenith Angle (degrees)")
             line_ax.set_ylabel("Beam Response")
+            line_ax.set_yscale("log")
 
             fig.tight_layout()
             fig.savefig(os.path.join(output_dir, "input_residual_plot.pdf"))
