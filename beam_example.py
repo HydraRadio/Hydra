@@ -361,7 +361,13 @@ if __name__ == '__main__':
     sim_outpath = os.path.join(output_dir, "model0.npy")
     _sim_vis = do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants,
                            ra, dec, fluxes, beams, array_lat, sim_outpath)
-
+    if args.beam_type == "pert_sim":
+        unpert_sim_outpath = os.path.join(output_dir, "model_unpert.npy")
+        unpert_beam_UVB = UVBeam.from_file(args.beam_file)
+        unpert_beam_UVB.peak_normalize()
+        unpert_beam_list = Nants * [unpert_beam_UVB]
+        unpert_vis = do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants,
+                                ra, dec, fluxes, unpert_beam_list, array_lat, unpert_sim_outpath)
 
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
@@ -638,9 +644,9 @@ if __name__ == '__main__':
 
         triu_inds = np.triu_indices(Nants, k=1)
         pow_beam_Dmatr_fast = pow_beam_Dmatr[
-            :, :args.Ntimes//2, triu_inds[0], triu_inds[1]
+            :, ::2, triu_inds[0], triu_inds[1]
         ] # ftub
-        Ninv = inv_noise_var[:, :args.Ntimes//2, triu_inds[0], triu_inds[1]] # ftu
+        Ninv = inv_noise_var[:, ::2, triu_inds[0], triu_inds[1]] # ftu
         # Fast, just use einsum
         Bdag_NinvB= np.einsum("ftub,ftu,ftuB->fbB",
                               pow_beam_Dmatr_fast.conj(),
@@ -648,7 +654,7 @@ if __name__ == '__main__':
                               pow_beam_Dmatr_fast,
                               optimize=True)
                                        
-        inference_data = data[:, :args.Ntimes//2, triu_inds[0], triu_inds[1]]
+        inference_data = data[:, ::2, triu_inds[0], triu_inds[1]]
 
         Ninvd = Ninv * inference_data
         Bdag_Ninvd = np.einsum("ftub,ftu->fb",
@@ -818,11 +824,12 @@ if __name__ == '__main__':
             line_ax.set_xlabel("Zenith Angle (degrees)")
             line_ax.set_ylabel("Beam Response")
             line_ax.set_yscale("log")
+            line_ax.legend()
 
             fig.tight_layout()
             fig.savefig(os.path.join(output_dir, "input_residual_plot.pdf"))
 
-        PPD_Dmatr = pow_beam_Dmatr[:, args.Ntimes//2:, triu_inds[0], triu_inds[1]]
+        PPD_Dmatr = pow_beam_Dmatr[:, 1::2, triu_inds[0], triu_inds[1]]
 
         postdicted_mean = np.einsum(
             "ftub,fb->ftu",
@@ -844,25 +851,27 @@ if __name__ == '__main__':
             else:
                 isig = np.sqrt(2 * Ninv)
 
-            PPD_data = data[:, args.Ntimes//2:, triu_inds[0], triu_inds[1]]
+            PPD_data = data[:, 1::2, triu_inds[0], triu_inds[1]]
             zscore = (PPD_data - model) * isig
             zreal = zscore.real.flatten()
             zimag = zscore.imag.flatten()
             to_hist = np.array([zreal, zimag]).T
 
             return to_hist
-        to_hist = get_z_scores(postdicted_mean)
+        to_hist = get_z_scores(unpert_vis[:, 1::2, triu_inds[0], triu_inds[1]])
         to_hist_ppd = get_z_scores(postdicted_mean, post_pred=True)
 
         fig, ax = plt.subplots(figsize=(3.25, 2.5))
         bins = np.linspace(-10, 10, num=100)
         counts, _, _ = ax.hist(
-            to_hist, 
+            to_hist.flatten(), 
             bins=bins,
             histtype="step",
             density=True,
+            label="Unperturbed Beam",
         )
-        ax.hist(to_hist_ppd, bins=bins, histtype="step", density=True)
+        ax.hist(to_hist_ppd, bins=bins, histtype="step", density=True, 
+                label="Inferred Beam")
 
         ax.set_xlabel(r"$z$-score")
         ax.set_ylabel("counts")
@@ -872,6 +881,7 @@ if __name__ == '__main__':
         pbin = norm.cdf(rbins) - norm.cdf(lbins)
         std_norm_counts = pbin * np.sum(counts)
         ax.plot(bin_cent, norm.pdf(bin_cent), linestyle="--", color="black")
+        ax.legend()
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "residual_hist.pdf"))
 
