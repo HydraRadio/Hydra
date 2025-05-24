@@ -253,8 +253,7 @@ if __name__ == '__main__':
     output_dir = f"{args.output_dir}/per_ant/{args.per_ant}/beam_type/{args.beam_type}"
     output_dir = f"{output_dir}/unpert_beam/{unpert_beam}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
     output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/Nbasis/{args.Nbasis}"
-    output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}/stretch_std/{args.stretch_std}"
-    output_dir = f"{output_dir}/perts_only/{args.perts_only}/chainseed/{args.chain_seed}"
+    output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}/stretch_std/{args.stretch_std}/decent_prior/{args.decent_prior}"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     print("\nOutput directory:", output_dir)
