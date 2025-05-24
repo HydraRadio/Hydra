@@ -76,6 +76,16 @@ def get_analytic_beam(args, beam_rng):
 
     return beam, beam_class
 
+def adjust_beamplot(ax_ob):
+    yticks = np.arange(20, 100, 20)
+    ax_ob.set_xticks([])
+    ax_ob.set_yticks(yticks)
+    ax_ob.set_yticklabels(yticks.astype(str), color="white")
+    ax_ob.grid(visible=False, axis="x")
+    ax_ob.grid(visible=True, axis="y", linestyle=":", color="white")
+
+    return
+
 if __name__ == '__main__':
 
     description = "Example Gibbs sampling of the joint posterior of beam "  \
@@ -766,13 +776,8 @@ if __name__ == '__main__':
 
         for row_ind in range(2):
             for col_ind in range(2):
-                yticks = np.arange(20, 100, 20)
                 ax_ob = ax[row_ind, col_ind]
-                ax_ob.set_xticks([])
-                ax_ob.set_yticks(yticks)
-                ax_ob.set_yticklabels(yticks.astype(str), color="white")
-                ax_ob.grid(visible=False, axis="x")
-                ax_ob.grid(visible=True, axis="y", linestyle=":", color="white")
+                adjust_beamplot(ax_ob)
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
 
@@ -790,6 +795,7 @@ if __name__ == '__main__':
                 cmap="inferno",
             )
             unpert_ax.set_title("Unperturbed Beam")
+            adjust_beamplot(unpert_ax)
             fig.colorbar(im, ax=unpert_ax)
 
             pert_ax = fig.add_subplot(gs[0, 1],
@@ -802,6 +808,7 @@ if __name__ == '__main__':
                 cmap="spectral",
             )
             pert_ax.set_title("Perturbations")
+            adjust_beamplot(pert_ax)
             fig.colorbar(im, ax=pert_ax)
 
             line_ax = fig.add_subplot(gs[1, :])
