@@ -1053,6 +1053,7 @@ def get_pert_beam(
     trans_std=1e-2,
     rot_std_deg=1.0,
     stretch_std=1e-2,
+    csl=0.2,
     mmax=45,
     nmax=80,
     sqrt=True,
@@ -1117,6 +1118,7 @@ def get_pert_beam(
         stretch_x=stretch_x,
         stretch_y=stretch_y,
         sin_pert_coeffs=sin_pert_coeffs,
+        csl=csl,
     )
 
     beam_outfile = f"{outdir}/perturbed_beam_beamvals_seed_{seed}.npy"

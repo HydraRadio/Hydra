@@ -61,8 +61,9 @@ def get_pert_beam(args, output_dir, ant_ind):
                                               mmax=args.mmax, 
                                               nmax=args.nmax,
                                               sqrt=args.per_ant, Nfeeds=2, 
-                                              num_modes_comp=args.Nbasis, save=save,
-                                              outdir=args.output_dir, load=load)
+                                              num_modes_comp=args.Nbasis, 
+                                              save=save, cSL=args.csl,
+                                              outdir=output_dir, load=load)
                                               
     return pow_sb
 
@@ -225,6 +226,8 @@ if __name__ == '__main__':
     parser.add_argument("--per-ant", required=False, action="store_true",
                         dest="per_ant",
                         help="Whether to use a different beam per antenna")
+    parser.add_argument("--csl", required=False, type=float, default=0.2,
+                        help="Sidelobe modulation amplitude")
     
     args = parser.parse_args()
     
@@ -253,7 +256,9 @@ if __name__ == '__main__':
     output_dir = f"{args.output_dir}/per_ant/{args.per_ant}/beam_type/{args.beam_type}"
     output_dir = f"{output_dir}/unpert_beam/{unpert_beam}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
     output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/Nbasis/{args.Nbasis}"
-    output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}/stretch_std/{args.stretch_std}/decent_prior/{args.decent_prior}"
+    output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}"
+    output_dir = f"{output_dir}/stretch_std/{args.stretch_std}"
+    output_dir = f"{output_dir}/decent_prior/{args.decent_prior}/csl/{args.csl}"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     print("\nOutput directory:", output_dir)
