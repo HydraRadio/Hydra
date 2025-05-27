@@ -1048,11 +1048,7 @@ def get_zernike_matrix(nmax, theta, r):
 
 
 def get_pert_beam(
-    rng,
     beam_file,
-    trans_std=1e-2,
-    rot_std_deg=1.0,
-    stretch_std=1e-2,
     cSL=0.2,
     mmax=45,
     nmax=80,
@@ -1103,7 +1099,7 @@ def get_pert_beam(
         trans_y (float):
             How much to tilt the coordinate system in the y direction
         rot (float):
-            How many _degrees_ to rotate the coordinate sysem
+            How many radians to rotate the coordinate sysem
         stretch_x (float):
             How much to stretch the coordinate system in the x direction
         stretch_y (float):

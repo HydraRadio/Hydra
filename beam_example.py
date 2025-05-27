@@ -50,20 +50,41 @@ def do_vis_sim(args, output_dir, ftime, times, freqs, ant_pos, Nants, ra, dec,
         _sim_vis = np.load(sim_outpath)
     return _sim_vis
 
-def get_pert_beam(args, output_dir, ant_ind):
+def get_pert_beam(
+        args, 
+        output_dir, 
+        seed=None,
+        trans_x=0.,
+        trans_y=0.,
+        rot=0.,
+        stretch_x=0.,
+        stretch_y=0.,
+        sin_pert_coeffs=np.zeros(8, dtype=float)
+):
     load = os.path.exists(f"{output_dir}/perturbed_beam_beamvals_seed_{args.seed + ant_ind}.npy")
     save = not load
-    pow_sb = hydra.beam_sampler.get_pert_beam(args.seed + ant_ind,
-                                              args.beam_file, 
-                                              trans_std=args.trans_std,
-                                              rot_std_deg=args.rot_std_deg,
-                                              stretch_std=args.stretch_std,
-                                              mmax=args.mmax, 
-                                              nmax=args.nmax,
-                                              sqrt=args.per_ant, Nfeeds=2, 
-                                              num_modes_comp=args.Nbasis, 
-                                              save=save, cSL=args.csl,
-                                              outdir=output_dir, load=load)
+    if seed is not None: # Ignore inputs and generate them randomly here
+        rng = np.random.default_rng(seed=seed)
+        trans_x, trans_y = rng.normal(args.trans_std)
+        rot = np.deg2rad(rng.normal(args.rot_std_deg))
+        stretch_x, stretch_y = rng.normal(loc=1, scale=args.stretch_std)
+        sin_pert_coeffs = rng.normal(size=8)
+
+    pow_sb = hydra.beam_sampler.get_pert_beam(
+        args.beam_file, 
+        mmax=args.mmax, 
+        nmax=args.nmax,
+        sqrt=args.per_ant, Nfeeds=2, 
+        num_modes_comp=args.Nbasis, 
+        save=save, cSL=args.csl,
+        outdir=output_dir, load=load,
+        trans_x=trans_x,
+        trans_y=trans_y,
+        rot=rot,
+        stretch_x=stretch_x,
+        stretch_y=stretch_y,
+        sin_pert_coeffs=sin_pert_coeffs
+    )
                                               
     return pow_sb
 
@@ -92,8 +113,8 @@ if __name__ == '__main__':
     description = "Example Gibbs sampling of the joint posterior of beam "  \
                   "parameters from a simulated visibility data set " 
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--seed", type=int, action="store", default=1001,
-                        required=False, dest="seed",
+    parser.add_argument("--beam-seed", type=int, action="store", default=1001,
+                        required=False, dest="beam_seed",
                         help="Set the random seed.")
     parser.add_argument("--chain-seed", type=str, action="store", default="None",
                         required=False, dest="chain_seed", 
