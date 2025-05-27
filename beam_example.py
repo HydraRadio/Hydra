@@ -278,7 +278,6 @@ if __name__ == '__main__':
     output_dir = f"{output_dir}/unpert_beam/{unpert_beam}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
     output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/Nbasis/{args.Nbasis}"
     output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}"
-    output_dir = f"{output_dir}/stretch_std/{args.stretch_std}"
     output_dir = f"{output_dir}/decent_prior/{args.decent_prior}/csl/{args.csl}"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -711,7 +710,7 @@ if __name__ == '__main__':
         
         if args.decent_prior:
             prior_mean = unpert_sb.comp_fits[0, 0]
-            inv_prior_var = 1/(0.1 * prior_mean)**2 # 10% uncertainty
+            inv_prior_var = 1/(args.beam_prior_std * prior_mean)**2 # Fractional uncertainty
             prior_Cinv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis],
                                      dtype=complex)
             prior_Cinv = [np.diag(inv_prior_var[chan]) for chan in range(args.Nfreqs)]
