@@ -1061,8 +1061,8 @@ def get_pert_beam(
     trans_x=0.,
     trans_y=0.,
     rot=0.,
-    stretch_x=0.,
-    stretch_y=0.,
+    stretch_x=1.,
+    stretch_y=1.,
     sin_pert_coeffs=np.zeros(8, dtype=float),
 ):
     """
