@@ -616,7 +616,7 @@ class sparse_beam(UVBeam):
             -1
         ]  # Always make this zero-out at the horizon in unstretched coordinates
         dmatr = np.array(
-            [np.sin(2 * np.pi * m * rad_array / L) for m in range(self.Nsin_pert)]
+            [np.sin(2 * np.pi * m * rad_array / L) for m in range(1, self.Nsin_pert + 1)]
         ).T
         sin_pert_unnorm = dmatr @ self.sin_pert_coeffs
         sp_range = np.amax(sin_pert_unnorm) - np.amin(sin_pert_unnorm)
