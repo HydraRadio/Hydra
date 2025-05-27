@@ -61,7 +61,7 @@ def get_pert_beam(
         stretch_y=0.,
         sin_pert_coeffs=np.zeros(8, dtype=float)
 ):
-    load = os.path.exists(f"{output_dir}/perturbed_beam_beamvals_seed_{args.seed + ant_ind}.npy")
+    load = os.path.exists(f"{output_dir}/perturbed_beam_beamvals_seed_{args.beam_seed + ant_ind}.npy")
     save = not load
     if seed is not None: # Ignore inputs and generate them randomly here
         rng = np.random.default_rng(seed=seed)
@@ -297,8 +297,8 @@ if __name__ == '__main__':
     print("    Solver:  %s" % args.solver_name)
 
     # Random seed
-    beam_rng = np.random.default_rng(args.seed)
-    print("    Seed:    %d" % args.seed)
+    beam_rng = np.random.default_rng(args.beam_seed)
+    print("    Seed:    %d" % args.beam_seed)
 
     # Check number of threads available
     Nthreads = os.environ.get('OMP_NUM_THREADS')
@@ -366,14 +366,18 @@ if __name__ == '__main__':
         for ant_ind in range(Nants):
             ref_cond = args.perts_only and ant_ind == 0
             if args.beam_type == "pert_sim":
-                pow_sb = get_pert_beam(args, output_dir, ant_ind)        
+                pow_sb = get_pert_beam(
+                    args, 
+                    output_dir, 
+                    seed=args.beam_seed + ant_ind
+                )        
                 beams.append(pow_sb)
                 if ref_cond:
                     ref_beam = UVBeam.from_file(args.beam_file)
                     ref_beam.peak_normalize()
             elif args.beam_type in ["gaussian", "airy"]:
                 # Underillimunated HERA dishes
-                beam_rng = np.random.default_rng(seed=args.seed + ant_ind)
+                beam_rng = np.random.default_rng(seed=args.beam_seed + ant_ind)
                 beam, beam_class = get_analytic_beam(args, beam_rng)
                 beams.append(beam)
                 if ref_cond:
@@ -386,10 +390,18 @@ if __name__ == '__main__':
             bm.peak_normalize()
             beams = Nants * [bm]
         elif args.beam_type == "pert_sim":
-            pow_sb = get_pert_beam(args, output_dir, 0)
+            beam_rng = np.random.default(seed=args.beam_seed)
+            pow_sb = get_pert_beam(
+                args, 
+                output_dir, 
+                seed=None,
+                sin_pert_coeffs=beam_rng.normal(size=8),
+                stretch_x = 1.01,
+                stretch_y = 1.02
+            )
             beams = Nants * [pow_sb]
         elif args.beam_type in ["gaussian", "airy"]:
-            beam_rng = np.random.default_rng(seed=args.seed)
+            beam_rng = np.random.default_rng(seed=args.beam_seed)
             beam, beam_class = get_analytic_beam(args, beam_rng)
             beams = Nants * [beam]
 
