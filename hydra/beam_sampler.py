@@ -1048,7 +1048,7 @@ def get_zernike_matrix(nmax, theta, r):
 
 
 def get_pert_beam(
-    seed,
+    rng,
     beam_file,
     trans_std=1e-2,
     rot_std_deg=1.0,
@@ -1062,6 +1062,12 @@ def get_pert_beam(
     save=False,
     outdir="",
     load=False,
+    trans_x=0.,
+    trans_y=0.,
+    rot=0.,
+    stretch_x=0.,
+    stretch_y=0.,
+    sin_pert_coeffs=np.zeros(8, dtype=float),
 ):
     """
     Get a perturbed sparse_beam instance.
@@ -1092,16 +1098,22 @@ def get_pert_beam(
             Whether to save the fit coefficients to the perturbed beam.
         outdir (str):
             Path to directory to save output.
-
+        trans_x (float):
+            How much to tilt the coordinate system in the x direction 
+        trans_y (float):
+            How much to tilt the coordinate system in the y direction
+        rot (float):
+            How many _degrees_ to rotate the coordinate sysem
+        stretch_x (float):
+            How much to stretch the coordinate system in the x direction
+        stretch_y (float):
+            How much to stretch the coordinate system in the y direction
+        sin_pert_coeffs (array):
+            Perturbation coefficients for the sidelobes.
     Returns:
         sb (sparse_beam):
             Perturbed sparse_beam instance.
     """
-    np.random.seed(seed)
-    trans_x, trans_y = np.random.normal(scale=trans_std, size=2)
-    rot = np.random.normal(scale=np.deg2rad(rot_std_deg))
-    stretch_x, stretch_y = np.random.normal(loc=1, scale=stretch_std, size=2)
-    sin_pert_coeffs = np.random.normal(size=8)
 
     mmodes = np.arange(-mmax, mmax + 1)
     sb = sparse_beam(
