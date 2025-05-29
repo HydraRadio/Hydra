@@ -668,23 +668,27 @@ if __name__ == '__main__':
                     os.remove(file)
                 np.save(os.path.join(output_dir, f"beam_roundup_{np1}"), sample_arr)
     else:
-        Dmatr_start = time.time()
-        pow_beam_Dmatr = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
-                                                                     ant_pos, 
-                                                                     fluxes, 
-                                                                     ra,
-                                                                     dec, 
-                                                                     freqs, 
-                                                                     times,
-                                                                     polarized=False, 
-                                                                     latitude=array_lat,
-                                                                     outer=False)
-        Dmatr_end = time.time()
-        print(f"Dmatr calculation took {Dmatr_end - Dmatr_start} seconds")
+        pow_beam_Dmatr_outfile = os.path.join(output_dir, "pow_beam_Dmatr.npy")
+        if not os.path.exists(pow_beam_Dmatr_outfile):
+            Dmatr_start = time.time()
+            pow_beam_Dmatr = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
+                                                                        ant_pos, 
+                                                                        fluxes, 
+                                                                        ra,
+                                                                        dec, 
+                                                                        freqs, 
+                                                                        times,
+                                                                        polarized=False, 
+                                                                        latitude=array_lat,
+                                                                        outer=False)
+            Dmatr_end = time.time()
+            print(f"Dmatr calculation took {Dmatr_end - Dmatr_start} seconds")
 
 
-        pow_beam_Dmatr = pow_beam_Dmatr[0, 0]
-        np.save(os.path.join(output_dir, "pow_beam_Dmatr.npy"), pow_beam_Dmatr)
+            pow_beam_Dmatr = pow_beam_Dmatr[0, 0]
+            np.save(pow_beam_Dmatr_outfile, pow_beam_Dmatr)
+        else:
+            pow_beam_Dmatr = np.load(pow_beam_Dmatr_outfile)
 
 
         triu_inds = np.triu_indices(Nants, k=1)
