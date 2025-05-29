@@ -1049,6 +1049,7 @@ def get_zernike_matrix(nmax, theta, r):
 
 def get_pert_beam(
     beam_file,
+    outfile,
     cSL=0.2,
     mmax=45,
     nmax=80,
@@ -1069,10 +1070,10 @@ def get_pert_beam(
     Get a perturbed sparse_beam instance.
 
     Parameters:
-        seed (int):
-            The random seed.
         beam_file (str):
             Path to unperturbed beam file.
+        outfile (str):
+            Where to save the outputs.
         trans_std (float):
             Standard deviation for random tilt of beam, in units of FB radial coordinate.
         rot_std_std (float):
@@ -1129,17 +1130,17 @@ def get_pert_beam(
         cSL=cSL,
     )
 
-    beam_outfile = f"{outdir}/perturbed_beam_beamvals_seed_{seed}.npy"
+
     if load:
-        pert_beam = np.load(beam_outfile)
+        pert_beam = np.load(outfile)
     else:
         Azg, Zag = np.meshgrid(sb.axis1_array, sb.axis2_array)
         pert_beam, _ = sb.interp(az_array=Azg.flatten(), za_array=Zag.flatten())
     fit_coeffs, _ = sb.get_fits(data_array=pert_beam.reshape(sb.data_array.shape))
 
     if save:
-        np.save(beam_outfile, pert_beam)
-        np.save(f"{outdir}/perturbed_beam_fit_coeffs_seed_{seed}.npy", fit_coeffs)
+        np.save(outfile, pert_beam)
+        np.save(f"{outfile[:outfile.rfind(".npy")]}_fit_coeffs.npy", fit_coeffs)
 
     return sb
 

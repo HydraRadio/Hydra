@@ -61,7 +61,8 @@ def get_pert_beam(
         stretch_y=0.,
         sin_pert_coeffs=np.zeros(8, dtype=float)
 ):
-    load = os.path.exists(f"{output_dir}/perturbed_beam_beamvals_seed_{args.beam_seed + ant_ind}.npy")
+    outfile = f"{output_dir}/perturbed_beam_beamvals_seed_{seed}.npy"
+    load = os.path.exists(outfile)
     save = not load
     if seed is not None: # Ignore inputs and generate them randomly here
         rng = np.random.default_rng(seed=seed)
@@ -72,6 +73,7 @@ def get_pert_beam(
 
     pow_sb = hydra.beam_sampler.get_pert_beam(
         args.beam_file, 
+        outfile,
         mmax=args.mmax, 
         nmax=args.nmax,
         sqrt=args.per_ant, Nfeeds=2, 
@@ -389,7 +391,7 @@ if __name__ == '__main__':
             bm.peak_normalize()
             beams = Nants * [bm]
         elif args.beam_type == "pert_sim":
-            beam_rng = np.random.default(seed=args.beam_seed)
+            beam_rng = np.random.default_rng(seed=args.beam_seed)
             pow_sb = get_pert_beam(
                 args, 
                 output_dir, 
