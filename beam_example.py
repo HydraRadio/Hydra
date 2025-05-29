@@ -451,6 +451,14 @@ if __name__ == '__main__':
     comp_inds = unpert_sb.get_comp_inds()
     nmodes = comp_inds[0][:, 0, 0, 0]
     mmodes = comp_inds[1][:, 0, 0, 0]
+    np.save(
+        os.path.join(output_dir, "nmodes.npy"),
+        nmodes
+    )
+    np.save(
+        os.path.join(output_dir, "mmodes.npy"),
+        mmodes
+    )
     per_source_Dmatr_out = os.path.join(output_dir, "Dmatr.npy")
     if not os.path.exists(per_source_Dmatr_out):
         if args.beam_type == "pert_sim" and args.per_ant:
@@ -1004,7 +1012,7 @@ if __name__ == '__main__':
             bbox_inches="tight"
         )
 
-        fig, ax = plt.subplots(figsize=(6.5, 3.25), nrows=2)
+        fig, ax = plt.subplots(figsize=(3.25, 6.25), nrows=2)
         mode_numbers = np.arange(1, args.Nbasis + 1)
         FB_stds = np.sqrt(np.abs(np.diag(post_cov[midchan])))
         FB_stds_comp = FB_stds / np.sqrt(2)
@@ -1045,13 +1053,21 @@ if __name__ == '__main__':
         fig.savefig(os.path.join(output_dir, "FB_coeff_lines.pdf"),
                     bbox_inches="tight")
 
-        evals, evecs = np.linalg.eig(post_cov[midchan])
-        np.save(
-            os.path.join(output_dir, "evals.npy"), evals
-        )
-        np.save(
-            os.path.join(output_dir, "evecs.npy"), evecs
-        )
+        eval_file = os.path.join(output_dir, "evals.npy")
+        evec_file = os.path.join(output_dir, "evecs.npy")
+        eig_files = [eval_file, evec_file]
+        if all([os.path.exists(file) for file in eig_files]):
+            evals = np.load(eval_file)
+            evecs = np.load(evec_file)
+        else:
+            evals, evecs = np.linalg.eig(post_cov[midchan])
+            np.save(
+                eval_file, evals
+            )
+
+            np.save(
+                evec_file, evecs
+            )
         fig, ax = plt.subplots(figsize=[3.25, 3.25])
         ax.plot(mode_numbers, evals.real, color="goldenrod")
         ax.set_xscale("log")
