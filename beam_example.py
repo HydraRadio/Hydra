@@ -6,7 +6,6 @@ import numpy as np
 import hydra
 
 from scipy.stats import norm, rayleigh
-import multiprocessing
 from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
                          convert_to_tops
 from pyuvdata.analytic_beam import GaussianBeam, AiryBeam
@@ -208,9 +207,6 @@ if __name__ == '__main__':
     parser.add_argument("--output-dir", type=str, action="store",
                         default="./output", required=False, dest="output_dir",
                         help="Output directory.")
-    parser.add_argument("--multiprocess", action="store_true", dest="multiprocess",
-                        required=False,
-                        help="Whether to use multiprocessing in vis sim calls.")
     parser.add_argument("--anneal", action="store_true", required=False,
                         help="Slowly shift the weight between sampling form the prior and posterior over the course of many iterations.")
     parser.add_argument("--infnoise", action="store_true", required=False,
@@ -309,14 +305,6 @@ if __name__ == '__main__':
     # Random seed
     beam_rng = np.random.default_rng(args.beam_seed)
     print("    Seed:    %d" % args.beam_seed)
-
-    # Check number of threads available
-    Nthreads = os.environ.get('OMP_NUM_THREADS')
-    if Nthreads is None:
-        Nthreads = multiprocessing.cpu_count()
-    else:
-        Nthreads = int(Nthreads)
-    print("    Threads: %d available" % Nthreads)
 
     # Timing file
     ftime = os.path.join(output_dir, "timing.dat")
