@@ -696,46 +696,56 @@ if __name__ == '__main__':
             :, ::2, triu_inds[0], triu_inds[1]
         ] # ftub
         Ninv = inv_noise_var[:, ::2, triu_inds[0], triu_inds[1]] # ftu
-        # Fast, just use einsum
-        Bdag_NinvB= np.einsum("ftub,ftu,ftuB->fbB",
-                              pow_beam_Dmatr_fast.conj(),
-                              Ninv,
-                              pow_beam_Dmatr_fast,
-                              optimize=True)
-                                       
-        inference_data = data[:, ::2, triu_inds[0], triu_inds[1]]
-
-        Ninvd = Ninv * inference_data
-        Bdag_Ninvd = np.einsum("ftub,ftu->fb",
-                               pow_beam_Dmatr_fast.conj(),
-                               Ninvd,
-                               optimize=True)
-        
-        if args.decent_prior:
-            prior_mean = unpert_sb.comp_fits[0, 0]
-            inv_prior_var = 1/(args.beam_prior_std * prior_mean)**2 # Fractional uncertainty
-            prior_Cinv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis],
-                                     dtype=complex)
-            prior_Cinv = [np.diag(inv_prior_var[chan]) for chan in range(args.Nfreqs)]
-            prior_Cinv = np.array(prior_Cinv)
+        pci_file = os.path.join(output_dir, "post_cov_inv.npy")
+        pc_file = os.path.join(output_dir, "post_cov.npy")
+        MAP_file = os.path.join(output_dir, "MAP_soln.npy")
+        inference_files = [pci_file, pc_file, MAP_file]
+        if all([os.path.exists(file) for file in inference_files]):
+            LHS = np.load(pci_file)
+            post_cov = np.load(pc_file)
+            MAP_soln = np.load(MAP_file)
         else:
-            prior_Cinv = np.repeat(np.eye(args.Nbasis)[None], args.Nfreqs, axis=0)
-            prior_Cinv /= args.beam_prior_std**2
-            prior_mean = np.zeros([args.Nfreqs, args.Nbasis], dtype=complex)
-        prior_Cinv_mean = np.einsum("fbB,fB->fb",
-                                    prior_Cinv,
-                                    prior_mean,
-                                    optimize=True)
+            # Fast, just use einsum
+            Bdag_NinvB= np.einsum("ftub,ftu,ftuB->fbB",
+                                pow_beam_Dmatr_fast.conj(),
+                                Ninv,
+                                pow_beam_Dmatr_fast,
+                                optimize=True)
+                                        
+            inference_data = data[:, ::2, triu_inds[0], triu_inds[1]]
 
-        LHS = Bdag_NinvB + prior_Cinv
-        RHS = Bdag_Ninvd + prior_Cinv_mean
+            Ninvd = Ninv * inference_data
+            Bdag_Ninvd = np.einsum("ftub,ftu->fb",
+                                pow_beam_Dmatr_fast.conj(),
+                                Ninvd,
+                                optimize=True)
+            
+            if args.decent_prior:
+                prior_mean = unpert_sb.comp_fits[0, 0]
+                inv_prior_var = 1/(args.beam_prior_std * prior_mean)**2 # Fractional uncertainty
+                prior_Cinv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis],
+                                        dtype=complex)
+                prior_Cinv = [np.diag(inv_prior_var[chan]) for chan in range(args.Nfreqs)]
+                prior_Cinv = np.array(prior_Cinv)
+            else:
+                prior_Cinv = np.repeat(np.eye(args.Nbasis)[None], args.Nfreqs, axis=0)
+                prior_Cinv /= args.beam_prior_std**2
+                prior_mean = np.zeros([args.Nfreqs, args.Nbasis], dtype=complex)
+            prior_Cinv_mean = np.einsum("fbB,fB->fb",
+                                        prior_Cinv,
+                                        prior_mean,
+                                        optimize=True)
 
-        post_cov = np.linalg.inv(LHS)
-        MAP_soln = np.linalg.solve(LHS, RHS[:, :, None])[:, :, 0]
-        
-        np.save(os.path.join(output_dir, "post_cov_inv"), LHS)
-        np.save(os.path.join(output_dir, "MAP_soln"), MAP_soln)
-        np.save(os.path.join(output_dir, "post_cov"), post_cov)
+            LHS = Bdag_NinvB + prior_Cinv
+            RHS = Bdag_Ninvd + prior_Cinv_mean
+
+            post_cov = np.linalg.inv(LHS)
+            MAP_soln = np.linalg.solve(LHS, RHS[:, :, None])[:, :, 0]
+            
+
+            np.save(pci_file, LHS)
+            np.save(MAP_file, MAP_soln)
+            np.save(pc_file, post_cov)
 
         sparse_bmatr = unpert_sb.bess_matr[:, nmodes[:args.Nbasis]]
         sparse_tmatr = unpert_sb.trig_matr[:, mmodes[:args.Nbasis]]
