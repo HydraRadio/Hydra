@@ -100,13 +100,38 @@ def get_analytic_beam(args, beam_rng):
 
     return beam, beam_class
 
-def adjust_beamplot(ax_ob):
+def adjust_beamplot(ax_ob, gridcolor="white"):
     yticks = np.arange(20, 100, 20)
     ax_ob.set_xticks([])
     ax_ob.set_yticks(yticks)
-    ax_ob.set_yticklabels(yticks.astype(str), color="white")
+    ax_ob.set_yticklabels(yticks.astype(str), color=gridcolor)
     ax_ob.grid(visible=False, axis="x")
-    ax_ob.grid(visible=True, axis="y", linestyle=":", color="white")
+    ax_ob.grid(visible=True, axis="y", linestyle=":", color=gridcolor)
+
+    return
+
+def plot_beam_slice(
+        line_ax, 
+        beam_obs, 
+        beam_labels,
+        linestyles=["--", "-"],
+        colors=["mediumturquoise", "mediumpurple"],
+        angles=[0, 90]
+):
+    
+    for ob, label, linestyle in zip(beam_obs, beam_labels, linestyles):
+        for angle, color in zip(angles, colors):
+            the_label = "%s, $\phi=$%i$^\circ$" % (label, angle)
+            line_ax.plot(
+                        ob[:, angle], 
+                        label=the_label,
+                        color=color,
+                        linestyle=linestyle
+                    )
+    line_ax.set_xlabel("Zenith Angle (degrees)")
+    line_ax.set_ylabel("Beam Response")
+    line_ax.set_yscale("log")
+    line_ax.legend(frameon=False)
 
     return
 
@@ -763,7 +788,7 @@ if __name__ == '__main__':
             norm=LogNorm(**beam_color_scale),
             cmap="inferno",
         )
-        ax[0, 0].set_title("Reconstructed Beam")
+        ax[0, 0].set_title("Inferred Beam")
         fig.colorbar(im, ax=ax[0,0])
 
         image_var = np.einsum("bB,azb,azB->az",
@@ -801,11 +826,11 @@ if __name__ == '__main__':
         )
         ax[1, 0].set_title("MAP Errors")
         fig.colorbar(im, ax=ax[1, 0])
-
+        image_z = np.abs(errors)/image_std
         im = ax[1, 1].pcolormesh(
             Az,
             Za * 180/np.pi,
-            np.abs(errors)/image_std,
+            image_z,
             norm=LogNorm(),
             cmap="inferno",
         )
@@ -815,9 +840,29 @@ if __name__ == '__main__':
         for row_ind in range(2):
             for col_ind in range(2):
                 ax_ob = ax[row_ind, col_ind]
-                adjust_beamplot(ax_ob)
+                if (row_ind == 1) and (col_ind == 0):
+                    gridcolor="black"
+                else:
+                    gridcolor="white"
+                adjust_beamplot(ax_ob, gridcolor=gridcolor)
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
+
+        fig, ax = plt.subplots(figsize=[3.25, 3.25])
+        _, bins, _ = ax.hist(
+            image_z.flatten(), 
+            bins="auto", 
+            histtype="step",
+            density=True
+        )
+        bin_cent = (bins[:-1] + bins[1:]) / 2
+        half_norm = 2 * norm.pdf(bin_cent)
+        ax.plot(bin_cent, half_norm, linestyle="--", color="black")
+        ax.set_xlabel("absolute $z$-score")
+        ax.set_ylabel("Probability Density")
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_dir, "image_z_score.pdf"))
+
 
         if args.beam_type == "pert_sim":
             fig = plt.figure(figsize=[6.5, 6.5])
@@ -846,33 +891,25 @@ if __name__ == '__main__':
                 cmap="Spectral",
             )
             pert_ax.set_title("Perturbations")
-            adjust_beamplot(pert_ax)
+            adjust_beamplot(pert_ax, gridcolor="black")
             fig.colorbar(im, ax=pert_ax)
 
             line_ax = fig.add_subplot(gs[1, :])
             beam_obs = [unpert_beam, input_beam]
             beam_labels = ["Unperturbed", "Perturbed"]
-            linestyles = ["--", "-"]
-            colors = ["mediumturquoise", "mediumpurple"]
-            markers = [".", "^"]
-            angles = [0, 90]
-            for ob, label, linestyle in zip(beam_obs, beam_labels, linestyles):
-                for angle, color, marker in zip(angles, colors, markers):
-                    the_label = "%s, $\phi=$%i$^\circ$" % (label, angle)
-                    line_ax.plot(
-                        ob[:, angle], 
-                        label=the_label,
-                        color=color,
-                        linestyle=linestyle,
-                        marker=marker
-                    )
-            line_ax.set_xlabel("Zenith Angle (degrees)")
-            line_ax.set_ylabel("Beam Response")
-            line_ax.set_yscale("log")
-            line_ax.legend()
+            plot_beam_slice(line_ax, beam_obs, beam_labels)
 
             fig.tight_layout()
             fig.savefig(os.path.join(output_dir, "input_residual_plot.pdf"))
+
+            fig, ax = plt.subplots(figsize=[6.5, 3.25])
+            beam_obs = [input_beam, plotbeam.real]
+            beam_labels = ["Perturbed Beam", "Inferred Beam"]
+            plot_beam_slice(ax, beam_obs, beam_labels)
+            fig.tight_layout()
+            fig.savefig(os.path.join(output_dir, "input_residual_line_plot.pdf"))
+
+            
 
         PPD_Dmatr = pow_beam_Dmatr[:, 1::2, triu_inds[0], triu_inds[1]]
 
@@ -906,29 +943,75 @@ if __name__ == '__main__':
         to_hist = get_z_scores(unpert_vis[:, 1::2, triu_inds[0], triu_inds[1]])
         to_hist_ppd = get_z_scores(postdicted_mean, post_pred=True)
 
-        fig, ax = plt.subplots(figsize=(3.25, 2.5))
+        fig, ax = plt.subplots(figsize=(6.5, 3), ncols=2)
         bins = np.linspace(-10, 10, num=100)
-        counts, _, _ = ax.hist(
+        counts, _, _ = ax[0].hist(
             to_hist.flatten(), 
-            bins=bins,
+            bins="auto",
             histtype="step",
             density=True,
             label="Unperturbed Beam",
         )
-        ax.hist(to_hist_ppd.flatten(), bins=bins, histtype="step", density=True, 
+        ax[0].hist(to_hist_ppd.flatten(), bins=bins, histtype="step", density=True, 
                 label="Inferred Beam")
 
-        ax.set_xlabel(r"$z$-score")
-        ax.set_ylabel("Probability Density")
+        for ax_ob in ax:
+            ax_ob.set_xlabel(r"$z$-score")
+            ax_ob.set_ylabel("Probability Density")
         lbins = bins[:-1]
         rbins = bins[1:]
         bin_cent = (lbins + rbins) * 0.5
         pbin = norm.cdf(rbins) - norm.cdf(lbins)
         std_norm_counts = pbin * np.sum(counts)
-        ax.plot(bin_cent, norm.pdf(bin_cent), linestyle="--", color="black")
-        ax.legend()
+        line3 = ax[0].plot(
+            bin_cent, 
+            norm.pdf(bin_cent), 
+            linestyle="--", 
+            color="black"
+        )
+        ax[0].set_xlim([-10, 10])
+
+        counts, _, patch1 = ax[1].hist(
+            to_hist.flatten(), 
+            bins="auto",
+            histtype="step",
+            density=True,
+            label="Unperturbed Beam",
+        )
+        _, _, patch2 = ax[1].hist(
+            to_hist_ppd.flatten(), 
+            bins=bins, 
+            histtype="step", 
+            density=True, 
+            label="Inferred Beam"
+        )
+        ax[1].legend(
+            handles=[patch1[0], patch2[0], line3[0]],
+            labels=["Unperturbed Beam", "Inferred Beam", r"$\mathcal{N}(0, 1)$"],
+            loc="upper left",
+            frameon=False
+        )
+        ax[1].set_ylim([0, 0.5])
         fig.tight_layout()
-        fig.savefig(os.path.join(output_dir, "residual_hist.pdf"))
+        fig.savefig(
+            os.path.join(output_dir, "residual_hist.pdf"), 
+            bbox_inches="tight"
+        )
+
+        fig, ax = plt.subplots(figsize=(6.5, 3.25), nrows=2)
+        im = ax[0].matshow(np.abs(post_cov[midchan]), cmap="inferno")
+        ax[0].set_title(r"$|\Sigma_\mathrm{post}|$")
+        fig.colorbar(im, ax=ax[0])
+
+        ax.matshow(np.angle(post_cov[midchan]), cmap="twilight")
+        im = ax[1].set_title(r"arg($\Sigma_\mathrm{post}$)")
+        fig.colorbar(im, ax=ax[0])
+        fig.tight_layout()
+        fig.savefig(
+            os.path.join(output_dir, "cov_plot.pdf"),
+            bbox_inches="tight"
+        )
+
 
 
 
