@@ -206,9 +206,6 @@ if __name__ == '__main__':
                         help="Fine channel width for visibilities, in Hz.")
     
     # Computational nuances
-    parser.add_argument("--solver", type=str, action="store",
-                        default='cg', required=False, dest="solver_name",
-                        help="Which sparse matrix solver to use for linear systems ('cg' or 'gmres' or 'bicgstab').")
     parser.add_argument("--output-dir", type=str, action="store",
                         default="./output", required=False, dest="output_dir",
                         help="Output directory.")
@@ -309,18 +306,6 @@ if __name__ == '__main__':
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     print("\nOutput directory:", output_dir)
-
-
-    # Linear solver to use
-    if args.solver_name == 'cg':
-        solver = cg
-    elif args.solver_name == 'gmres':
-        solver = gmres
-    elif args.solver_name == 'bicgstab':
-        solver = bicgstab
-    else:
-        raise ValueError("Solver '%s' not recognised." % args.solver_name)
-    print("    Solver:  %s" % args.solver_name)
 
     # Random seed
     beam_rng = np.random.default_rng(args.beam_seed)
