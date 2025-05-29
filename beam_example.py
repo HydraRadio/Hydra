@@ -441,39 +441,44 @@ if __name__ == '__main__':
 
     za = np.arccos(tzs).flatten()
     az = np.arctan2(tys, txs).flatten()
+    np.save(os.path.join(output_dir, "za.npy"), za)
+    np.save(os.path.join(output_dir, "az.npy"), az)
+    
     bess_matr, trig_matr = unpert_sb.get_dmatr_interp(az, 
                                                       za)
     bess_matr = bess_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax)
     trig_matr = trig_matr.reshape(args.Ntimes, args.Nptsrc, 2 * args.mmax + 1)
+    comp_inds = unpert_sb.get_comp_inds()
+    nmodes = comp_inds[0][:, 0, 0, 0]
+    mmodes = comp_inds[1][:, 0, 0, 0]
+    per_source_Dmatr_out = os.path.join(output_dir, "Dmatr.npy")
+    if not os.path.exists(per_source_Dmatr_out):
+        if args.beam_type == "pert_sim" and args.per_ant:
+            mid_freq = freqs[args.Nfreqs // 2]
+            closest_chan = np.argmin(np.abs(mid_freq - pow_sb.freq_array))
+            mean_mode = unpert_sb.bess_fits[:, :, 0, 0, 0, closest_chan]
+            mean_mode = mean_mode / np.sqrt(np.sum(np.abs(mean_mode)**2))
+            pca_modes = np.load(args.pca_modes)[:, :args.Nbasis - 1].reshape(args.nmax, 2 * args.mmax + 1, args.Nbasis - 1) 
 
-    if args.beam_type == "pert_sim" and args.per_ant:
-        mid_freq = freqs[args.Nfreqs // 2]
-        closest_chan = np.argmin(np.abs(mid_freq - pow_sb.freq_array))
-        mean_mode = unpert_sb.bess_fits[:, :, 0, 0, 0, closest_chan]
-        mean_mode = mean_mode / np.sqrt(np.sum(np.abs(mean_mode)**2))
-        pca_modes = np.load(args.pca_modes)[:, :args.Nbasis - 1].reshape(args.nmax, 2 * args.mmax + 1, args.Nbasis - 1) 
 
+            Pmatr = np.concatenate([mean_mode[:, :, None], pca_modes], axis=2)
 
-        Pmatr = np.concatenate([mean_mode[:, :, None], pca_modes], axis=2)
-
-        BPmatr = np.tensordot(bess_matr, Pmatr, axes=1).transpose(3, 0, 1, 2) # Nbasis, Ntimes, Nsrc, Naz
-        Dmatr = np.sum(BPmatr * trig_matr, axis=3).transpose(1, 2, 0) # Ntimes, Nsrc, Nbasis
-    elif args.beam_type in ["unpert", "pert_sim"]:
-        comp_inds = unpert_sb.get_comp_inds()
-        nmodes = comp_inds[0][:, 0, 0, 0]
-        mmodes = comp_inds[1][:, 0, 0, 0]
-        bsparse = bess_matr[:, :, nmodes[:args.Nbasis]]
-        tsparse = trig_matr[:, :, mmodes[:args.Nbasis]]
-        Dmatr = bsparse * tsparse
+            BPmatr = np.tensordot(bess_matr, Pmatr, axes=1).transpose(3, 0, 1, 2) # Nbasis, Ntimes, Nsrc, Naz
+            Dmatr = np.sum(BPmatr * trig_matr, axis=3).transpose(1, 2, 0) # Ntimes, Nsrc, Nbasis
+        elif args.beam_type in ["unpert", "pert_sim"]:
+            bsparse = bess_matr[:, :, nmodes[:args.Nbasis]]
+            tsparse = trig_matr[:, :, mmodes[:args.Nbasis]]
+            Dmatr = bsparse * tsparse
+        else:
+            Dmatr = bess_matr[:, :, :args.Nbasis]
+            Q, R = np.linalg.qr(unpert_sb.bess_matr[:, :args.Nbasis]) # orthoganalize radial modes...
+            reshape = (args.Ntimes * args.Nptsrc, args.Nbasis)
+            shape = (args.Ntimes, args.Nptsrc, args.Nbasis)
+            Dmatr = np.linalg.solve(R.T, Dmatr.reshape(reshape).T).T.reshape(shape)
+        np.save(per_source_Dmatr_out, Dmatr)
     else:
-        Dmatr = bess_matr[:, :, :args.Nbasis]
-        Q, R = np.linalg.qr(unpert_sb.bess_matr[:, :args.Nbasis]) # orthoganalize radial modes...
-        reshape = (args.Ntimes * args.Nptsrc, args.Nbasis)
-        shape = (args.Ntimes, args.Nptsrc, args.Nbasis)
-        Dmatr = np.linalg.solve(R.T, Dmatr.reshape(reshape).T).T.reshape(shape)
-    np.save(os.path.join(output_dir, "Dmatr.npy"), Dmatr)
-    np.save(os.path.join(output_dir, "za.npy"), za)
-    np.save(os.path.join(output_dir, "az.npy"), az)
+        Dmatr = np.load(per_source_Dmatr_out)
+
     
     # Have everything we need to analytically evaluate single-array beam
     if args.per_ant: 
