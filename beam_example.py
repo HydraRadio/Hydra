@@ -6,7 +6,7 @@ import numpy as np
 import hydra
 
 from scipy.sparse.linalg import cg, gmres, bicgstab
-from scipy.stats import norm
+from scipy.stats import norm, rayleigh
 import multiprocessing
 from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
                          convert_to_tops
@@ -856,9 +856,9 @@ if __name__ == '__main__':
             density=True
         )
         bin_cent = (bins[:-1] + bins[1:]) / 2
-        half_norm = 2 * norm.pdf(bin_cent)
-        ax.plot(bin_cent, half_norm, linestyle="--", color="black")
-        ax.set_xlabel("absolute $z$-score")
+        rayl = rayleigh.pdf(bin_cent, scale=1/np.sqrt(2))
+        ax.plot(bin_cent, rayl, linestyle="--", color="black")
+        ax.set_xlabel("|z|")
         ax.set_ylabel("Probability Density")
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "image_z_score.pdf"))
@@ -1013,38 +1013,54 @@ if __name__ == '__main__':
             bbox_inches="tight"
         )
 
-        fig, ax = plt.subplots(figsize=(3.25, 3.25))
+        fig, ax = plt.subplots(figsize=(6.5, 3.25), nrows=2)
         mode_numbers = np.arange(1, args.Nbasis + 1)
-        ax.plot(
+        FB_stds = np.sqrt(np.abs(np.diag(post_cov[midchan])))
+        FB_stds_comp = FB_stds / np.sqrt(2)
+        these_comp_fits = unpert_sb.comp_fits[0, 0, midchan]
+        ax[0].plot(
             mode_numbers,
-            np.abs(MAP_soln[midchan])**2, 
+            np.abs(MAP_soln[midchan]), 
             color="lightcoral",
             label="MAP Beam"
         )
-        ax.plot(
+        ax[0].plot(
             mode_numbers,
-            np.abs(unpert_sb.comp_fits[0,0, midchan])**2, 
-            color="lightcoral",
+            FB_stds,
             linestyle="--",
-            label="Unperturbed Beam"
-        )
-        ax.plot(
-            mode_numbers,
-            np.abs(np.diag(post_cov[midchan])),
-            linestyle=":",
             color="black",
             label="Posterior Variance"
         )
-        ax.set_xlabel("Mode Number")
-        ax.set_ylabel(r"$|b_n|^2$")
-        ax.set_yscale("log")
-        ax.set_xscale("log")
-        ax.legend(frameon=False)
-        fig.tight_layout()
+        ax[1].plot(
+            mode_numbers,
+            np.abs(MAP_soln[midchan] - these_comp_fits) / (FB_stds_comp),
+            color="lightcoral",
+        )
+        ax[1].set_xlabel("Mode Number")
+        ax[0].set_ylabel(r"$|b_n|$")
+        ax[1].set_ylabel("$|z|$")
+        for ax_ob in ax:
+            ax_ob.set_yscale("log")
+            ax_ob.set_xscale("log")
+        ax[0].legend(frameon=False)
+        ax[0].tick_params(
+            which="both", 
+            axis="x", 
+            direction="in", 
+            labelbottom=False
+        )
+        ax[1].tick_params(which="both", top=True, direction="in")
+        fig.tight_layout(h_pad=0)
         fig.savefig(os.path.join(output_dir, "FB_coeff_lines.pdf"),
                     bbox_inches="tight")
 
         evals, evecs = np.linalg.eig(post_cov[midchan])
+        np.save(
+            os.path.join(output_dir, "evals.npy"), evals
+        )
+        np.save(
+            os.path.join(output_dir, "evecs.npy"), evecs
+        )
         fig, ax = plt.subplots(figsize=[3.25, 3.25])
         ax.plot(mode_numbers, evals.real, color="goldenrod")
         ax.set_xscale("log")
