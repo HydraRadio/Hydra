@@ -788,7 +788,7 @@ if __name__ == '__main__':
             norm=LogNorm(**beam_color_scale),
             cmap="inferno",
         )
-        ax[0, 0].set_title("Inferred Beam")
+        ax[0, 0].set_title("MAP Beam")
         fig.colorbar(im, ax=ax[0,0])
 
         image_var = np.einsum("bB,azb,azB->az",
@@ -904,7 +904,7 @@ if __name__ == '__main__':
 
             fig, ax = plt.subplots(figsize=[6.5, 3.25])
             beam_obs = [input_beam, plotbeam.real]
-            beam_labels = ["Perturbed Beam", "Inferred Beam"]
+            beam_labels = ["Perturbed Beam", "MAP Beam"]
             plot_beam_slice(ax, beam_obs, beam_labels)
             fig.tight_layout()
             fig.savefig(os.path.join(output_dir, "input_residual_line_plot.pdf"))
@@ -953,7 +953,7 @@ if __name__ == '__main__':
             label="Unperturbed Beam",
         )
         ax[0].hist(to_hist_ppd.flatten(), bins=bins, histtype="step", density=True, 
-                label="Inferred Beam")
+                   label="Inferred Beam")
 
         for ax_ob in ax:
             ax_ob.set_xlabel(r"$z$-score")
@@ -998,19 +998,66 @@ if __name__ == '__main__':
             bbox_inches="tight"
         )
 
-        fig, ax = plt.subplots(figsize=(6.5, 3.25), nrows=2)
-        im = ax[0].matshow(np.abs(post_cov[midchan]), cmap="inferno")
-        ax[0].set_title(r"$|\Sigma_\mathrm{post}|$")
-        fig.colorbar(im, ax=ax[0])
-
-        ax.matshow(np.angle(post_cov[midchan]), cmap="twilight")
-        im = ax[1].set_title(r"arg($\Sigma_\mathrm{post}$)")
-        fig.colorbar(im, ax=ax[0])
+        fig, ax = plt.subplots(figsize=(6.5, 6.5))
+        im = ax.matshow(
+            np.abs(post_cov[midchan]), 
+            cmap="inferno",
+            norm=LogNorm()
+        )
+        ax.set_title("Mode Number")
+        ax.set_ylabel("Mode Number")
+        fig.colorbar(im, ax=ax, label=r"$|\Sigma_\mathrm{post}|$")
         fig.tight_layout()
         fig.savefig(
-            os.path.join(output_dir, "cov_plot.pdf"),
+            os.path.join(output_dir, "post_cov.pdf"),
             bbox_inches="tight"
         )
+
+        fig, ax = plt.subplots(figsize=(3.25, 3.25))
+        mode_numbers = np.arange(1, args.Nbasis + 1)
+        ax.plot(
+            mode_numbers,
+            np.abs(MAP_soln[midchan])**2, 
+            color="lightcoral",
+            label="MAP Beam"
+        )
+        ax.plot(
+            mode_numbers,
+            np.abs(unpert_sb.comp_fits[0,0, midchan])**2, 
+            color="lightcoral",
+            linestyle="--",
+            label="Unperturbed Beam"
+        )
+        ax.plot(
+            mode_numbers,
+            np.abs(np.diag(post_cov[midchan])),
+            linestyle=":",
+            color="black",
+            label="Posterior Variance"
+        )
+        ax.set_xlabel("Mode Number")
+        ax.set_ylabel(r"$|b_n|^2$")
+        ax.set_yscale("log")
+        ax.set_xscale("log")
+        ax.legend(frameon=False)
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_dir, "FB_coeff_lines.pdf"),
+                    bbox_inches="tight")
+
+        evals, evecs = np.linalg.eig(post_cov[midchan])
+        fig, ax = plt.subplots(figsize=[3.25, 3.25])
+        ax.plot(mode_numbers, evals.real, color="goldenrod")
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_ylabel("Eigenvalues")
+        ax.set_xlabel("Mode Number")
+        fig.tight_layout()
+        fig.savefig(
+            os.path.join(output_dir, "cov_evals.pdf"),
+            bbox_inches="tight"
+        )
+
+
 
 
 
