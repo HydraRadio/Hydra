@@ -5,7 +5,6 @@ import time, os
 import numpy as np
 import hydra
 
-from scipy.sparse.linalg import cg, gmres, bicgstab
 from scipy.stats import norm, rayleigh
 import multiprocessing
 from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
