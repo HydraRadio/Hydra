@@ -1018,6 +1018,7 @@ if __name__ == '__main__':
         FB_stds = np.sqrt(np.abs(np.diag(post_cov[midchan])))
         whitener = cholesky(LHS[midchan], lower=False)
         these_comp_fits = unpert_sb.comp_fits[0, 0, midchan]
+        z_update = np.abs((MAP_soln[midchan] - these_comp_fits))/FB_stds
         ax[0].plot(
             mode_numbers,
             np.abs(MAP_soln[midchan]), 
@@ -1027,13 +1028,19 @@ if __name__ == '__main__':
         ax[0].plot(
             mode_numbers,
             FB_stds,
-            linestyle="--",
-            color="black",
+            color="goldenrod",
             label="Posterior Std."
+        )
+        ax[0].plot(
+            mode_numbers,
+            np.abs(unpert_sb.comp_fits[0,0,0]),
+            linestyle=":",
+            color="black",
+            label="Prior Std."
         )
         ax[1].plot(
             mode_numbers,
-            np.abs((MAP_soln[midchan] - these_comp_fits))/FB_stds,
+            z_update,
             color="lightcoral",
         )
         ax[1].set_xlabel("Mode Number")
@@ -1080,7 +1087,13 @@ if __name__ == '__main__':
             os.path.join(output_dir, "cov_evals.pdf"),
             bbox_inches="tight"
         )
-
+        fig, ax = plt.subplots(figsize=[3.25, 3.25])
+        ax.hist(z_update[200:], bins="auto", histtype="step", density=True)
+        ax.plot(rayl_x, rayl, linestyle="--", color="black")
+        ax.set_xlabel(r"$|z_\mathrm{update}|$")
+        ax.set_ylabel("Probability Density")
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_dir, "z_update_hist.pdf"), bbox_inches="tight")
 
 
 
