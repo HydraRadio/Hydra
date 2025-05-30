@@ -6,6 +6,7 @@ import numpy as np
 import hydra
 
 from scipy.stats import norm, rayleigh
+from scipy.linalg import cholesky
 from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
                          convert_to_tops
 from pyuvdata.analytic_beam import GaussianBeam, AiryBeam
@@ -1015,7 +1016,7 @@ if __name__ == '__main__':
         fig, ax = plt.subplots(figsize=(3.25, 6.25), nrows=2)
         mode_numbers = np.arange(1, args.Nbasis + 1)
         FB_stds = np.sqrt(np.abs(np.diag(post_cov[midchan])))
-        FB_stds_comp = FB_stds / np.sqrt(2)
+        whitener = cholesky(LHS[midchan], lower=False)
         these_comp_fits = unpert_sb.comp_fits[0, 0, midchan]
         ax[0].plot(
             mode_numbers,
@@ -1028,16 +1029,16 @@ if __name__ == '__main__':
             FB_stds,
             linestyle="--",
             color="black",
-            label="Posterior Variance"
+            label="Posterior Std."
         )
         ax[1].plot(
             mode_numbers,
-            np.abs(MAP_soln[midchan] - these_comp_fits) / (FB_stds_comp),
+            np.abs(whitener @ (MAP_soln[midchan] - these_comp_fits)),
             color="lightcoral",
         )
         ax[1].set_xlabel("Mode Number")
         ax[0].set_ylabel(r"$|b_n|$")
-        ax[1].set_ylabel("$|z|$")
+        ax[1].set_ylabel(r"$|\Sigma_\mathrm{post}^{-1/2}(b_n - \mu)|$")
         for ax_ob in ax:
             ax_ob.set_yscale("log")
             ax_ob.set_xscale("log")
