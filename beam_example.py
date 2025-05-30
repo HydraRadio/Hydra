@@ -1041,7 +1041,7 @@ if __name__ == '__main__':
         ax[1].set_ylabel(r"$|z_\mathrm{update}|$")
         for ax_ob in ax:
             ax_ob.set_yscale("log")
-            ax_ob.set_xscale("log")
+            # ax_ob.set_xscale("log")
         ax[0].legend(frameon=False)
         ax[0].tick_params(
             which="both", 
@@ -1071,7 +1071,7 @@ if __name__ == '__main__':
             )
         fig, ax = plt.subplots(figsize=[3.25, 3.25])
         ax.plot(mode_numbers, evals.real, color="goldenrod")
-        ax.set_xscale("log")
+        #ax.set_xscale("log")
         ax.set_yscale("log")
         ax.set_ylabel("Eigenvalues")
         ax.set_xlabel("Mode Number")
