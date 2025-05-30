@@ -1033,7 +1033,7 @@ if __name__ == '__main__':
         )
         ax[1].plot(
             mode_numbers,
-            np.abs(whitener @ (MAP_soln[midchan] - these_comp_fits)),
+            np.abs((MAP_soln[midchan] - these_comp_fits))/FB_stds,
             color="lightcoral",
         )
         ax[1].set_xlabel("Mode Number")
