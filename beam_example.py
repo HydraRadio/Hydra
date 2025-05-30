@@ -1037,8 +1037,8 @@ if __name__ == '__main__':
             color="lightcoral",
         )
         ax[1].set_xlabel("Mode Number")
-        ax[0].set_ylabel(r"$|b_n|$")
-        ax[1].set_ylabel(r"$|\Sigma_\mathrm{post}^{-1/2}(b_n - \mu)|$")
+        ax[0].set_ylabel(r"$|\mu_\mathrm{post}|$")
+        ax[1].set_ylabel(r"$|z_\mathrm{update}|$")
         for ax_ob in ax:
             ax_ob.set_yscale("log")
             ax_ob.set_xscale("log")
