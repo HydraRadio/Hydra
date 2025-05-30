@@ -855,9 +855,9 @@ if __name__ == '__main__':
             histtype="step",
             density=True
         )
-        bin_cent = (bins[:-1] + bins[1:]) / 2
-        rayl = rayleigh.pdf(bin_cent, scale=1/np.sqrt(2))
-        ax.plot(bin_cent, rayl, linestyle="--", color="black")
+        rayl_x = np.linspace(0, 10, num=100)
+        rayl = rayleigh.pdf(rayl_x, scale=1/np.sqrt(2))
+        ax.plot(rayl_x, rayl, linestyle="--", color="black")
         ax.set_xlabel("|z|")
         ax.set_ylabel("Probability Density")
         fig.tight_layout()
