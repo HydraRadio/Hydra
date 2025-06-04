@@ -1095,8 +1095,75 @@ if __name__ == '__main__':
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "z_update_hist.pdf"), bbox_inches="tight")
 
+        eval_sorter = np.argsort(evals)
+        special_ind1 = 2
+        special_ind2 = 3
+        evec_1 = evecs[:, eval_sorter][:, special_ind1]
+        evec_2 = evecs[:, eval_sorter][:, special_ind2]
+
+        fig, ax = plt.subplots(
+            figsize=[6.5, 6.5],
+            nrows=2,
+            ncols=2,
+            subplot_kw={"projection": "polar"}
+        )
+
+        min_evec_sky = np.tensordot(evec_1,
+                                    sparse_dmatr_recon,
+                                    axes=((-1,), (-1,)))
+        max_evec_sky = np.tensordot(evec_2,
+                                    sparse_dmatr_recon,
+                                    axes=((-1,), (-1,)))
+        evec_labels = [f"Eigenvector {special_ind1 + 1}", 
+                       f"Eigenvector {special_ind2 + 1}"]
+        for evec_ind, evec in enumerate([min_evec_sky, max_evec_sky]):
+            for comp_ind, comp in enumerate(["real", "imag"]):
+                ax_ob = ax[evec_ind, comp_ind]
+                im = ax_ob.pcolormesh(
+                    Az,
+                    Za * 180./np.pi,
+                    getattr(np, comp)(evec),
+                    norm=SymLogNorm(vmin=-1, vmax=1, linthresh=1e-3),
+                    cmap="Spectral"
+                )
+                ax_ob.set_title(f"{evec_labels[evec_ind]} ({comp})")
+                adjust_beamplot(ax_ob, gridcolor="black")
+        fig.tight_layout()
+        fig.colorbar(im, ax=ax.ravel().tolist(), label="Beam Value")
+        fig.savefig(
+            os.path.join(output_dir, "evec_sky.pdf"),
+            bbox_inches="tight"
+        )
 
 
+        fig, ax = plt.subplots(
+            nrows=10, 
+            ncols=2, 
+            figsize=[6.5, 32.5], 
+            subplot_kw={"projection": "polar"}
+        )
+        for evec_ind in range(10):
+            for comp_ind, comp in enumerate(["real", "imag"]):
+                evec_FB = evecs[:, eval_sorter][:, evec_ind]
+                evec = np.tensordot(evec_FB,
+                                    sparse_dmatr_recon,
+                                    axes=((-1,), (-1,)))
+                ax_ob = ax[evec_ind, comp_ind]
+                im = ax_ob.pcolormesh(
+                    Az,
+                    Za * 180./np.pi,
+                    getattr(np, comp)(evec),
+                    norm=SymLogNorm(vmin=-1, vmax=1, linthresh=1e-3),
+                    cmap="Spectral"
+                )
+                ax_ob.set_title(f"eval {evec_ind} ({comp})")
+                adjust_beamplot(ax_ob, gridcolor="black")      
+        fig.tight_layout()
+        fig.colorbar(im, ax=ax.ravel().tolist(), label="Beam Value")
+        fig.savefig(
+            os.path.join(output_dir, "smallest_evecs.pdf"),
+            bbox_inches="tight"
+        )
 
 
         
