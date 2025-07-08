@@ -62,9 +62,51 @@ class sparse_beam(UVBeam):
                 conditions for the Laplace equation in cylindrical coordinates
                 i.e. it determines whether to use 0th order or 1st order
                 Bessel functions.
+            Nfeeds (int):
+                Number of feeds to read in. This does not usually need to be set,
+                but may need to be set depending on pyuvdata version.
+            do_fit (bool):
+                Whether to do the FB fit after the beam is read in.
             alpha (float):
                 A constant to adjust where the boundary condition is satisfied
                 on the disk. Default is slightly underneath the horizon.
+            num_modes_comp (int):
+                Number of modes to use for the compressed representation of the 
+                beam.
+            nmodes_comp (array):
+                List of radial mode numbers to use for the compressed beam, if
+                not doing the fit from scratch (if not do_fit).
+            mmodes_comp (array):
+                Azimuthal mode numbers for compressed beam corresponding to 
+                radial mode numbers contained in nmodes.
+            sparse_fit_coeffs (array):
+                Sparse fit coefficients from previous run if do_fit is False.
+            perturb (bool):
+                Whether to perturb the beam.
+            za_ml (float):
+                A parameter determining the size in zenith angle for 
+                mainlobe-specific perturbations, not including coordinate
+                transformations.
+            dza (float):
+                A parameter that determines how rapidly sidelobe perturbations
+                turn on after exiting the zone delineated by za_ml.
+            Nsin_pert (int):
+                Number of sine modes for the sidelobe perturbations.
+            sin_pert_coeffs (array):
+                The low order Fourier coefficients for the sidelobe perturbations.
+            cSL (float):
+                Parameter controlling the maximum strength of the sidelobe
+                perturbations.
+            gam (float):
+                Parameter controlling additional mainlobe perturbations (Not)
+                used in Wilensky+ 2025 but was used in Choudhuri+ 2021.
+            sqrt (bool):
+                Whether to take the square root of the beam before evaluating,
+                interpolating, etc. This is useful for Eish beams (power beam
+                based E-field beams). 
+            rot (float):
+                How many radians by which to rotate the coordinate system for
+                perturbed beams.
         """
         super().__init__()
         self.bound = bound
@@ -118,7 +160,7 @@ class sparse_beam(UVBeam):
 
         elif sparse_fit_coeffs is None:
             raise ValueError(
-                "Must either set full_fit=True or supply " "sparse_fit_coeffs"
+                "Must either set do_fit=True or supply " "sparse_fit_coeffs"
             )
         else:
             self.comp_fits = sparse_fit_coeffs
