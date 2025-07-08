@@ -604,13 +604,13 @@ if __name__ == '__main__':
 
             for ant_samp_ind in range(Nants):
                 bess_trans = hydra.beam_sampler.get_bess_to_vis_from_contraction(bess_sky_contraction,
-                                                                                beam_coeffs, 
-                                                                                ants, 
-                                                                                ant_samp_ind)
+                                                                                 beam_coeffs, 
+                                                                                 ants, 
+                                                                                 ant_samp_ind)
                 
                 inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var[None, None], # add pol axes of length 1
-                                                                    ant_samp_ind, 
-                                                                    Nants)
+                                                                     ant_samp_ind, 
+                                                                     Nants)
                 if args.infnoise:
                     inv_noise_var_use[:] = 0
                 else:
@@ -619,10 +619,10 @@ if __name__ == '__main__':
                 if args.perts_only:
                     # Contract other antenna coefficients with object that has been pre-multiplied by reference beam
                     other_ants_with_ref = hydra.beam_sampler.get_bess_to_vis_from_contraction(ref_contraction,
-                                                                                            beam_coeffs, 
-                                                                                            ants, 
-                                                                                            ant_samp_ind,
-                                                                                            ref_contraction=True)
+                                                                                              beam_coeffs, 
+                                                                                              ants, 
+                                                                                              ant_samp_ind,
+                                                                                              ref_contraction=True)
                     data_use -= other_ants_with_ref
                     ant_inds = hydra.beam_sampler.get_ant_inds(ant_samp_ind, Nants)
                     # Add the term that contracts the reference beam with current antenna's perturbations

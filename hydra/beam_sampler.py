@@ -71,8 +71,8 @@ def reshape_data_arr(
     ):
     """
     Reshape a data-shaped array into a Hermitian matrix representation that is
-    more convenient for beam sampling. Makes a copy of the data twice as large
-    as the data.
+    more convenient for per-antenna beam sampling. Makes a copy of the data 
+    twice as large as the data.
 
     Parameters:
         arr (array_like, complex):
@@ -129,9 +129,10 @@ def get_bess_matr(
         mmodes (array_like):
             Which azimuthal modes to use for the Fourier-Bessel basis
         rho (array_like):
-            Radial coordinate on disc (usually a monotonic function of radio astronomer's zenith angle).
+            Radial coordinate on disc (e.g. a monotonic function of radio 
+            astronomer's zenith angle).
         phi (array_like):
-            Azimuthal coordinate on disc (usually radio astronomer's azimuth angle)
+            Azimuthal coordinate on disc (e.g. radio astronomer's azimuth angle)
 
     Returns:
         bess_matr (array_like):
@@ -173,6 +174,8 @@ def fit_bess_to_beam(
     """
     Get the least-squares fit Fourier-Bessel coefficients for a beam based on 
     its value at a set of points in a polar projection defined by rho and phi.
+    If using uniformly gridded zenith-angle-azimuth coordinates, hydra.sparse_beam
+    may be a better option.
 
     Parameters:
         beam (pyuvsim.Beam):
@@ -305,7 +308,8 @@ def get_bess_outer(
 
     Parameters:
         bess_matr (array_like):
-            The Fourier-Bessel design matrix in question.
+            The Fourier-Bessel design matrix in question that goes from FB mode
+            to source position (may have a time axis in addition to a source axis).
     Returns:
         bess_matr_outer (array_like):
             The desired outer product.
@@ -435,6 +439,14 @@ def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
             antennas (in meters) relative to the array center.
         ant_samp_ind (int):
             Index of the antenna being sampled.
+        ref_contraction (bool):
+            Whether a ref_contraction was involved in the construction of the
+            bess_sky_contraction (changes the shape of the contraction done in
+            this step).
+    Returns:
+        bess_trans (array, complex):
+            An operator that takes a given antenna's beam coefficients and 
+            returns visibilities.
     """
     Nants = len(ants)
     ant_inds = get_ant_inds(ant_samp_ind, Nants)
@@ -452,33 +464,6 @@ def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
     )
 
     return bess_trans
-
-
-def get_lin_approx_bess_to_vis(ref_contraction):
-    Nants = ref_contraction.shape[-3]
-    Npols, Nfreqs, Ntimes, Nants = ref_contraction.shape[1:5]
-    assert Npols == 1, "Polarized analysis is not available for this approximation"
-    Nbls = (Nants * Nants - 1)//2
-    Ncoeff = ref_contraction.shape[-1]
-    lin_approx_bess_to_vis = np.zeros([Npols, Npols, Nfreqs, Ntimes, Nbls, Nants, Ncoeff, 2, 2])
-    sigz = np.array([[1, 0], 
-                     [0, -1]])
-
-    # Ewww, pointer walk
-    bl_start = 0
-    for ant_ind in range(Nants):
-        ant_inds = slice(ant_ind +1, Nants)
-        Nants_this_ant = Nants - 1 - ant_ind
-        bl_stop = bl_start + Nants_this_ant
-        bl_inds = slice(bl_start, bl_stop)
-        ref_this_ant = ref_contraction[:, :, :, :, ant_inds, ant_ind]
-        ref_this_ant_real = split_real_imag(ref_this_ant)
-        lin_approx_bess_to_vis[:, :, :, :, bl_inds, ant_ind] = ref_this_ant_real
-        # Talks to conjugate
-        lin_approx_bess_to_vis[:, :, :, :, bl_inds, ant_inds] = ref_this_ant_real * sigz
-        bl_start += Nants_this_ant
-    
-    return lin_approx_bess_to_vis
 
 
 def get_bess_to_vis(
@@ -602,21 +587,21 @@ def get_bess_to_vis(
 
 def get_cov_Qdag_Ninv_Q(inv_noise_var, bess_trans, cov_tuple):
     """
-    Construct the nontrivial part of the LHS operator for the Gibbs sampling.
+    Construct the nontrivial part of the LHS operator for the per-antenna 
+    Gibbs sampling.
 
     Parameters:
         inv_noise_var (array_like):
             Inverse variance of same shape as vis. Assumes diagonal covariance
             matrix, which is true in practice.
+        bess_trans: (array_like): (Complex) matrix that, when applied to a
+            vector of Zernike coefficients for one antenna, returns the
+            visibilities associated with that antenna.
         cov_tuple (tuple of array):
             Factorized prior covariance matrix in the sense of the tensor product.
             In other words each element is a prior covariance over a given axis
             of the beam coefficients (mode, frequency, complex component), and
             the total covariance is the tensor product of these matrices.
-        bess_trans: (array_like): (Complex) matrix that, when applied to a
-            vector of Zernike coefficients for one antenna, returns the
-            visibilities associated with that antenna.
-
     Returns:
         cov_Qdag_Ninv_Q (array_like):
             The prior covariance matrix multiplied by the inverse noise covariance
@@ -682,7 +667,7 @@ def apply_operator(x, cov_Qdag_Ninv_Q):
     Ax1 = np.tensordot(cov_Qdag_Ninv_Q, x, axes=((4, 5, 7, 8), (3, 0, 4, 1)))
     Ax1 = (Ax1[:, :, :, range(Npol), :, range(Npol)]).transpose((0, 2, 3, 1, 4))
 
-    # Second term is identity due to preconditioning
+    # Second term is identity due to preconditioning with cov
     Ax = (Ax1 + x).transpose((1, 2, 0, 3, 4))
     return Ax
 
@@ -704,7 +689,9 @@ def get_std_norm(shape):
     return std_norm
 
 
-def construct_rhs(vis, inv_noise_var, mu, bess_trans, cov_tuple, cho_tuple, flx=True):
+def construct_rhs(
+        vis, inv_noise_var, mu, bess_trans, cov_tuple, cho_tuple, flx=True
+):
     """
     Construct the right hand side of the Gaussian Constrained Realization (GCR)
     equation.
@@ -821,17 +808,17 @@ def make_prior_cov(
     Parameters:
         freqs (array_like):
             Frequencies over which the covariance matrix is calculated.
-        times (array_like):
-            Times over which the covariance matrix is calculated.
-        ncoeff (int):
-            Number of Zernike coefficients in use.
         std (float):
             Square root of the diagonal entries of the matrix.
         sig_freq (float):
             Correlation length in frequency.
-        contraint (bool):
+        Nbasis (int):
+            Number of FB modes in use.
+        constrain_phase (bool):
             Whether to constrian the phase of the beams or not. Currently just
             constrains them to have only small variations in the imaginary part.
+        contraint:
+            Strength of the constraint (variance of the imaginary component).
         ridge (float):
             A ridge adjustment for the freq-freq covariance matrix, to make it
             better-conditioned when the correlation length is long.
@@ -839,7 +826,8 @@ def make_prior_cov(
             Path to file for covariance matrix.
     Returns:
         cov_tuple (array_like):
-            Tuple of tensor components of covariance matrix.
+            Tuple of tensor components of covariance matrix. Tne entries are
+            (freq_cov, complex_component_cov, basis_function_cov).
     """
     freq_col = non_norm_gauss(1, sig_freq, freqs - freqs[0])
     freq_col[0] += ridge
@@ -857,6 +845,19 @@ def make_prior_cov(
     return cov_tuple
 
 def check_cho(cho, cov):
+    """
+    Check whether the cholesky decomposition returned a good result for a given
+    covariance matrix. 
+
+    Parameters:
+        cho (array):
+            The cholesky decomposition of cov.
+        cov (array):
+            The covariance matrix in question.
+    Raises:
+        LinAlgError: 
+            If cho@cho.T.conj() not close to cov.
+    """
     prod = cho @ cho.T.conj()
     allclose = np.allclose(prod, cov)
     if not allclose:
@@ -898,7 +899,7 @@ def do_cov_cho(
 def get_beam_from_FB_coeff(beam_coeffs, za, az, nmodes, mmodes):
     """
     Gets a beam from a list of beam coefficients at desired zenith angle and
-    azimuth.
+    azimuth. Computes a design matrix on the fly (can be slow).
 
     Parameters:
         beam_coeffs (complex_array): Fourier-Bessel coefficients of a particular
@@ -941,18 +942,28 @@ def plot_FB_beam(
     Plots a Fourier_Bessel beam at specified zenith angles and azimuths.
 
     Parameters:
-        beam (array_like): Beam evaluated at a grid of za, az
-        za (array): zenith angles in radians
-        az (array): azimuths in radians
-        vmin (float): Minimum value to plot
-        vmax (float): Max value to plot
-        norm (matplotlib colormap normalization): Which colormap normalization to use.
-        linthresh (float): The linear threshold for the SymLogNorm map
-        cmap (str): colormap
-        kwargs: other keyword arguments for colormap normalization
-
-    Returns:
-        None
+        beam (array_like): 
+            Beam evaluated at a grid of za, az
+        za (array): 
+            zenith angles in radians
+        az (array): 
+            azimuths in radians
+        vmin (float): 
+            Minimum value to plot
+        vmax (float): 
+            Max value to plot
+        norm (matplotlib colormap normalization): 
+            Which colormap normalization to use.
+        linthresh (float): 
+            The linear threshold for the SymLogNorm map
+        cmap (str): 
+            valid matplotlib colormap
+        save (bool):
+            Whether to save the file.
+        fn (str):
+            The name of the file to save.
+        kwargs: 
+            other keyword arguments for colormap normalization
     """
 
     Az, Za = np.meshgrid(az, za)
@@ -1027,6 +1038,21 @@ def get_zernike_azim(theta, m):
 
 
 def get_zernike_matrix(nmax, theta, r):
+    """
+    Get a design matrix based on zernike polynomials. Gets all modes up to some
+    mode number.
+
+    Parameters:
+        nmax (int):
+            Maximum mode number.
+        theta (array):
+            Azimuthal angles for Zernike modes.
+        r (array):
+            Radial coordinates for Zernike modes.
+    Returns:
+        zern_matr (array):
+            Zernike polynomials evaluated at coordinate locations.
+    """
     ncoeff = (nmax + 1) * (nmax + 2) // 2
     zern_matr = np.zeros((ncoeff,) + theta.shape)
 
@@ -1058,7 +1084,6 @@ def get_pert_beam(
     Nfeeds=2,
     num_modes_comp=32,
     save=False,
-    outdir="",
     load=False,
     trans_x=0.,
     trans_y=0.,
@@ -1075,25 +1100,24 @@ def get_pert_beam(
             Path to unperturbed beam file.
         outfile (str):
             Where to save the outputs.
-        trans_std (float):
-            Standard deviation for random tilt of beam, in units of FB radial coordinate.
-        rot_std_std (float):
-            Standard deviation for random beam rotation, in degrees.
-        stretch_std (float):
-            Standard deviation for random beam stretching.
+        cSL (float):
+            Maximum strength of the sidelobe perturbations.
         mmax (int):
             The maximum azimuthal mode number to use.
         nmax (int):
             The maximum radial mode number to use in the FB basis.
         sqrt (bool):
             Whether to take the square root of the unperturbed beam before
-            fitting. Used for power beams.
+            fitting. Used for Eish beams (power beam based E-field beams).
         Nfeeds (int):
             Number of feeds. Set to None if using E-field beam, 2 for power beam.
         num_modes_comp (int):
             Does nothing, but will slow down the code if set to a high number.
         save (bool):
-            Whether to save the fit coefficients to the perturbed beam.
+            Whether to save the perturbed beam evaluated on a grid. Also saves
+            fit coefficients _of the perturbed beam_.
+        load (bool):
+            Whether to load the perturbed beam from a previously saved file.
         outdir (str):
             Path to directory to save output.
         trans_x (float):
@@ -1110,7 +1134,8 @@ def get_pert_beam(
             Perturbation coefficients for the sidelobes.
     Returns:
         sb (sparse_beam):
-            Perturbed sparse_beam instance.
+            Perturbed sparse_beam instance. Can use its interp method to evaluate
+            a perturbed beam.
     """
 
     mmodes = np.arange(-mmax, mmax + 1)
@@ -1146,72 +1171,9 @@ def get_pert_beam(
     return sb
 
 
-def init_beam_sampler(beams, freqs, beam_mmax, beam_nmax):
-    """ """
-    beam_nmodes, beam_mmodes = np.meshgrid(
-        np.arange(1, beam_nmax + 1), np.arange(-beam_mmax, beam_mmax + 1)
-    )
-    beam_nmodes = beam_nmodes.flatten()
-    beam_mmodes = beam_mmodes.flatten()
-
-    za_fit = np.arange(91) * np.pi / 180
-    rho_fit = np.sqrt(1 - np.cos(za_fit)) / args.rho_const
-    phi_fit = np.linspace(0, 2 * np.pi, num=360)
-    PHI, RHO = np.meshgrid(phi_fit, rho_fit)
-
-    bess_matr_fit = get_bess_matr(beam_nmodes, beam_mmodes, RHO, PHI)
-
-    beam_coeffs_fit = fit_bess_to_beam(
-        beams[0], 1e6 * freqs, beam_nmodes, beam_mmodes, RHO, PHI, force_spw_index=True
-    )
-
-    print("\tBeam best fit dynamic range:")
-    print("\t", np.amax(np.abs(beam_coeffs_fit)), np.amin(np.abs(beam_coeffs_fit)))
-
-    txs, tys, tzs = convert_to_tops(ra, dec, times, array_latitude)
-
-    # area-preserving
-    rho = np.sqrt(1 - tzs) / args.rho_const
-    phi = np.arctan2(tys, txs)
-    bess_matr = hydra.beam_sampler.get_bess_matr(beam_nmodes, beam_mmodes, rho, phi)
-
-    # All the same, so just repeat (for now)
-    beam_coeffs = np.array(Nants * [beam_coeffs_fit])
-    # Want shape ncoeff, Nfreqs, Nants, Npol, Npol
-    beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
-    np.save(os.path.join(output_dir, "best_fit_beam"), beam_coeffs)
-    ncoeffs = beam_coeffs.shape[0]
-
-    if PLOTTING:
-        plot_beam_cross(beam_coeffs, 0, 0, "_best_fit")
-
-    amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
-    flux_use = get_flux_from_ptsrc_amp(amp_use, freqs, beta_ptsrc)
-
-    # Hardcoded parameters. Make variations smooth in time/freq.
-    sig_freq = 0.5 * (freqs[-1] - freqs[0])
-    cov_tuple = hydra.beam_sampler.make_prior_cov(
-        freqs, times, ncoeffs, args.beam_prior_std, sig_freq, ridge=1e-6
-    )
-    cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
-    cov_tuple_0 = hydra.beam_sampler.make_prior_cov(
-        freqs,
-        times,
-        ncoeffs,
-        args.beam_prior_std,
-        sig_freq,
-        ridge=1e-6,
-        constrain_phase=True,
-        constraint=1,
-    )
-    cho_tuple_0 = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
-
-    # Be lazy and just use the initial guess.
-    coeff_mean = beam_coeffs[:, :, 0]
-    bess_outer = hydra.beam_sampler.get_bess_outer(bess_matr)
-
-def get_loglike_from_bsc(beam_coeffs, bess_sky_contraction, inv_noise_var, data,
-                         ants):
+def get_loglike_from_bsc(
+        beam_coeffs, bess_sky_contraction, inv_noise_var, data, ants
+):
     """
     Calculate the log-likelihood of some beam coefficients.
 
