@@ -934,6 +934,7 @@ def plot_FB_beam(
     linthresh=1e-3,
     cmap="Spectral",
     save=False,
+    fn="",
     **kwargs,
 ):
     """
