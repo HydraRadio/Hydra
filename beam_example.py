@@ -130,7 +130,7 @@ def plot_beam_slice(
     line_ax.set_xlabel("Zenith Angle (degrees)")
     line_ax.set_ylabel("Beam Response")
     line_ax.set_yscale("log")
-    line_ax.legend(frameon=False)
+    line_ax.legend(frameon=False, ncols=2)
 
     return
 
@@ -215,6 +215,9 @@ if __name__ == '__main__':
     parser.add_argument("--perts-only", action="store_true", required=False,
                         dest="perts_only",
                         help="Only constrain perturbations rather than the full beam shape")
+    parser.add_argument("--missing-sources", required=False, 
+                        action="store_true", dest="missing_sources",
+                        help="Whether to drop the bottom 10 percent of sources when inferring the beam")
     
     # Point source sim params
     parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 2*np.pi),
@@ -299,6 +302,7 @@ if __name__ == '__main__':
     output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/Nbasis/{args.Nbasis}"
     output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}"
     output_dir = f"{output_dir}/decent_prior/{args.decent_prior}/csl/{args.csl}"
+    output_dir = f"{output_dir}/missing_sources/{args.missing_sources}"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     print("\nOutput directory:", output_dir)
@@ -412,8 +416,18 @@ if __name__ == '__main__':
         unpert_beam_UVB = UVBeam.from_file(args.beam_file)
         unpert_beam_UVB.peak_normalize()
         unpert_beam_list = Nants * [unpert_beam_UVB]
+        if args.missing_sources:
+            amps_inference = np.copy(ptsrc_amps)
+            amps_inference[amps_inference < 1e0] = 0
+            flux_inference = get_flux_from_ptsrc_amp(
+                amps_inference, 
+                freqs * 1e-6, 
+                beta_ptsrc
+            )
+        else:
+            flux_inference = fluxes
         unpert_vis = do_vis_sim(args, ftime, times, freqs, ant_pos, Nants,
-                                ra, dec, fluxes, unpert_beam_list, array_lat, unpert_sim_outpath, ref=True)
+                                ra, dec, flux_inference, unpert_beam_list, array_lat, unpert_sim_outpath, ref=True)
 
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
@@ -686,15 +700,15 @@ if __name__ == '__main__':
         if not os.path.exists(pow_beam_Dmatr_outfile):
             Dmatr_start = time.time()
             pow_beam_Dmatr = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
-                                                                        ant_pos, 
-                                                                        fluxes, 
-                                                                        ra,
-                                                                        dec, 
-                                                                        freqs, 
-                                                                        times,
-                                                                        polarized=False, 
-                                                                        latitude=array_lat,
-                                                                        outer=False)
+                                                                         ant_pos, 
+                                                                         flux_inference, 
+                                                                         ra,
+                                                                         dec, 
+                                                                         freqs, 
+                                                                         times,
+                                                                         polarized=False, 
+                                                                         latitude=array_lat,
+                                                                         outer=False)
             Dmatr_end = time.time()
             print(f"Dmatr calculation took {Dmatr_end - Dmatr_start} seconds")
 
@@ -775,12 +789,22 @@ if __name__ == '__main__':
         plotbeam = MAP_beam[midchan]
         np.save(os.path.join(output_dir, "MAP_beam.npy"), plotbeam)
         Az, Za = np.meshgrid(unpert_sb.axis1_array, unpert_sb.axis2_array)
+        if args.missing_sources:
+            np_attr = "abs"
+        else:
+            np_attr = "real"
         beam_color_scale = {"vmin": 1e-4, "vmax": 1}
         residual_color_scale = {"vmin": -1e-2, "vmax": 1e-2, "linthresh": 1e-4}
 
-        fig, ax = plt.subplots(ncols=2, nrows=2, 
-                               subplot_kw={"projection": "polar"}, 
-                               figsize=(6.5, 6.5))
+        fig = plt.figure(figsize=[6.5, 7])
+        gs = GridSpec(3, 2)
+        ax = np.empty([2, 2], dtype=object)
+        for row_ind in range(2):
+            for col_ind in range(2):
+                ax[row_ind, col_ind] = fig.add_subplot(
+                    gs[row_ind, col_ind],
+                    projection="polar"
+                )
         im = ax[0, 0].pcolormesh(
             Az,
             Za * 180/np.pi,
@@ -816,11 +840,11 @@ if __name__ == '__main__':
             input_beam = input_beam[0, 0, midchan].reshape(Az.shape)
         else:
             input_beam = unpert_sb.data_array[0, 0, midchan]
-        errors = (input_beam - plotbeam).real
+        errors = (input_beam - plotbeam)
         im = ax[1, 0].pcolormesh(
             Az,
             Za * 180/np.pi,
-            errors,
+            errors.real,
             norm=SymLogNorm(**residual_color_scale),
             cmap="Spectral",
         )
@@ -845,8 +869,13 @@ if __name__ == '__main__':
                 else:
                     gridcolor="white"
                 adjust_beamplot(ax_ob, gridcolor=gridcolor)
+        line_ax = fig.add_subplot(gs[2, :])
+        beam_obs = [input_beam, getattr(np, np_attr)(plotbeam)]
+        beam_labels = ["Perturbed Beam", "MAP Beam"]
+        plot_beam_slice(line_ax, beam_obs, beam_labels)
         fig.tight_layout()
-        fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"))
+        fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"),
+                    bbox_inches="tight")
 
         fig, ax = plt.subplots(figsize=[3.25, 3.25])
         _, bins, _ = ax.hist(
@@ -861,7 +890,8 @@ if __name__ == '__main__':
         ax.set_xlabel("|z|")
         ax.set_ylabel("Probability Density")
         fig.tight_layout()
-        fig.savefig(os.path.join(output_dir, "image_z_score.pdf"))
+        fig.savefig(os.path.join(output_dir, "image_z_score.pdf"),
+                    bbox_inches="tight")
 
 
         if args.beam_type == "pert_sim":
@@ -898,16 +928,9 @@ if __name__ == '__main__':
             beam_obs = [unpert_beam, input_beam]
             beam_labels = ["Unperturbed", "Perturbed"]
             plot_beam_slice(line_ax, beam_obs, beam_labels)
-
             fig.tight_layout()
-            fig.savefig(os.path.join(output_dir, "input_residual_plot.pdf"))
-
-            fig, ax = plt.subplots(figsize=[6.5, 3.25])
-            beam_obs = [input_beam, plotbeam.real]
-            beam_labels = ["Perturbed Beam", "MAP Beam"]
-            plot_beam_slice(ax, beam_obs, beam_labels)
-            fig.tight_layout()
-            fig.savefig(os.path.join(output_dir, "input_residual_line_plot.pdf"))
+            fig.savefig(os.path.join(output_dir, "input_residual_plot.pdf"),
+                        bbox_inches="tight")
 
             
 
@@ -952,8 +975,13 @@ if __name__ == '__main__':
             density=True,
             label="Unperturbed Beam",
         )
-        ax[0].hist(to_hist_ppd.flatten(), bins=bins, histtype="step", density=True, 
-                   label="Inferred Beam")
+        ax[0].hist(
+            to_hist_ppd.flatten(),
+            bins="auto", 
+            histtype="step", 
+            density=True, 
+            label="Inferred Beam"
+        )
 
         for ax_ob in ax:
             ax_ob.set_xlabel(r"$z$-score")
@@ -980,7 +1008,7 @@ if __name__ == '__main__':
         )
         _, _, patch2 = ax[1].hist(
             to_hist_ppd.flatten(), 
-            bins=bins, 
+            bins="auto", 
             histtype="step", 
             density=True, 
             label="Inferred Beam"
@@ -991,7 +1019,10 @@ if __name__ == '__main__':
             loc="upper left",
             frameon=False
         )
-        ax[1].set_ylim([0, 0.5])
+        if not args.missing_sources:
+            ax[1].set_ylim([0, 0.5])
+        else:
+            ax[1].set_ylim([0, 0.03])
         fig.tight_layout()
         fig.savefig(
             os.path.join(output_dir, "residual_hist.pdf"), 
@@ -1016,7 +1047,6 @@ if __name__ == '__main__':
         fig, ax = plt.subplots(figsize=(3.25, 6.25), nrows=2)
         mode_numbers = np.arange(1, args.Nbasis + 1)
         FB_stds = np.sqrt(np.abs(np.diag(post_cov[midchan])))
-        whitener = cholesky(LHS[midchan], lower=False)
         these_comp_fits = unpert_sb.comp_fits[0, 0, midchan]
         z_update = np.abs((MAP_soln[midchan] - these_comp_fits))/FB_stds
         ax[0].plot(
@@ -1163,6 +1193,15 @@ if __name__ == '__main__':
         fig.savefig(
             os.path.join(output_dir, "smallest_evecs.pdf"),
             bbox_inches="tight"
+        )
+
+        hydra.beam_sampler.plot_FB_beam(
+            plotbeam,
+            unpert_sb.axis2_array,
+            unpert_sb.axis1_array, 
+            save=True,
+            fn=os.path.join(output_dir, "beam_real_imag.pdf"),
+            linthresh=1e-4
         )
 
 
