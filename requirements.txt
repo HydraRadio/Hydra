@@ -3,7 +3,6 @@ scipy
 healpy
 matvis
 pygdsm
-healpy
 pyuvsim
 spherical
 hera_sim
