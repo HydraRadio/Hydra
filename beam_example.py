@@ -20,6 +20,41 @@ from matplotlib.gridspec import GridSpec
 
 def do_vis_sim(args, ftime, times, freqs, ant_pos, Nants, ra, dec,
                fluxes, beams, array_lat, sim_outpath, ref=False):
+    """
+    Do the visibility simulations
+
+    Parameters:
+        args (Namespace):
+            Arguments that were parsed with argparse.
+        ftime (str):
+            Path to timing file.
+        times (array):
+            LSTs to simulate (radians)
+        freqs (array):
+            Frequencies to simulate, in Hz
+        ant_pos (dict):
+            Dictionary of antenna positions.
+        Nants (int):
+            Number of antennas.
+        ra (array):
+            Right ascension of sources.
+        dec (array):
+            Declination of sources.
+        fluxes (array):
+            Flux density of sources.
+        beams (List of UVBeam, AnalyticBeam, BeamInterface):
+            Per-antenna beam objects.
+        array_lat (float):
+            The array latitude _in radians_
+        sim_outpath (str):
+            Path to output file.
+        ref (bool):
+            Whether this is a 'reference sim' based on a reference beam.
+    Returns:
+        _sim_vis (array, complex):
+            Simulated visibilities with shape (Nfreqs, Ntimes, Nants, Nants).
+            (Upper triangle?)
+    """
     if not os.path.exists(sim_outpath):
         # Run a simulation
         t0 = time.time()
@@ -60,6 +95,36 @@ def get_pert_beam(
         stretch_y=0.,
         sin_pert_coeffs=np.zeros(8, dtype=float)
 ):
+    """
+    Make a perturbed beam.
+    
+    Parameters:
+        args (Namespace):
+            Arguments that were parsed with argparse.
+        output_dir (str):
+            Path to output directory.
+        seed (int):
+            Random seed for perturbation generation.
+        trans_x (float):
+            Radians by which to translate along the az=0 direction 
+            (tilts the beam).
+        trans_y (float):
+            Radians by which to translate along the az=pi/2 direction
+            (tilts the beam).
+        rot (float):
+            How many radians by which to rotate the coordinate system for
+            perturbed beams.
+        stretch_x (float):
+            Factor by which to stretch the az=0 direction.
+        stretch_y (float):
+            Factor by which to stretch the az=pi/2 direction.
+        sin_pert_coeffs (array):
+            The low order Fourier coefficients for the sidelobe perturbations.
+    Returns:
+        pow_sb (sparse_beam):
+            A sparse_beam object whose interp method evaluates the perturbed beam
+            at the chosen coordinates.
+    """
     outfile = f"{output_dir}/perturbed_beam_beamvals_seed_{seed}.npy"
     load = os.path.exists(outfile)
     save = not load
@@ -90,6 +155,20 @@ def get_pert_beam(
     return pow_sb
 
 def get_analytic_beam(args, beam_rng):
+    """
+    Make an analytic Airy or Gaussian beam based on args.
+    
+    Parameters:
+        args (Namespace):
+            Arguments that were parsed with argparse.
+        beam_rng (np.random.Generator)
+            The random generator for beam perturbations.
+    Returns:
+        beam (AnalyticBeam):
+            The desired AnalyticBeam instance
+        beam_class (AnalyticBeam subclass):
+            The particular class of beam.
+    """
     diameter = 12. + beam_rng.normal(loc=0, scale=0.2)
     if args.beam_type == "gaussian":
         beam_class = GaussianBeam
@@ -100,6 +179,15 @@ def get_analytic_beam(args, beam_rng):
     return beam, beam_class
 
 def adjust_beamplot(ax_ob, gridcolor="white"):
+    """
+    Helper function for making 2d beam plots.
+
+    Parameters:
+        ax_ob (matplotlib.axes.Axes):
+            The axes to draw on.
+        gridcolor (str):
+            Color of the gridlines on the plot.
+    """
     yticks = np.arange(20, 100, 20)
     ax_ob.set_xticks([])
     ax_ob.set_yticks(yticks)
@@ -117,7 +205,21 @@ def plot_beam_slice(
         colors=["mediumturquoise", "mediumpurple"],
         angles=[0, 90]
 ):
-    
+    """
+    Plot a slice through a beam at some angles.
+
+    Parameters:
+        ax_ob (matplotlib.axes.Axes):
+            The axes to draw the line on.
+        beam_obs (list of beam objects):
+            The list of beam objects to slice.
+        linestyles (list of linestyle indicators):
+            A list of matplotlib linestyle indicators, corresponding to beam_obs.
+        colors (list of str):
+            The colors for the different angles that are sliced.
+        angles (list of int):
+            List of indexes into the azimuth array for the beam_obs.
+    """
     for ob, label, linestyle in zip(beam_obs, beam_labels, linestyles):
         for angle, color in zip(angles, colors):
             the_label = "%s, $\phi=$%i$^\circ$" % (label, angle)
