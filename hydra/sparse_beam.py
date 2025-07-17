@@ -107,6 +107,18 @@ class sparse_beam(UVBeam):
             rot (float):
                 How many radians by which to rotate the coordinate system for
                 perturbed beams.
+            stretch_x (float):
+                Factor by which to stretch the az=0 direction.
+            stretch_y (float):
+                Factor by which to stretch the az=pi/2 direction.
+            trans_x (float):
+                Radians by which to translate along the az=0 direction 
+                (tilts the beam).
+            trans_y (float):
+                Radians by which to translate along the az=pi/2 direction
+                (tilts the beam).
+            kwargs:
+                Additional kwargs to pass to UVBeam.read_beamfits
         """
         super().__init__()
         self.bound = bound
@@ -313,6 +325,10 @@ class sparse_beam(UVBeam):
         Parameters:
             load (bool):
                 Whether to load precomputed solutions
+            data_array (array, complex):
+                A data array to be fit. If None, just use the data_array attribute.
+                Useful for fitting the result of a perturbed beam using the
+                original basis function.
 
         Returns:
             fit_coeffs (array, complex):
@@ -415,17 +431,23 @@ class sparse_beam(UVBeam):
         data_array=None,
     ):
         """
-        Do a loop over all the axes and fit/evaluate fit in position space.
+        Do a loop over all the axes and fit _or_ evaluate fit in position space,
+        using only the radial and azimuthal modes determined by the nmodes_comp
+        and mmodes_comp attributes.
 
         Parameters:
-            fit_coeffs (array, complex):
-                Precomputed fit coefficients (if just evaluating).
             do_fit (bool):
                 Whether to do the fit (set to False if fit_coeffs supplied).
             bess_matr (array):
                 Bessel part of design matrix.
             trig_matr (array, complex):
                 Fourier part of design matrix.
+            fit_coeffs (array, complex):
+                Precomputed fit coefficients (if just evaluating).
+            freq_array (array):
+                The frequencies for the fit/evaluation.
+            data_array (array):
+                An array to be fit. If not provided, use the data_array attribute.
 
         Returns:
             fit_coeffs (array, complex; if do_fit is True):
@@ -620,6 +642,19 @@ class sparse_beam(UVBeam):
         return beam_vals, None
 
     def prep_freq_array_for_interp(self, freq_array):
+        """
+        A helper function that prepares the frequency array for 
+        interpolation.
+
+        Parameters:
+            freq_array (array):
+                The frequency array within which to interpolate.
+        Returns:
+            freq_array (array):
+                The input freq_array, potentially with its array shape modified.
+            freq_array_knots (array):
+                The knows for the freq spline.
+        """
         freq_array = np.atleast_1d(freq_array)
         assert freq_array.ndim == 1, "Freq array for interp must be exactly 1d"
 
@@ -631,6 +666,9 @@ class sparse_beam(UVBeam):
         return freq_array, freq_array_knots
 
     def clear_cache(self):
+        """
+        Clear the interpolation cache (it can take a lot of memory).
+        """
         self.az_array_dict.clear()
         self.za_array_dict.clear()
         self.trig_matr_interp_dict.clear()
@@ -646,12 +684,37 @@ class sparse_beam(UVBeam):
         raise NotImplementedError("efield_to_pstokes is not implemented yet.")
 
     def sigmoid_mod(self, rad_array=None):
+        """
+        Make the tanh-based modulator for the perturbed beam that separates
+        main lobe from sidelobe perturbations.
+
+        Parameters:
+            rad_array (array):
+                An array containing the radial coordinates. Supply if perturbing
+                the coordinate system). Otherwise just uses the rad_array attribute.
+
+        Reutrns:
+            sigmoid (array):
+                The sigmoidal function evaluated at the radial coordinates.
+        """
         if rad_array is None:
             rad_array = self.rad_array
         za_array = np.arccos(1 - (self.alpha * rad_array) ** 2)
         return 0.5 * (1 + np.tanh((za_array - self.za_ml) / self.dza))
 
     def sin_perts(self, rad_array=None):
+        """
+        Generate the Fourier based sidelobe perturbations.
+
+        Parameters:
+            rad_array (array):
+                An array containing the radial coordinates. Supply if perturbing
+                the coordinate system). Otherwise just uses the rad_array attribute.
+
+        Reutrns:
+            sin_perts (array):
+                The Fourier series evaluated at the radial coordinates.
+        """
         if rad_array is None:
             rad_array = self.rad_array
         L = self.rad_array[
@@ -665,6 +728,17 @@ class sparse_beam(UVBeam):
         return sin_pert_unnorm / sp_range
 
     def SL_pert(self, rad_array=None):
+        """
+        Combine all the sidelobe perturbations.
+
+        Parameters:
+            rad_array (array):
+                An array containing the radial coordinates. Supply if perturbing
+                the coordinate system). Otherwise just uses the rad_array attribute.
+        Returns:
+            SL_pert (array):
+                The perturbations evaluated at the radial coordinate.
+        """
         if self.sin_pert_coeffs is None:
             return np.ones_like(rad_array)
         else:
@@ -673,24 +747,29 @@ class sparse_beam(UVBeam):
             ) * self.sigmoid_mod(rad_array=rad_array)
 
     def ML_gauss_term(self, gam):
+        """
+        A contributing term to a mainlobe perturbation that essentially changes 
+        the width of the main lobe.
+
+        Parameters:
+            gam (float):
+                A scale factor that adjusts the width of the perturbation.
+        Returns:
+            gauss_term (float):
+                The gaussian term evaluated at the _unperturbed_ radial coordinates.
+        """
         return np.exp(-0.5 * self.axis2_array**2 / (gam * self.za_ml) ** 2)
 
     def ML_pert(self):
+        """
+        Generate mainlobe perturbations based on the gaussian term from
+        ML_gauss_term and the sigmoidal term.
+
+        Returns:
+            ML_pert (array):
+                The mainlobe perturbation evaluated at the _unperturbed_ radial
+                coordinates.
+        """
         sig_factor = 1 - self.sigmoid_mod()
         gauss_diff = self.ML_gauss_term(gam=self.gam) - self.ML_gauss_term(gam=1)
         return sig_factor * gauss_diff
-
-    def az_pert(self):
-        dmatr_cos = np.array(
-            [np.cos(m * self.axis1_array) for m in range(1, 1 + self.Naz_pert)]
-        ).T
-        dmatr_sin = np.array(
-            [np.sin(m * self.axis1_array) for m in range(1, 1 + self.Naz_pert)]
-        ).T
-
-        cos_modes = dmatr_cos @ self.az_cos_pert_coeffs
-        sin_modes = dmatr_sin @ self.az_sin_pert_coeffs
-
-        az_pert_unnorm = cos_modes + sin_modes
-        az_pert_range = np.amax(az_pert_unnorm) - np.amin(az_pert_unnorm)
-        return az_pert_unnorm / az_pert_range
