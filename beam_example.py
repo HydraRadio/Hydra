@@ -85,7 +85,7 @@ def run_vis_sim(args, ftime, times, freqs, ant_pos, Nants, ra, dec,
         _sim_vis = np.load(sim_outpath)
     return _sim_vis
 
-def get_pert_beam(
+def perturbed_beam(
         args, 
         output_dir, 
         seed=None,
@@ -476,7 +476,7 @@ if __name__ == '__main__':
         for ant_ind in range(Nants):
             ref_cond = args.perts_only and ant_ind == 0
             if args.beam_type == "pert_sim":
-                pow_sb = get_pert_beam(
+                pow_sb = perturbed_beam(
                     args, 
                     output_dir, 
                     seed=args.beam_seed + ant_ind
@@ -501,7 +501,7 @@ if __name__ == '__main__':
             beams = Nants * [bm]
         elif args.beam_type == "pert_sim":
             beam_rng = np.random.default_rng(seed=args.beam_seed)
-            pow_sb = get_pert_beam(
+            pow_sb = perturbed_beam(
                 args, 
                 output_dir, 
                 seed=None,
