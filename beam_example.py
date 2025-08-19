@@ -97,15 +97,22 @@ def perturbed_beam(
         sin_pert_coeffs=np.zeros(8, dtype=float)
 ):
     """
-    Make a perturbed beam.
+    Make a perturbed beam. A file named perturbed_beam_beamvals_seed_{seed}.npy
+    will be saved in the output_dir.
     
     Parameters:
         args (Namespace):
-            Arguments that were parsed with argparse.
+            Arguments that were parsed with argparse. Specifically makes use of
+            beam_file, mmax, nmax, per_ant, Nbasis, csl. If seed is not None,
+            will make use of trans_std, rot_std_deg, stretch_std, for random
+            beam generation.
         output_dir (str):
             Path to output directory.
         seed (int):
-            Random seed for perturbation generation.
+            Random seed for perturbation generation. Will ignore trans_x, 
+            trans_y, rot, stretch_x, stretch_y, and sin_pert_coeffs keywords
+            and instead use args.trans_std, args.rot_std_deg, and args.stretch_std
+            to generate random perturbations.
         trans_x (float):
             Radians by which to translate along the az=0 direction 
             (tilts the beam).
