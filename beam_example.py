@@ -17,6 +17,7 @@ import glob
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm, SymLogNorm
 from matplotlib.gridspec import GridSpec
+import matplotlib.lines as mlines
 
 def do_vis_sim(args, ftime, times, freqs, ant_pos, Nants, ra, dec,
                fluxes, beams, array_lat, sim_outpath, ref=False):
@@ -143,7 +144,7 @@ def get_pert_beam(
         sqrt=args.per_ant, Nfeeds=2, 
         num_modes_comp=args.Nbasis, 
         save=save, cSL=args.csl,
-        outdir=output_dir, load=load,
+        load=load,
         trans_x=trans_x,
         trans_y=trans_y,
         rot=rot,
@@ -203,7 +204,8 @@ def plot_beam_slice(
         beam_labels,
         linestyles=["--", "-"],
         colors=["mediumturquoise", "mediumpurple"],
-        angles=[0, 90]
+        angles=[0, 90],
+        text_ys=[2e-5, 1.5e-2],
 ):
     """
     Plot a slice through a beam at some angles.
@@ -220,19 +222,22 @@ def plot_beam_slice(
         angles (list of int):
             List of indexes into the azimuth array for the beam_obs.
     """
+    proxy_lines = []
     for ob, label, linestyle in zip(beam_obs, beam_labels, linestyles):
-        for angle, color in zip(angles, colors):
-            the_label = "%s, $\phi=$%i$^\circ$" % (label, angle)
+        proxy_lines.append(mlines.Line2D([],[],color="black",linestyle=linestyle,label=label))
+        for angle, color, y in zip(angles, colors, text_ys):
             line_ax.plot(
                         ob[:, angle], 
-                        label=the_label,
+                        label=label,
                         color=color,
-                        linestyle=linestyle
+                        linestyle=linestyle,
                     )
+            line_ax.text(80, y, "$\phi=$%i$^\circ$" % angle, color=color, 
+                         bbox={"boxstyle": 'round, pad=0.2', "facecolor": "white", "edgecolor":"white", "alpha": 0.5})
     line_ax.set_xlabel("Zenith Angle (degrees)")
     line_ax.set_ylabel("Beam Response")
     line_ax.set_yscale("log")
-    line_ax.legend(frameon=False, ncols=2)
+    line_ax.legend(handles=proxy_lines, frameon=False, ncols=2)
 
     return
 
@@ -852,7 +857,7 @@ if __name__ == '__main__':
             
             if args.decent_prior:
                 prior_mean = unpert_sb.comp_fits[0, 0]
-                inv_prior_var = 1/(args.beam_prior_std * prior_mean)**2 # Fractional uncertainty
+                inv_prior_var = 1/(args.beam_prior_std * np.abs(prior_mean))**2 # Fractional uncertainty
                 prior_Cinv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis],
                                         dtype=complex)
                 prior_Cinv = [np.diag(inv_prior_var[chan]) for chan in range(args.Nfreqs)]
