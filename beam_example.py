@@ -407,7 +407,7 @@ if __name__ == '__main__':
     # Convert to radians
     array_lat = np.deg2rad(args.array_lat)
 
-    if "Vivaldi" in args.beam_file:
+    if "vivaldi" in args.beam_file.lower():
         unpert_beam = "vivaldi"
     else:
         unpert_beam = "dipole"
