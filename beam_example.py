@@ -19,7 +19,7 @@ from matplotlib.colors import LogNorm, SymLogNorm
 from matplotlib.gridspec import GridSpec
 import matplotlib.lines as mlines
 
-def do_vis_sim(args, ftime, times, freqs, ant_pos, Nants, ra, dec,
+def run_vis_sim(args, ftime, times, freqs, ant_pos, Nants, ra, dec,
                fluxes, beams, array_lat, sim_outpath, ref=False):
     """
     Do the visibility simulations
@@ -516,7 +516,7 @@ if __name__ == '__main__':
             beams = Nants * [beam]
 
     sim_outpath = os.path.join(output_dir, "model0.npy")
-    _sim_vis = do_vis_sim(args, ftime, times, freqs, ant_pos, Nants,
+    _sim_vis = run_vis_sim(args, ftime, times, freqs, ant_pos, Nants,
                            ra, dec, fluxes, beams, array_lat, sim_outpath)
     if args.beam_type == "pert_sim":
         unpert_sim_outpath = os.path.join(output_dir, "model_unpert.npy")
@@ -533,7 +533,7 @@ if __name__ == '__main__':
             )
         else:
             flux_inference = fluxes
-        unpert_vis = do_vis_sim(args, ftime, times, freqs, ant_pos, Nants,
+        unpert_vis = run_vis_sim(args, ftime, times, freqs, ant_pos, Nants,
                                 ra, dec, flux_inference, unpert_beam_list, array_lat, unpert_sim_outpath, ref=True)
 
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
@@ -550,7 +550,7 @@ if __name__ == '__main__':
     if args.perts_only: # Subtract off the vis. made with ref beam
         ref_sim_outpath = os.path.join(output_dir, "model0_ref.npy")
         ref_beams = Nants * [ref_beam]
-        ref_beam_vis = do_vis_sim(args, ftime, times, freqs, ant_pos, 
+        ref_beam_vis = run_vis_sim(args, ftime, times, freqs, ant_pos, 
                                   Nants, ra, dec, fluxes, ref_beams, sim_outpath)
         data -= (ref_beam_vis + ref_beam_vis.swapaxes(-1, -2).conj())
         del ref_beam_vis
