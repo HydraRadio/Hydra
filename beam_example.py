@@ -495,7 +495,7 @@ if __name__ == '__main__':
                     ref_beam = UVBeam.from_file(args.beam_file)
                     ref_beam.peak_normalize()
             elif args.beam_type in ["gaussian", "airy"]:
-                # Underillimunated HERA dishes
+                # Underilluminated HERA dishes
                 beam_rng = np.random.default_rng(seed=args.beam_seed + ant_ind)
                 beam, beam_class = get_analytic_beam(args, beam_rng)
                 beams.append(beam)
