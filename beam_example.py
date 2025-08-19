@@ -592,27 +592,34 @@ if __name__ == '__main__':
     )
     per_source_Dmatr_out = os.path.join(output_dir, "Dmatr.npy")
     if not os.path.exists(per_source_Dmatr_out):
-        if args.beam_type == "pert_sim" and args.per_ant:
+        if args.beam_type == "pert_sim" and args.per_ant: # Use PCA-based basis for sqrt(power beam) in a per antenna way
+            # Need a mode for the mean of the prior. 
+            # Use the FB coeffs for the frequency closest to the center frequency of the simulation.
             mid_freq = freqs[args.Nfreqs // 2]
             closest_chan = np.argmin(np.abs(mid_freq - pow_sb.freq_array))
             mean_mode = unpert_sb.bess_fits[:, :, 0, 0, 0, closest_chan]
+            # Normalize it to have L^2 norm of 1
             mean_mode = mean_mode / np.sqrt(np.sum(np.abs(mean_mode)**2))
+            # Load the PCA modes saved on disk ahead of time -- they are expressed in FB space
             pca_modes = np.load(args.pca_modes)[:, :args.Nbasis - 1].reshape(args.nmax, 2 * args.mmax + 1, args.Nbasis - 1) 
-
-
+            # Make the full basis including the mean mode
             Pmatr = np.concatenate([mean_mode[:, :, None], pca_modes], axis=2)
-
+            # Contract with FB design matrices so that the map goes from PCA -> source coordinates
             BPmatr = np.tensordot(bess_matr, Pmatr, axes=1).transpose(3, 0, 1, 2) # Nbasis, Ntimes, Nsrc, Naz
+            # Matrix evaluating subset of FB modes at source coordinates
             Dmatr = np.sum(BPmatr * trig_matr, axis=3).transpose(1, 2, 0) # Ntimes, Nsrc, Nbasis
-        elif args.beam_type in ["unpert", "pert_sim"]:
+        elif args.beam_type in ["unpert", "pert_sim"]: # Use FB modes as in paper I/II
+            # Subset of Bessel and Fourier design matrices corresponding to compression recipe from paper I
             bsparse = bess_matr[:, :, nmodes[:args.Nbasis]]
             tsparse = trig_matr[:, :, mmodes[:args.Nbasis]]
+            # Matrix evaluating subset of FB modes at source coordinates
             Dmatr = bsparse * tsparse
-        else:
+        else: # Using analytic beams, only use radial modes
             Dmatr = bess_matr[:, :, :args.Nbasis]
             Q, R = np.linalg.qr(unpert_sb.bess_matr[:, :args.Nbasis]) # orthoganalize radial modes...
             reshape = (args.Ntimes * args.Nptsrc, args.Nbasis)
             shape = (args.Ntimes, args.Nptsrc, args.Nbasis)
+            # Get the orthogonalized basis evaluated at the source coordinates
             Dmatr = np.linalg.solve(R.T, Dmatr.reshape(reshape).T).T.reshape(shape)
         np.save(per_source_Dmatr_out, Dmatr)
     else:
