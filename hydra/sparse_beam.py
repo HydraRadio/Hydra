@@ -98,8 +98,8 @@ class sparse_beam(UVBeam):
                 Parameter controlling the maximum strength of the sidelobe
                 perturbations.
             gam (float):
-                Parameter controlling additional mainlobe perturbations (Not)
-                used in Wilensky+ 2025 but was used in Choudhuri+ 2021.
+                Parameter controlling additional mainlobe perturbations (Not
+                used in Wilensky+ 2025 but was used in Choudhuri+ 2021.)
             sqrt (bool):
                 Whether to take the square root of the beam before evaluating,
                 interpolating, etc. This is useful for Eish beams (power beam
