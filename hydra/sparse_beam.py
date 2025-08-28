@@ -88,8 +88,8 @@ class sparse_beam(UVBeam):
                 mainlobe-specific perturbations, not including coordinate
                 transformations.
             dza (float):
-                A parameter that determines how rapidly sidelobe perturbations
-                turn on after exiting the zone delineated by za_ml.
+                An angular scale in radians that determines how rapidly sidelobe 
+                perturbations turn on after exiting the zone delineated by za_ml.
             Nsin_pert (int):
                 Number of sine modes for the sidelobe perturbations.
             sin_pert_coeffs (array):
