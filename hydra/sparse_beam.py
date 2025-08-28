@@ -18,7 +18,7 @@ class sparse_beam(UVBeam):
         load=False,
         bound="Dirichlet",
         Nfeeds=None,
-        do_fit=True,
+        fit_beam=True,
         alpha=np.sqrt(1 - np.cos(46 * np.pi / 90)),
         num_modes_comp=64,
         nmodes_comp=None,
@@ -65,7 +65,7 @@ class sparse_beam(UVBeam):
             Nfeeds (int):
                 Number of feeds to read in. This does not usually need to be set,
                 but may need to be set depending on pyuvdata version.
-            do_fit (bool):
+            fit_beam (bool):
                 Whether to do the FB fit after the beam is read in.
             alpha (float):
                 A constant to adjust where the boundary condition is satisfied
@@ -75,12 +75,12 @@ class sparse_beam(UVBeam):
                 beam.
             nmodes_comp (array):
                 List of radial mode numbers to use for the compressed beam, if
-                not doing the fit from scratch (if not do_fit).
+                not doing the fit from scratch (if not fit_beam).
             mmodes_comp (array):
                 Azimuthal mode numbers for compressed beam corresponding to 
                 radial mode numbers contained in nmodes.
             sparse_fit_coeffs (array):
-                Sparse fit coefficients from previous run if do_fit is False.
+                Sparse fit coefficients from previous run if fit_beam is False.
             perturb (bool):
                 Whether to perturb the beam.
             za_ml (float):
@@ -154,7 +154,7 @@ class sparse_beam(UVBeam):
         self.az_array = self.axis1_array
         self.rad_array = self.get_rad_array()
 
-        if do_fit:
+        if fit_beam:
             self.az_grid, self.rad_grid = np.meshgrid(self.az_array, self.rad_array)
             self.ncoord = self.az_grid.size
             self.daz = self.axis1_array[1] - self.axis1_array[0]
@@ -172,7 +172,7 @@ class sparse_beam(UVBeam):
 
         elif sparse_fit_coeffs is None:
             raise ValueError(
-                "Must either set do_fit=True or supply " "sparse_fit_coeffs"
+                "Must either set fit_beam=True or supply " "sparse_fit_coeffs"
             )
         else:
             self.comp_fits = sparse_fit_coeffs
@@ -423,7 +423,7 @@ class sparse_beam(UVBeam):
 
     def sparse_fit_loop(
         self,
-        do_fit=True,
+        fit_beam=True,
         bess_matr=None,
         trig_matr=None,
         fit_coeffs=None,
@@ -436,7 +436,7 @@ class sparse_beam(UVBeam):
         and mmodes_comp attributes.
 
         Parameters:
-            do_fit (bool):
+            fit_beam (bool):
                 Whether to do the fit (set to False if fit_coeffs supplied).
             bess_matr (array):
                 Bessel part of design matrix.
@@ -450,7 +450,7 @@ class sparse_beam(UVBeam):
                 An array to be fit. If not provided, use the data_array attribute.
 
         Returns:
-            fit_coeffs (array, complex; if do_fit is True):
+            fit_coeffs (array, complex; if fit_beam is True):
                 The newly calculated fit coefficients in the sparse basis.
                 The units are in the same units as the supplied beam since the 
                 basis functions are dimensionless. 
@@ -459,7 +459,7 @@ class sparse_beam(UVBeam):
         """
         # nmodes might vary from pol to pol, freq to freq. The fit is fast, just do a big for loop.
         interp_kwargs = [bess_matr, trig_matr, fit_coeffs]
-        if do_fit:
+        if fit_beam:
             fit_coeffs = np.zeros(
                 [self.Naxes_vec, self.Nfeeds, self.Nfreqs, self.num_modes_comp],
                 dtype=complex,
@@ -485,7 +485,7 @@ class sparse_beam(UVBeam):
         for vec_ind in range(self.Naxes_vec):
             for feed_ind in range(self.Nfeeds):
                 for freq_ind in range(Nfreqs):
-                    if do_fit:
+                    if fit_beam:
                         dat_iter = data_array[vec_ind, feed_ind, freq_ind]
                     nmodes_iter = self.nmodes_comp[:, vec_ind, feed_ind, freq_ind]
                     mmodes_iter = self.mmodes_comp[:, vec_ind, feed_ind, freq_ind]
@@ -499,7 +499,7 @@ class sparse_beam(UVBeam):
                         bess_matr_mmode = bess_matr[:, nmodes_mmode]
                         trig_mode = trig_matr[:, mmode]
 
-                        if do_fit:
+                        if fit_beam:
                             az_fit_mmode = dat_iter @ trig_mode.conj()  # Nza
 
                             fit_coeffs_mmode = lstsq(bess_matr_mmode, az_fit_mmode)[0]
@@ -517,7 +517,7 @@ class sparse_beam(UVBeam):
                                 bess_matr_mmode @ fit_coeffs_mmode
                             ) * trig_mode
 
-        if do_fit:
+        if fit_beam:
             return fit_coeffs, fit_beam
         else:
             return fit_beam
@@ -616,7 +616,7 @@ class sparse_beam(UVBeam):
                 fit_coeffs_interp = interp1d(freq_array_knots, self.comp_fits, axis=2)
                 fit_coeffs = fit_coeffs_interp(freq_array)
             beam_vals = self.sparse_fit_loop(
-                do_fit=False,
+                fit_beam=False,
                 fit_coeffs=fit_coeffs,
                 bess_matr=bess_matr,
                 trig_matr=trig_matr,
