@@ -307,6 +307,29 @@ def get_interp_beam_for_sim(
         force_no_beam_sqrt = False, 
         freq_interp_kind: str = "cubic",
     ):
+    """
+    Perform beam interpolation for the various visibility simulators.
+
+    Parameters:
+        bm (pyuvdata.UVBeam or pyuvdata.BeamInterface):
+            The beam to be interpolated.
+        freq (float):
+            The frequency to interpolate to, in Hz.
+        az (array):
+            The azimuth coordinates to interpolate to, in radians.
+        za (array):
+            The zenith angle coordinates to interpolate to, in radians.
+        polarized (bool):
+            Whether this is a polarized simulation.
+        force_no_beam_sqrt (bool):
+            If True, prevents taking the beam's square root, which is a useful
+            trick for unpolarized visibility simulation. Does nothing if polarized.
+            May want to set this if working with sparse_beam objects that have
+            already been fit to power beam square roots.
+        freq_interp_kind (str):
+            The type of interpolation to use for the frequency axis. Must be
+            compatible with scipy.interp.interp1d. 
+    """
     spw_axis_present = utils.get_beam_interp_shape(bm)
     is_UVBeam = isinstance(bm, UVBeam)
     is_BI_from_UVB = (isinstance(bm, BeamInterface) and bm._isuvbeam)
