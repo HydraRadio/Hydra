@@ -348,23 +348,14 @@ def get_interp_beam_for_sim(
                 )[0]
 
     if polarized: # FIXME: Not sure how this goes with BeamInterface objects
-        if spw_axis_present:
-            interp_beam = interp_beam[:, 0, :, 0, :]
-        else:
-            interp_beam = interp_beam[:, :, 0, :]
+        interp_beam = interp_beam[:, :, 0, :]
     else:
         # Here we have already asserted that the beam is a power beam and
         # has only one polarization, so we just evaluate that one.
-        if spw_axis_present: # TODO: This branch is deprecated if we just mandate up-to-date pyuvdata
-            if force_no_beam_sqrt:
-                interp_beam = interp_beam[0, 0, 0, :]
-            else:
-                interp_beam = np.sqrt(interp_beam[0, 0, 0, :])
+        if force_no_beam_sqrt:
+            interp_beam = interp_beam[0, 0, :]
         else:
-            if force_no_beam_sqrt:
-                interp_beam = interp_beam[0, 0, :]
-            else:
-                interp_beam = np.sqrt(interp_beam[0, 0, :])
+            interp_beam = np.sqrt(interp_beam[0, 0, :])
     return interp_beam
 
 
