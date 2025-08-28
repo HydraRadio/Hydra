@@ -452,6 +452,8 @@ class sparse_beam(UVBeam):
         Returns:
             fit_coeffs (array, complex; if do_fit is True):
                 The newly calculated fit coefficients in the sparse basis.
+                The units are in the same units as the supplied beam since the 
+                basis functions are dimensionless. 
             fit_beam (array, complex):
                 The sparsely fit beam evaluated in position space.
         """
