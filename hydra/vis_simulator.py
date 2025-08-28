@@ -329,6 +329,9 @@ def get_interp_beam_for_sim(
         freq_interp_kind (str):
             The type of interpolation to use for the frequency axis. Must be
             compatible with scipy.interp.interp1d. 
+    Returns:
+        interp_beam (array_like):
+            The beam, evaluated at the positions and frequencies indicated.
     """
     spw_axis_present = utils.get_beam_interp_shape(bm)
     is_UVBeam = isinstance(bm, UVBeam)
