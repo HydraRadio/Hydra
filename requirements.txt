@@ -6,3 +6,4 @@ pygdsm
 pyuvsim
 spherical
 hera_sim
+pyuvdata>=3.2.3
