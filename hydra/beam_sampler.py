@@ -672,18 +672,19 @@ def apply_operator(x, cov_Qdag_Ninv_Q):
     return Ax
 
 
-def get_std_norm(shape):
+def gen_std_norm(shape, rng):
     """
     Get an array of complex standard normal samples.
 
     Parameters:
         shape (array_like): Shape of desired array.
+        rng (numpy.random.RNG): A numpy random number generator.
 
     Returns:
         std_norm (array_like): desired complex samples.
     """
     std_norm = (
-        np.random.normal(size=shape) + 1.0j * np.random.normal(size=shape)
+        rng.random.normal(size=shape) + 1.0j * rng.random.normal(size=shape)
     ) / np.sqrt(2)
 
     return std_norm
@@ -724,8 +725,8 @@ def construct_rhs(
     flx1_shape = vis.shape
 
     if flx:
-        flx0 = get_std_norm(flx0_shape)
-        flx1 = get_std_norm(flx1_shape)
+        flx0 = gen_std_norm(flx0_shape)
+        flx1 = gen_std_norm(flx1_shape)
     else:
         flx0 = np.zeros(flx0_shape)
         flx1 = np.zeros(flx1_shape)
