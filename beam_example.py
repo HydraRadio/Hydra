@@ -242,11 +242,10 @@ if __name__ == '__main__':
                                                       num_modes_comp=32, save=save,
                                                       outdir=args.output_dir, load=load)        
             beams.append(pow_sb)
-        elif args.beam_type == "gaussian":
+        elif args.beam_type in ["gaussian", "airy"]:
             np.random.seed(args.seed + ant_ind)
-            beam = pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14. + np.random.normal(loc=0, scale=0.1))
+            beam = pyuvsim.analyticbeam.AnalyticBeam(args.beam_type, diameter=14. + np.random.normal(loc=0, scale=0.1))
             beams.append(beam)
-            
         else:
             raise ValueError("beam-type arg must be 'gaussian' or 'pert_sim'")
             
@@ -261,22 +260,21 @@ if __name__ == '__main__':
     if not os.path.exists(sim_outpath):
         # Run a simulation
         t0 = time.time()
-        _sim_vis = np.zeros([args.Nfreqs, args.Ntimes, args.Nants, args.Nants],
+        _sim_vis = np.zeros([args.Nfreqs, args.Ntimes, Nants, Nants],
                             dtype=complex)
         for tind in range(args.Ntimes):
-            _sim_vis[:, tind] =  hydra.vis_simulator.simulate_vis(
+            _sim_vis[:, tind:tind + 1] =  hydra.vis_simulator.simulate_vis(
                     ants=ant_pos,
                     fluxes=fluxes,
                     ra=ra,
                     dec=dec,
                     freqs=freqs, # Make sure this is in Hz!
-                    lsts=times[tind],
+                    lsts=times[tind:tind + 1],
                     beams=beams,
                     polarized=False,
                     precision=2,
                     latitude=args.array_lat,
                     use_feed="x",
-                    multiprocess=args.multiprocess,
                     force_no_beam_sqrt=True,
                 )
             if args.beam_type == "pert_sim":
@@ -349,8 +347,7 @@ if __name__ == '__main__':
                                                                        freqs, 
                                                                        times,
                                                                        polarized=False, 
-                                                                       latitude=args.array_lat, 
-                                                                       multiprocess=args.multiprocess)
+                                                                       latitude=args.array_lat,)
     tsc = time.time() - t0
     timing_info(ftime, 0, "(0) bess_sky_contraction", tsc)
     print(f"bess_sky_contraction took {tsc} seconds")
