@@ -5,7 +5,7 @@ from scipy.special import comb, hyp2f1, jn_zeros, jn
 import matplotlib.pyplot as plt
 from matplotlib.colors import SymLogNorm
 
-from pyuvsim import AnalyticBeam
+#from pyuvsim import AnalyticBeam
 
 from .sparse_beam import sparse_beam
 from .vis_simulator import simulate_vis_per_source

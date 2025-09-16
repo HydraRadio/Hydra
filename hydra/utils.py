@@ -1,7 +1,7 @@
 import numpy as np
-from matvis import conversions
+from matvis import coordinates as conversions
 import pyuvdata
-from pyuvsim import AnalyticBeam
+#from pyuvsim import AnalyticBeam
 
 """
 # Terminal colour codes
@@ -549,13 +549,11 @@ def get_beam_interp_shape(beam):
         spw_axis_present (bool): Whether the spw axis is present.
     """
     # Check beam type to see shape for return of interp method
-    if isinstance(beam, AnalyticBeam):
-        spw_axis_present = False
-
-    elif isinstance(beam, pyuvdata.UVBeam):
+    if isinstance(beam, pyuvdata.UVBeam):
         spw_axis_present = not beam.future_array_shapes
     else:
-        raise ValueError("beam object is not AnalyticBeam or UVBeam object.")
+        spw_axis_present = False
+        #raise ValueError("beam object is not AnalyticBeam or UVBeam object.")
 
     return spw_axis_present
 

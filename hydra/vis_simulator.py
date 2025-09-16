@@ -8,7 +8,7 @@ import warnings
 from astropy.constants import c
 from pyuvdata import UVBeam
 from typing import Optional, Sequence
-from matvis import conversions
+from matvis import coordinates as conversions
 import healpy as hp
 import warnings, time
 from datetime import datetime
@@ -83,7 +83,8 @@ def run_checks(
             )
             for bm in beam_list
         ]
-
+    
+    """
     if polarized and any(b.beam_type != "efield" for b in beam_list):
         raise ValueError("beam type must be efield if using polarized=True")
     elif not polarized and any(
@@ -97,6 +98,7 @@ def run_checks(
         raise ValueError(
             "beam type must be power and have only one pol (either xx or yy) if polarized=False"
         )
+    """
     return beam_idx
 
 
@@ -248,9 +250,9 @@ def vis_sim_per_source(
                 else {}
             )
 
-            interp_beam = bm.interp(
+            interp_beam = bm.efield_eval(
                 az_array=az, za_array=za, freq_array=np.atleast_1d(freq), **kw
-            )[0]
+            )#[0]
 
             if polarized:
                 if spw_axis_present:
@@ -430,10 +432,10 @@ def simulate_vis_per_source(
     # Get coordinate transforms as a function of LST
     eq2tops = np.array([conversions.eci_to_enu_matrix(lst, latitude) for lst in lsts])
 
-    beams = [
-        conversions.prepare_beam(beam, polarized=polarized, use_feed=use_feed)
-        for beam in beams
-    ]
+    #beams = [
+    #    conversions.prepare_beam(beam, polarized=polarized, use_feed=use_feed)
+    #    for beam in beams
+    #]
 
     # Initialise output array
     if polarized:
