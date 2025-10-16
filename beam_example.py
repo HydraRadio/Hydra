@@ -822,28 +822,30 @@ if __name__ == '__main__':
         pow_beam_Dmatr_outfile = os.path.join(output_dir, "pow_beam_Dmatr.npy")
         if not os.path.exists(pow_beam_Dmatr_outfile):
             Dmatr_start = time.time()
-            pow_beam_Dmatr = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
-                                                                         ant_pos, 
-                                                                         flux_inference, 
-                                                                         ra,
-                                                                         dec, 
-                                                                         freqs, 
-                                                                         times,
-                                                                         polarized=False, 
-                                                                         latitude=array_lat,
-                                                                         outer=False)
+            pow_beam_Dmatr_dense = hydra.beam_sampler.get_bess_sky_contraction(
+                Dmatr, 
+                ant_pos, 
+                flux_inference, 
+                ra,
+                dec, 
+                freqs, 
+                times,
+                polarized=False, 
+                latitude=array_lat,
+                outer=False
+            )
             Dmatr_end = time.time()
             print(f"Dmatr calculation took {Dmatr_end - Dmatr_start} seconds")
 
 
-            pow_beam_Dmatr = pow_beam_Dmatr[0, 0]
-            np.save(pow_beam_Dmatr_outfile, pow_beam_Dmatr)
+            pow_beam_Dmatr_dense = pow_beam_Dmatr_dense[0, 0]
+            np.save(pow_beam_Dmatr_outfile, pow_beam_Dmatr_dense)
         else:
-            pow_beam_Dmatr = np.load(pow_beam_Dmatr_outfile)
+            pow_beam_Dmatr_dense = np.load(pow_beam_Dmatr_outfile)
 
 
         triu_inds = np.triu_indices(Nants, k=1)
-        pow_beam_Dmatr_fast = pow_beam_Dmatr[
+        pow_beam_Dmatr = pow_beam_Dmatr_dense[
             :, ::2, triu_inds[0], triu_inds[1]
         ] # ftub
         Ninv = inv_noise_var[:, ::2, triu_inds[0], triu_inds[1]] # ftu
@@ -856,21 +858,6 @@ if __name__ == '__main__':
             post_cov = np.load(pc_file)
             MAP_soln = np.load(MAP_file)
         else:
-            # Fast, just use einsum
-            Bdag_NinvB= np.einsum("ftub,ftu,ftuB->fbB",
-                                pow_beam_Dmatr_fast.conj(),
-                                Ninv,
-                                pow_beam_Dmatr_fast,
-                                optimize=True)
-                                        
-            inference_data = data[:, ::2, triu_inds[0], triu_inds[1]]
-
-            Ninvd = Ninv * inference_data
-            Bdag_Ninvd = np.einsum("ftub,ftu->fb",
-                                pow_beam_Dmatr_fast.conj(),
-                                Ninvd,
-                                optimize=True)
-            
             if args.decent_prior:
                 prior_mean = unpert_sb.comp_fits[0, 0]
                 inv_prior_var = 1/(args.beam_prior_std * np.abs(prior_mean))**2 # Fractional uncertainty
@@ -882,13 +869,21 @@ if __name__ == '__main__':
                 prior_Cinv = np.repeat(np.eye(args.Nbasis)[None], args.Nfreqs, axis=0)
                 prior_Cinv /= args.beam_prior_std**2
                 prior_mean = np.zeros([args.Nfreqs, args.Nbasis], dtype=complex)
-            prior_Cinv_mean = np.einsum("fbB,fB->fb",
-                                        prior_Cinv,
-                                        prior_mean,
-                                        optimize=True)
-
-            LHS = Bdag_NinvB + prior_Cinv
-            RHS = Bdag_Ninvd + prior_Cinv_mean
+            LHS = hydra.power_beam_sampler.construct_LHS(
+                pow_beam_Dmatr,
+                Ninv,
+                prior_Cinv
+            )
+            # Use every other time step. Reserve other half for PPD check.
+            inference_vis = data[:, ::2, triu_inds[0], triu_inds[1]]
+            RHS = hydra.power_beam_sampler.construct_RHS(
+                pow_beam_Dmatr,
+                Ninv,
+                prior_Cinv,
+                inference_vis,
+                prior_mean,
+                flx=False
+            )
 
             post_cov = np.linalg.inv(LHS)
             MAP_soln = np.linalg.solve(LHS, RHS[:, :, None])[:, :, 0]
@@ -898,11 +893,17 @@ if __name__ == '__main__':
             np.save(MAP_file, MAP_soln)
             np.save(pc_file, post_cov)
 
+        # Make matrix for transforming to image space.
         sparse_bmatr = unpert_sb.bess_matr[:, nmodes[:args.Nbasis]]
         sparse_tmatr = unpert_sb.trig_matr[:, mmodes[:args.Nbasis]]
-    
         sparse_dmatr_recon = sparse_bmatr[:, None] * sparse_tmatr[None, :]
 
+        ##########################################
+        # Below here is just a bunch of plotting #
+        ##########################################
+
+        
+        # Show image space projection of beam.
         # fb,zab->fza but without einsum as the middleman
         MAP_beam = np.tensordot(MAP_soln,
                                 sparse_dmatr_recon,
@@ -1057,7 +1058,7 @@ if __name__ == '__main__':
 
             
 
-        PPD_Dmatr = pow_beam_Dmatr[:, 1::2, triu_inds[0], triu_inds[1]]
+        PPD_Dmatr = pow_beam_Dmatr_dense[:, 1::2, triu_inds[0], triu_inds[1]]
 
         postdicted_mean = np.einsum(
             "ftub,fb->ftu",

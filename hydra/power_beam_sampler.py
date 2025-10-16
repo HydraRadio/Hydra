@@ -18,7 +18,7 @@ def construct_LHS(pow_beam_Dmatr, Ninv, Cinv):
             Inverse noise covariance, assumed diagonal, so of shape (NFREQS, NTIMES, NBASELINES)
         Cinv (array):
             Inverse prior covariance at each frequency, of shape (NFREQS, NBASIS, NBASIS.
-            Setting to 0 makes the return equal to the Fisher matrix.
+            Setting to 0 makes the return value equal to the Fisher matrix.
     """
     Nfreqs = Ninv.shape[0]
     Nbasis = pow_beam_Dmatr.shape[-1]
