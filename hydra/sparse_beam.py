@@ -350,14 +350,18 @@ class sparse_beam(UVBeam):
             az_fit = (
                 data_array @ self.trig_matr.conj()
             )  # Naxes_vec, Nfeeds, Nfreq, Nza, Nm
-
+            
             BtB = self.bess_matr.T @ self.bess_matr
             Baz = self.bess_matr.T @ az_fit  # Naxes_vec, Nfeeds, Nfreq, Nn, Nm
             Baz = Baz.transpose(3, 4, 0, 1, 2)  # Nn, Nm, Naxes_vec, Nfeeds, Nfreq
 
+            # Reshape Baz to have max. 2 dimensions before solving, as scipy.linalg.solve() 
+            # needs that
+            Baz_shape = Baz.shape
             fit_coeffs = solve(
-                BtB, Baz, assume_a="sym"
+                BtB, Baz.reshape((Baz.shape[0], -1)), assume_a="sym"
             )  # Nn, Nm, Naxes_vec, Nfeeds, Nfreq
+            fit_coeffs = fit_coeffs.reshape(Baz_shape)
 
             # Apply design matrices to get fit beams
             fit_beam_az = np.tensordot(
@@ -454,7 +458,7 @@ class sparse_beam(UVBeam):
                 The newly calculated fit coefficients in the sparse basis.
                 The units are in the same units as the supplied beam since the 
                 basis functions are dimensionless. 
-            fit_beam (array, complex):
+            fitted_beam (array, complex):
                 The sparsely fit beam evaluated in position space.
         """
         # nmodes might vary from pol to pol, freq to freq. The fit is fast, just do a big for loop.
@@ -478,7 +482,7 @@ class sparse_beam(UVBeam):
             beam_shape = (self.Naxes_vec, self.Nfeeds, self.Nfreqs, Npos)
             if fit_coeffs is None:  # already have some fits
                 fit_coeffs = self.comp_fits
-        fit_beam = np.zeros(beam_shape, dtype=complex)
+        fitted_beam = np.zeros(beam_shape, dtype=complex)
 
         Nfreqs = self.Nfreqs if freq_array is None else len(freq_array)
 
@@ -506,21 +510,21 @@ class sparse_beam(UVBeam):
                             fit_coeffs[vec_ind, feed_ind, freq_ind, mmode_inds] = (
                                 fit_coeffs_mmode
                             )
-                            fit_beam[vec_ind, feed_ind, freq_ind] += np.outer(
+                            fitted_beam[vec_ind, feed_ind, freq_ind] += np.outer(
                                 bess_matr_mmode @ fit_coeffs_mmode, trig_mode
                             )
                         else:
                             fit_coeffs_mmode = fit_coeffs[
                                 vec_ind, feed_ind, freq_ind, mmode_inds
                             ]
-                            fit_beam[vec_ind, feed_ind, freq_ind] += (
+                            fitted_beam[vec_ind, feed_ind, freq_ind] += (
                                 bess_matr_mmode @ fit_coeffs_mmode
                             ) * trig_mode
 
         if fit_beam:
             return fit_coeffs, fit_beam
         else:
-            return fit_beam
+            return fitted_beam
 
     def interp(
         self,
@@ -566,6 +570,10 @@ class sparse_beam(UVBeam):
                 frequencies/spatial positions. Has shape
                 (Naxes_vec, 1, Npols, Nfreqs, Npos).
         """
+        if 'az_za_grid' in kwargs.keys():
+            if kwargs['az_za_grid']:
+                raise ValueError("This object does not support `az_za_grid=True`")
+        
         if az_array is None and za_array is None and freq_array is not None:
             # vis_cpu wants to get a new object with frequency freq_array. No can do. Return the whole thing.
             # FIXME: Can make a new_sparse_beam_from_self method to accomplish this
@@ -575,7 +583,7 @@ class sparse_beam(UVBeam):
             raise ValueError("Must specify an azimuth array.")
         if za_array is None:
             raise ValueError("Must specify a zenith-angle array.")
-
+            
         if reuse_spline:
             az_hash = hashlib.sha1(az_array).hexdigest()
             za_hash = hashlib.sha1(za_array).hexdigest()
@@ -775,3 +783,4 @@ class sparse_beam(UVBeam):
         sig_factor = 1 - self.sigmoid_mod()
         gauss_diff = self.ML_gauss_term(gam=self.gam) - self.ML_gauss_term(gam=1)
         return sig_factor * gauss_diff
+
