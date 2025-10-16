@@ -21,32 +21,6 @@ import matplotlib.lines as mlines
 
 from .beam_example_utils import run_vis_sim, perturbed_beam
 
-
-
-def get_analytic_beam(args, beam_rng):
-    """
-    Make an analytic Airy or Gaussian beam based on args.
-    
-    Parameters:
-        args (Namespace):
-            Arguments that were parsed with argparse.
-        beam_rng (np.random.Generator)
-            The random generator for beam perturbations.
-    Returns:
-        beam (AnalyticBeam):
-            The desired AnalyticBeam instance
-        beam_class (AnalyticBeam subclass):
-            The particular class of beam.
-    """
-    diameter = 12. + beam_rng.normal(loc=0, scale=0.2)
-    if args.beam_type == "gaussian":
-        beam_class = GaussianBeam
-    else:
-        beam_class = AiryBeam
-    beam = beam_class(diameter=diameter)
-
-    return beam, beam_class
-
 def adjust_beamplot(ax_ob, gridcolor="white"):
     """
     Helper function for making 2d beam plots.
