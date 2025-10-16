@@ -421,7 +421,7 @@ def get_bess_sky_contraction(
 
     return bess_sky_contraction
 
-def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
+def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, Nants,
                                      ant_samp_ind, ref_contraction=False):
     """
     Get a linear operator that maps a particular antenna's beam coefficients to 
@@ -448,7 +448,6 @@ def get_bess_to_vis_from_contraction(bess_sky_contraction, beam_coeffs, ants,
             An operator that takes a given antenna's beam coefficients and 
             returns visibilities.
     """
-    Nants = len(ants)
     ant_inds = get_ant_inds(ant_samp_ind, Nants)
     beam_res = (beam_coeffs.transpose((2, 3, 1, 0, 4)))[ant_inds]  # bfApQ -> ApfbQ
     # Experimentation with opt_einsum suggests no clever speedups so just call einsum 

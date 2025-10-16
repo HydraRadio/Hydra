@@ -190,3 +190,241 @@ def get_analytic_beam(args, beam_rng):
     beam = beam_class(diameter=diameter)
 
     return beam, beam_class
+
+
+def get_parser(description):
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument("--beam-seed", type=int, action="store", default=1001,
+                        required=False, dest="beam_seed",
+                        help="Set the random seed.")
+    parser.add_argument("--chain-seed", type=str, action="store", default="None",
+                        required=False, dest="chain_seed", 
+                        help="Set a separate seed for initializing the Gibbs chain")
+    parser.add_argument("--sky-seed", type=int, action="store", default=654,
+                        dest="sky_seed")
+    parser.add_argument("--noise-seed", type=int, required=False, default=7254,
+                        dest="noise_seed")
+    
+    # Misc
+    parser.add_argument("--recalc-sc-op", action="store_true", required=False,
+                        dest="recalc_sc_op", 
+                        help="Recalculate a large operator in between iterations" \
+                            "despite that it is constant; useful for profiling")
+    parser.add_argument("--test-close", action="store_true", required=False,
+                        dest="test_close",
+                        help="Test whether linear solver solutions are close or not.")
+    
+    # Output options
+    parser.add_argument("--stats", action="store_true",
+                        required=False, dest="calculate_stats",
+                        help="Calcultae statistics about the sampling results.")
+    parser.add_argument("--diagnostics", action="store_true",
+                        required=False, dest="output_diagnostics",
+                        help="Output diagnostics.") # This will be ignored
+    parser.add_argument("--timing", action="store_true", required=False,
+                        dest="save_timing_info", help="Save timing info.")
+    parser.add_argument("--plotting", action="store_true",
+                        required=False, dest="plotting",
+                        help="Output plots.")
+    parser.add_argument("--roundup", action="store", type=int, required=False,
+                        default=1000, 
+                        help="How often to round files up and save them to one big file")
+    
+    # Array and data shape options
+    parser.add_argument('--hex-array', type=int, action="store", default=(3,4),
+                        required=False, nargs='+', dest="hex_array",
+                        help="Hex array layout, specified as the no. of antennas "
+                             "in the 1st and middle rows, e.g. '--hex-array 3 4'.")
+    parser.add_argument("--Nptsrc", type=int, action="store", default=100,
+                        required=False, dest="Nptsrc",
+                        help="Number of point sources to use in simulation (and model).")
+    parser.add_argument("--Ntimes", type=int, action="store", default=10,
+                        required=False, dest="Ntimes",
+                        help="Number of times to use in the simulation.")
+    parser.add_argument("--Nfreqs", type=int, action="store", default=10,
+                        required=False, dest="Nfreqs",
+                        help="Number of frequencies to use in the simulation.")
+    parser.add_argument("--Niters", type=int, action="store", default=100,
+                        required=False, dest="Niters",
+                        help="Number of joint samples to gather.")
+    parser.add_argument("--array-lat", type=float, required=False,
+                        default=-30.7215, action="store",
+                        dest="array_lat", help="Array latitude, in degrees.")
+    
+    # Instrumental parameters for noise estimation
+    parser.add_argument("--integration-depth", type=float, action="store",
+                        default=10., required=False, dest="integration_depth",
+                        help="Integration time, in seconds")
+    parser.add_argument("--ch-wid", type=float, action="store",
+                        default=200e6 / 2048, required=False, dest="ch_wid",
+                        help="Fine channel width for visibilities, in Hz.")
+    
+    # Computational nuances
+    parser.add_argument("--output-dir", type=str, action="store",
+                        default="./output", required=False, dest="output_dir",
+                        help="Output directory.")
+    parser.add_argument("--anneal", action="store_true", required=False,
+                        help="Slowly shift the weight between sampling form the prior and posterior over the course of many iterations.")
+    parser.add_argument("--infnoise", action="store_true", required=False,
+                        help="Sets the inverse noise variance to 0 in order to draw samples from the prior.")
+    parser.add_argument("--perts-only", action="store_true", required=False,
+                        dest="perts_only",
+                        help="Only constrain perturbations rather than the full beam shape")
+    parser.add_argument("--missing-sources", required=False, 
+                        action="store_true", dest="missing_sources",
+                        help="Whether to drop the bottom 10 percent of sources when inferring the beam")
+    
+    # Point source sim params
+    parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 2*np.pi),
+                        nargs=2, required=False, dest="ra_bounds",
+                        help="Bounds for the Right Ascension of the randomly simulated sources")
+    parser.add_argument("--dec-bounds", type=float, action="store", 
+                        default=(-np.pi/2, np.pi/2.),
+                        nargs=2, required=False, dest="dec_bounds",
+                        help="Bounds for the Declination of the randomly simulated sources")
+    parser.add_argument("--lst-bounds", type=float, action="store", 
+                        default=(np.pi/2, np.pi),
+                        nargs=2, required=False, dest="lst_bounds",
+                        help="Bounds for the LST range of the simulation, in radians.")
+    parser.add_argument("--freq-low", type=float, action="store", required=False,
+                        default=145e6, dest="freq_low", 
+                        help="Lowest frequency in the simulation, in Hz.")
+    
+    # Beam parameters
+    parser.add_argument("--beam-file", type=str, action="store",
+                        required=True, dest="beam_file",
+                        help="Path to file containing a fiducial beam.")
+    parser.add_argument("--beam-prior-std", type=float, action="store", default=1.,
+                        required=False, dest="beam_prior_std",
+                        help="Std. dev. of beam coefficient prior, in units of FB coefficient")
+    parser.add_argument("--decent-prior", action="store_true", required=False, dest="decent_prior")
+    parser.add_argument("--Nbasis", type=int, action="store", required=False, default=32,
+                        help="Number of basis functions to use for beam estimation.")
+    parser.add_argument("--nmax", type=int, action="store", default=80,
+                        required=False, help="Maximum radial mode for beam modeling.")
+    parser.add_argument("--mmax", type=int, action="store", default=45, 
+                        required=False, help="Maxmimum azimuthal mode for beam modeling.")
+    parser.add_argument("--rho-const", type=float, action="store", 
+                        default=np.sqrt(1-np.cos(np.pi * 23 / 45)),
+                        required=False, dest="rho_const",
+                        help="A constant to define the radial projection for the"
+                             " beam spatial basis")
+    parser.add_argument("--trans-std", required=False, type=float,
+                    default=0, dest="trans_std",
+                    help="Standard deviation for random tilt of beam")
+    parser.add_argument("--rot-std-deg", required=False, type=float, 
+                        dest="rot_std_deg", default=0., 
+                        help="Standard deviation for random beam rotation, in degrees.")
+    parser.add_argument("--stretch-std", required=False, type=float, 
+                        dest="stretch_std", default=1e-2, 
+                        help="Standard deviation for random beam stretching.")
+    parser.add_argument("--beam-type", required=False, type=str,
+                        dest="beam_type", default="gaussian")
+    parser.add_argument("--pca-modes", required=False, type=str,
+                        dest="pca_modes", help="Path to saved PCA eigenvectors.")
+    parser.add_argument("--per-ant", required=False, action="store_true",
+                        dest="per_ant",
+                        help="Whether to use a different beam per antenna")
+    parser.add_argument("--csl", required=False, type=float, default=0.2,
+                        help="Sidelobe modulation amplitude")
+                        
+    return parser
+
+def init_prebeam_simulation_items(args, output_dir):
+    
+    if args.chain_seed == "None":
+        chain_seed = None
+    else:
+        chain_seed = int(args.chain_seed)
+
+    # In case these are passed out of order, also shorter names
+    ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
+    dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
+    lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
+
+    # Random seed
+    beam_rng = np.random.default_rng(args.beam_seed)
+    print("    Seed:    %d" % args.beam_seed)
+
+    # Timing file
+    ftime = os.path.join(output_dir, "timing.dat")
+
+    times = np.linspace(lst_min, lst_max, args.Ntimes)
+    freqs = np.arange(args.freq_low, args.freq_low + args.Nfreqs * args.ch_wid, args.ch_wid)
+
+    skyrng = np.random.default_rng(args.sky_seed)
+    # Generate random point source locations
+    # RA goes from [0, 2 pi] and Dec from [-pi / 2, +pi / 2].
+    ra = skyrng.uniform(low=ra_low, high=ra_high, size=args.Nptsrc)
+    
+    # inversion sample to get them uniform on the sphere, in case wide bounds are used
+    U = skyrng.uniform(low=0, high=1, size=args.Nptsrc)
+    dsin = np.sin(dec_high) - np.sin(dec_low)
+    dec = np.arcsin(U * dsin + np.sin(dec_low)) # np.arcsin returns on [-pi / 2, +pi / 2]
+
+    # Generate fluxes
+    beta_ptsrc = -2.7
+    ptsrc_amps = 10.**skyrng.uniform(low=-1., high=2., size=args.Nptsrc)
+    fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs * 1e-6, beta_ptsrc) # Have to put this in MHz...
+    print("pstrc amps (input):", ptsrc_amps[:5])
+    np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
+    np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
+
+    mmodes = np.arange(-args.mmax, args.mmax + 1)
+    unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
+                                              mmodes=mmodes, Nfeeds=2, 
+                                              alpha=args.rho_const,
+                                              num_modes_comp=args.Nbasis,
+                                              sqrt=args.per_ant,
+                                              freq_range=(np.amin(freqs), np.amax(freqs)),
+                                              save_fn=f"{output_dir}/unpert_sb")
+    # Just makes some downstream code more readable
+    obs_params = {
+        "times": times,
+        "freqs": freqs
+    }
+    src_params = {
+        "ra": ra,
+        "dec": dec,
+        "beta_ptsrc": beta_ptsrc,
+        "ptsrc_amps": ptsrc_amps,
+        "fluxes": fluxes
+    }
+
+                                              
+    return chain_seed, ftime, obs_params, src_params, unpert_sb
+
+def get_array_params(args):
+    hex_array = tuple(args.hex_array)
+    assert len(args.hex_array) == 2, "hex-array argument must have length 2."
+
+    # Convert to radians
+    array_lat = np.deg2rad(args.array_lat)
+
+    ant_pos = build_hex_array(hex_spec=hex_array, d=14.6)
+    ants = np.array(list(ant_pos.keys()))
+    Nants = len(ants)
+    print("Nants =", Nants)
+
+    return array_lat, ant_pos, Nants
+
+
+def setup_args_dirs(parser):
+    args = parser.parse_args()
+    if "vivaldi" in args.beam_file.lower():
+        unpert_beam = "vivaldi"
+    else:
+        unpert_beam = "dipole"
+
+    # Check that output directory exists
+    output_dir = f"{args.output_dir}/per_ant/{args.per_ant}/beam_type/{args.beam_type}"
+    output_dir = f"{output_dir}/unpert_beam/{unpert_beam}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
+    output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/Nbasis/{args.Nbasis}"
+    output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}"
+    output_dir = f"{output_dir}/decent_prior/{args.decent_prior}/csl/{args.csl}"
+    output_dir = f"{output_dir}/missing_sources/{args.missing_sources}"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    print("\nOutput directory:", output_dir)
+
+    return args, output_dir
