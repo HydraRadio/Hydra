@@ -87,7 +87,8 @@ def run_checks(
             )
             for bm in beam_list
         ]
-
+    
+    """
     if polarized and any(b.beam_type != "efield" for b in beam_list):
         raise ValueError("beam type must be efield if using polarized=True")
     else:

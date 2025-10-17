@@ -556,7 +556,8 @@ def get_beam_interp_shape(beam):
     elif isinstance(beam, pyuvdata.UVBeam):
         spw_axis_present = not beam.future_array_shapes
     else:
-        raise ValueError("beam object is not AnalyticBeam or UVBeam object.")
+        spw_axis_present = False
+        #raise ValueError("beam object is not AnalyticBeam or UVBeam object.")
 
     return spw_axis_present
 
