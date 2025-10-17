@@ -482,13 +482,7 @@ def vis_sim_wrapper(
     
     return flux_inference, unpert_vis, data, inv_noise_var
 
-def prep_beam_Dmatr_items(args, output_dir, array_lat, times, ra, dec, unpert_sb):
-    txs, tys, tzs = convert_to_tops(ra, dec, times, array_lat)
-
-    za = np.arccos(tzs).flatten()
-    az = np.arctan2(tys, txs).flatten()
-    np.save(os.path.join(output_dir, "za.npy"), za)
-    np.save(os.path.join(output_dir, "az.npy"), az)
+def prep_beam_Dmatr_items(args, output_dir, za, az, unpert_sb):
     
     bess_matr, trig_matr = unpert_sb.get_dmatr_interp(az, 
                                                       za)
@@ -507,3 +501,12 @@ def prep_beam_Dmatr_items(args, output_dir, array_lat, times, ra, dec, unpert_sb
     )
     per_source_Dmatr_out = os.path.join(output_dir, "Dmatr.npy")
     return bess_matr, trig_matr, nmodes, mmodes, per_source_Dmatr_out, za, az
+
+def get_src_za_az(output_dir, array_lat, times, ra, dec):
+    txs, tys, tzs = convert_to_tops(ra, dec, times, array_lat)
+
+    za = np.arccos(tzs).flatten()
+    az = np.arctan2(tys, txs).flatten()
+    np.save(os.path.join(output_dir, "za.npy"), za)
+    np.save(os.path.join(output_dir, "az.npy"), az)
+    return za, az

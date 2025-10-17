@@ -80,8 +80,15 @@ if __name__ == '__main__':
         ftime
     )
 
+    za, az = beam_example_utils.get_src_za_az(
+        output_dir,
+        array_lat,
+        times,
+        ra,
+        dec
+    )
 
-    bess_matr, trig_matr, nmodes, mmodes, per_source_Dmatr_out, za, az = beam_example_utils.prep_beam_Dmatr_items(args, output_dir, array_lat, times, ra, dec, unpert_sb)
+    bess_matr, trig_matr, nmodes, mmodes, per_source_Dmatr_out = beam_example_utils.prep_beam_Dmatr_items(args, output_dir, za, az, unpert_sb)
     if not os.path.exists(per_source_Dmatr_out):
         if args.beam_type == "pert_sim": # Use PCA-based basis for sqrt(power beam) in a per antenna way
             # Need a mode for the mean of the prior. 

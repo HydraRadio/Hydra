@@ -146,7 +146,14 @@ if __name__ == '__main__':
         ftime
     )
 
-    bess_matr, trig_matr, nmodes, mmodes, per_source_Dmatr_out, za, az = beam_example_utils.prep_beam_Dmatr_items(args, output_dir, array_lat, times, ra, dec, unpert_sb)
+    za, az = beam_example_utils.get_src_za_az(
+        output_dir,
+        array_lat,
+        times,
+        ra,
+        dec
+    )
+    bess_matr, trig_matr, nmodes, mmodes, per_source_Dmatr_out = beam_example_utils.prep_beam_Dmatr_items(args, output_dir, za, az, unpert_sb)
     
     if not os.path.exists(per_source_Dmatr_out):
         if args.beam_type in ["unpert", "pert_sim"]: # Use FB modes as in paper I/II
