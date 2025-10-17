@@ -136,10 +136,10 @@ if __name__ == '__main__':
         freqs, 
         ra, 
         dec, 
-        ptsrc_amps, 
         fluxes, 
         beams, 
         ftime,
+        ptsrc_amps=ptsrc_amps,
         ref_beam=ref_beam if args.perts_only else None, 
     )
 

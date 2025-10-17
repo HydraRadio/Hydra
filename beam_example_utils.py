@@ -13,8 +13,21 @@ from pyuvdata import UVBeam
 
 import argparse
 
-def run_vis_sim(args, ftime, times, freqs, ant_pos, Nants, ra, dec,
-                fluxes, beams, array_lat, sim_outpath, ref=False):
+def run_vis_sim(
+        args, 
+        ftime, 
+        times, 
+        freqs, 
+        ant_pos, 
+        Nants, 
+        ra, 
+        dec,
+        fluxes, 
+        beams, 
+        array_lat, 
+        sim_outpath, 
+        ref=False
+):
     """
     Do the visibility simulations
 
@@ -27,7 +40,7 @@ def run_vis_sim(args, ftime, times, freqs, ant_pos, Nants, ra, dec,
         times (array):
             LSTs to simulate (radians)
         freqs (array):
-            Frequencies to simulate, in Hz
+            Frequencies to simulate, in Hz.
         ant_pos (dict):
             Dictionary of antenna positions.
         Nants (int):
@@ -269,7 +282,7 @@ def get_parser(description):
     # Computational nuances
     parser.add_argument("--output-dir", type=str, action="store",
                         default="./output", required=False, dest="output_dir",
-                        help="Output directory.")
+                        help="Path to root of the output directory.")
     parser.add_argument("--anneal", action="store_true", required=False,
                         help="Slowly shift the weight between sampling form the prior and posterior over the course of many iterations.")
     parser.add_argument("--infnoise", action="store_true", required=False,
@@ -353,7 +366,7 @@ def init_prebeam_simulation_items(args, output_dir, freqs):
         output_dir (str):
             Directory to where outputs will go.
         freqs (array):
-            Array of frequencies for the simulation, in MHz.
+            Array of frequencies for the simulation, in Hz.
     Returns:
         chain_seed (int):
             The seed for the MCMC RNG.
@@ -400,7 +413,7 @@ def get_src_params(args, output_dir, freqs):
             Directory to where outputs will go. Will save ptsrc_amps as 
             ptsrc_amps0.npy and ra/dec as ptsrc_coords0.npy in this directory.
         freqs (array):
-            Array of frequencies for the simulation, in MHz.
+            Array of frequencies for the simulation, in Hz.
     Returns:
         ra (array):
             Right ascensions of sources, in radians.
@@ -443,7 +456,7 @@ def get_obs_params(args):
         times (array):
             LSTs of the observation, in radians.
         freqs (array):
-            Frequencies of the observation, in MHz.
+            Frequencies of the observation, in Hz.
     """
     lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
     times = np.linspace(lst_min, lst_max, args.Ntimes)
@@ -485,6 +498,19 @@ def get_array_params(args):
 
 
 def setup_args_dirs(parser):
+    """
+    Extract command line args into a Namespace object and set up output directory
+    based on options.
+
+    Parameters:
+        parser (argparse.ArgumentParser):
+            The parser from get_parser.
+    Returns:
+        args (Namespace):
+            The command line arguments.
+        output_dir (str):
+            Path to the final output directory. 
+    """
     args = parser.parse_args()
     if "vivaldi" in args.beam_file.lower():
         unpert_beam = "vivaldi"
@@ -514,12 +540,51 @@ def vis_sim_wrapper(
         freqs, 
         ra, 
         dec, 
-        ptsrc_amps, 
         fluxes, 
         beams, 
         ftime,
+        ptsrc_amps=None, 
         ref_beam=None, 
 ):
+    """
+    Wrapper for run_vis_sim that makes data and noise variance arrays.
+
+    Parameters:
+        args (Namespace):
+            Arguments that were parsed with argparse. Specifically makes use of
+            beam_file, beta_ptsrc, noise_seed, integration_depth, ch_wid, and any
+            others that run_vis_sim uses.
+        output_dir (str):
+            Directory to where outputs will go. Will save model visibilities, 
+            data, inv_noise_var arrays in this directory under self explanatory
+            names.
+        array_lat (float):
+            Array latitude, in radians.
+        ant_pos (dict):
+            Dictionary of antenna positions.
+        Nants (int):
+            Number of antennas.
+        times (array):
+            LSTs of simualted observation, in radians.
+        freqs (array):
+            Frequencies of observation, in Hz.
+        ra (array):
+            Right ascension of sources.
+        dec (array):
+            Declination of sources.
+        fluxes (array):
+            Flux density of sources.
+        beams (List of UVBeam, AnalyticBeam, BeamInterface):
+            Per-antenna beam objects.
+        ftime (str):
+            Path to timing file.
+        ptsrc_amps (array):
+            Point source flux densities at 100 MHz. Only used in case of 
+            args.beam_type == 'pert_sim' and args.missing_sources is True.
+        ref_beam (UVBeam or AnalyticBeam or BeamInterface):
+            Beam for a reference simulation, if args.perts_only is True 
+            (i.e. if only constraining perturbations with respect to this reference.)
+    """
     sim_outpath = os.path.join(output_dir, "model0.npy")
     _sim_vis = run_vis_sim(
         args, 
