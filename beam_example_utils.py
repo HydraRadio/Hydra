@@ -23,9 +23,9 @@ def run_vis_sim(
         ra, 
         dec,
         fluxes, 
-        beams, 
-        array_lat, 
+        beams,  
         sim_outpath, 
+        array_lat=np.deg2rad(-30.7215),
         ref=False
 ):
     """
@@ -532,8 +532,7 @@ def setup_args_dirs(parser):
 
 def vis_sim_wrapper(
         args, 
-        output_dir, 
-        array_lat, 
+        output_dir,  
         ant_pos, 
         Nants, 
         times, 
@@ -543,6 +542,7 @@ def vis_sim_wrapper(
         fluxes, 
         beams, 
         ftime,
+        array_lat==np.deg2rad(-30.7215),
         ptsrc_amps=None, 
         ref_beam=None, 
 ):
@@ -597,8 +597,8 @@ def vis_sim_wrapper(
         dec, 
         fluxes, 
         beams, 
-        array_lat, 
-        sim_outpath               
+        sim_outpath,    
+        array_lat=array_lat,            
     )
     if args.beam_type == "pert_sim":
         unpert_sim_outpath = os.path.join(output_dir, "model_unpert.npy")
@@ -626,8 +626,8 @@ def vis_sim_wrapper(
             dec, 
             flux_inference, 
             unpert_beam_list, 
-            array_lat, 
             unpert_sim_outpath, 
+            array_lat=array_lat, 
             ref=True
         )
 
@@ -653,7 +653,8 @@ def vis_sim_wrapper(
             dec, 
             fluxes, 
             ref_beams, 
-            sim_outpath
+            sim_outpath,
+            array_lat=array_lat
         )
         data -= (ref_beam_vis + ref_beam_vis.swapaxes(-1, -2).conj())
         np.save(os.path.join(output_dir, "data_res"), data)
