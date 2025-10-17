@@ -397,6 +397,20 @@ def get_src_params(args, output_dir, freqs):
         args (Namespace):
             Arguments that were parsed with argparse. Specifically makes use of
             ra_bounds, dec_bounds, sky_seed, Nptsrc, beta_ptsrc.
+        output_dir (str):
+            Directory to where outputs will go. Will save ptsrc_amps as 
+            ptsrc_amps0.npy and ra/dec as ptsrc_coords0.npy in this directory.
+        freqs (array):
+            Array of frequencies for the simulation, in MHz.
+    Returns:
+        ra (array):
+            Right ascensions of sources, in radians.
+        dec (array):
+            Declination of sources, in radians.
+        ptsrc_amps (array):
+            Point source flux densities at 100 MHz.
+        fluxes (array):
+            Point source flux densities at freqs.
     """
     ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
     dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
@@ -419,6 +433,19 @@ def get_src_params(args, output_dir, freqs):
     return ra, dec, ptsrc_amps, fluxes
 
 def get_obs_params(args):
+    """
+    Get times and frequencies of observation based on command line args.
+
+    Parameters:
+        args (Namspace):
+            Arguments that were parsed with argparse. Specifically makes use of
+            lst_bounds, Ntimes, freq_low, Nfreqs, ch_wid.
+    Returns:
+        times (array):
+            LSTs of the observation, in radians.
+        freqs (array):
+            Frequencies of the observation, in MHz.
+    """
     lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
     times = np.linspace(lst_min, lst_max, args.Ntimes)
     freqs = np.arange(
@@ -429,6 +456,21 @@ def get_obs_params(args):
     return times, freqs
 
 def get_array_params(args):
+    """
+    Get some physical array attributes based on command line args.
+
+    Parameters:
+        args (Namspace):
+            Arguments that were parsed with argparse. Specifically makes use of
+            hex_array, array_lat.
+    Returns:
+        array_lat (float):
+            Array latitude, in radians.
+        ant_pos (dict):
+            Dictionary of antenna positions.
+        Nants (int):
+            Number of antennas in the array.
+    """
     hex_array = tuple(args.hex_array)
     assert len(args.hex_array) == 2, "hex-array argument must have length 2."
 
