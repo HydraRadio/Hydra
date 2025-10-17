@@ -153,7 +153,7 @@ if __name__ == '__main__':
         bess_sky_contraction = hydra.per_ant_beam_sampler.get_bess_sky_contraction(
             Dmatr_outer, 
             ant_pos, 
-            fluxes, 
+            flux_inference, 
             ra,
             dec, 
             freqs, 
@@ -190,7 +190,7 @@ if __name__ == '__main__':
             ref_contraction = hydra.per_ant_beam_sampler.get_bess_sky_contraction(
                 Dmatr, 
                 ant_pos, 
-                fluxes, 
+                flux_inference, 
                 ra,
                 dec, 
                 freqs, 
