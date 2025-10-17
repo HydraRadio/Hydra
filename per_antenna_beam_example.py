@@ -21,9 +21,6 @@ import matplotlib.lines as mlines
 
 import beam_example_utils
 
-from .beam_example_utils import run_vis_sim, perturbed_beam, get_analytic_beam, \
-    init_prebeam_simulation_items
-
 if __name__ == '__main__':
 
     description = "Example Gibbs sampling of the joint posterior of per-antenna beam "  \
@@ -58,56 +55,31 @@ if __name__ == '__main__':
         else:
             raise ValueError("beam-type arg must be one of ('gaussian', 'airy', 'pert_sim')")
     
-    chain_seed, ftime, unpert_sb = init_prebeam_simulation_items(
+    chain_seed, ftime, unpert_sb = beam_example_utils.init_prebeam_simulation_items(
         args, 
         output_dir,
         freqs
     )
 
 
-    sim_outpath = os.path.join(output_dir, "model0.npy")
-    _sim_vis = run_vis_sim(args, ftime, times, freqs, ant_pos, Nants,
-                           ra, dec, fluxes, beams, array_lat, sim_outpath)
-    if args.beam_type == "pert_sim":
-        unpert_sim_outpath = os.path.join(output_dir, "model_unpert.npy")
-        unpert_beam_UVB = UVBeam.from_file(args.beam_file)
-        unpert_beam_UVB.peak_normalize()
-        unpert_beam_list = Nants * [unpert_beam_UVB]
-        if args.missing_sources:
-            amps_inference = np.copy(ptsrc_amps)
-            amps_inference[amps_inference < 1e0] = 0
-            flux_inference = get_flux_from_ptsrc_amp(
-                amps_inference, 
-                freqs * 1e-6, 
-                beta_ptsrc
-            )
-        else:
-            flux_inference = fluxes
-        unpert_vis = run_vis_sim(args, ftime, times, freqs, ant_pos, Nants,
-                                ra, dec, flux_inference, unpert_beam_list, array_lat, unpert_sim_outpath, ref=True)
+    flux_inference, unpert_vis, data, inv_noise_var = beam_example_utils.vis_sim_wrapper(
+        args, 
+        output_dir, 
+        array_lat, 
+        ant_pos, 
+        Nants, 
+        times, 
+        freqs, 
+        ra, 
+        dec, 
+        beta_ptsrc, 
+        ptsrc_amps, 
+        fluxes, 
+        beams, 
+        ref_beam, 
+        ftime
+    )
 
-    autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
-    noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
-
-    #FIXME: technically we need the conjugate noise rzn on conjugate baselines...
-    noise_rng = np.random.default_rng(args.noise_seed)
-    noise = (noise_rng.normal(scale=np.sqrt(noise_var)) + 1.j * noise_rng.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
-    data = _sim_vis + _sim_vis.swapaxes(-1,-2).conj() + noise # fix some zeros
-    del _sim_vis # Save some memory
-    del noise
-
-    np.save(os.path.join(output_dir, "data0"), data)
-    if args.perts_only: # Subtract off the vis. made with ref beam
-        ref_sim_outpath = os.path.join(output_dir, "model0_ref.npy")
-        ref_beams = Nants * [ref_beam]
-        ref_beam_vis = run_vis_sim(args, ftime, times, freqs, ant_pos, 
-                                  Nants, ra, dec, fluxes, ref_beams, sim_outpath)
-        data -= (ref_beam_vis + ref_beam_vis.swapaxes(-1, -2).conj())
-        del ref_beam_vis
-        np.save(os.path.join(output_dir, "data_res"), data)
-
-    inv_noise_var = 1/noise_var
-    np.save(os.path.join(output_dir, "inv_noise_var.npy"), inv_noise_var)
 
     txs, tys, tzs = convert_to_tops(ra, dec, times, array_lat)
 
