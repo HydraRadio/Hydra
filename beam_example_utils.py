@@ -668,15 +668,51 @@ def vis_sim_wrapper(
     return flux_inference, unpert_vis, data, inv_noise_var
 
 def prep_bt_matrs(args, za, az, unpert_sb):
+    """
+    Prepare bessel function and trig function matrices based on source positions.
+
+    Parameters:
+        args (Namespace):
+            Arguments that were parsed with argparse. Specifically makes use of
+            Ntimes, Nptsrc, nmax.
+        za (array):
+            Zenith angle of sources in radians (Ntimes * Nptsrc).
+        az (array):
+            Azimuth of sources in radians (Ntimes * Nptsrc).
+        unpert_sb (sparse_beam):
+            An unperturbed sparse_beam object.
+    Returns:
+        bess_matr (array):
+            Design matrix of Bessel functions evaluated at source positions 
+            with shape (Ntimes, Nptsrc, args.nmax)
+        trig_matr (array):
+            Design matrix of Fourier modes evaluated at source positions 
+            with shape (Ntimes, Nptsrc, args.nmax)
+    """
     
-    bess_matr, trig_matr = unpert_sb.get_dmatr_interp(az, 
-                                                      za)
+    bess_matr, trig_matr = unpert_sb.get_dmatr_interp(az, za)
     bess_matr = bess_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax)
     trig_matr = trig_matr.reshape(args.Ntimes, args.Nptsrc, 2 * args.mmax + 1)
 
     return bess_matr, trig_matr
 
 def get_comp_modes(output_dir, unpert_sb):
+    """
+    Get the indices into the Bessel and Fourier design matrices for best 
+    compressed basis based on an unperturbed beam.
+
+    Parameters:
+        output_dir (str):
+            Directory to where outputs will go. Will save indices as nmodes.npy
+            and mmodes.npy.
+        unpert_sb (sparse_beam):
+            Unperturbed beam from which to derive the basis.
+    Returns:
+        nmodes (array):
+            Indices into Bessel function design matrix.
+        mmodes (array):
+            Indices into Fourier design matrix.
+    """
     comp_inds = unpert_sb.get_comp_inds()
     nmodes = comp_inds[0][:, 0, 0, 0]
     mmodes = comp_inds[1][:, 0, 0, 0]
@@ -692,6 +728,27 @@ def get_comp_modes(output_dir, unpert_sb):
     return nmodes, mmodes
 
 def get_src_za_az(output_dir, array_lat, times, ra, dec):
+    """
+    Get zenith angle and azimuth of sources from observational information.
+
+    Parameters:
+        output_dir (str):
+            Directory to where outputs will go. Will save outputs as za.npy
+            and az.npy.
+        array_lat (float):
+            Array latitude in radians.
+        times (array):
+            LSTs of observation in radians.
+        ra (array):
+            Right Ascencion of sources in radians.
+        dec (array):
+            Declination of sources in radians.
+    Returns:
+        za (array):
+            Zenith angle of sources, flattened to (Ntimes * Nptsrc)
+        az (array):
+            Azimuth of sources, flattened to (Ntimes * Nptsrc)
+    """
     txs, tys, tzs = convert_to_tops(ra, dec, times, array_lat)
 
     za = np.arccos(tzs).flatten()
@@ -701,6 +758,22 @@ def get_src_za_az(output_dir, array_lat, times, ra, dec):
     return za, az
 
 def construct_radial_dmatr(args, unpert_sb, bess_matr):
+    """
+    Make orthogonalized radial-only design matrix from first args.Nbasis Bessel 
+    functions based on settings of unpert_sb
+
+    Parameters:
+        args (Namespace):
+            Arguments that were parsed with argparse. Specifically makes use of
+            Nbasis, Ntimes, Nptsrc.
+        unpert_sb (sparse_beam):
+            Unperturbed beam from which to derive the basis.
+        bess_matr (array):
+            Design matrix of Bessel functions evaluated at source positions.
+    Returns:
+        Dmatr (array):
+            bess_matr, but orthogonalized in az, za coordinates.
+    """
     Dmatr = bess_matr[:, :, :args.Nbasis]
     _, R = np.linalg.qr(unpert_sb.bess_matr[:, :args.Nbasis]) # orthoganalize radial modes...
     reshape = (args.Ntimes * args.Nptsrc, args.Nbasis)
