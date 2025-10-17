@@ -602,6 +602,7 @@ def vis_sim_wrapper(
         ftime=ftime,    
         array_lat=array_lat,            
     )
+    Nants = get_Nants(ant_pos)
     if args.beam_type == "pert_sim":
         unpert_sim_outpath = os.path.join(output_dir, "model_unpert.npy")
         unpert_beam_UVB = UVBeam.from_file(args.beam_file)
@@ -633,7 +634,6 @@ def vis_sim_wrapper(
         )
     else:
         unpert_vis = None # Avoiding an annoying optional return signature
-    Nants = get_Nants(ant_pos)
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
 
