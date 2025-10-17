@@ -81,31 +81,9 @@ if __name__ == '__main__':
     )
 
 
-    txs, tys, tzs = convert_to_tops(ra, dec, times, array_lat)
-
-    za = np.arccos(tzs).flatten()
-    az = np.arctan2(tys, txs).flatten()
-    np.save(os.path.join(output_dir, "za.npy"), za)
-    np.save(os.path.join(output_dir, "az.npy"), az)
-    
-    bess_matr, trig_matr = unpert_sb.get_dmatr_interp(az, 
-                                                      za)
-    bess_matr = bess_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax)
-    trig_matr = trig_matr.reshape(args.Ntimes, args.Nptsrc, 2 * args.mmax + 1)
-    comp_inds = unpert_sb.get_comp_inds()
-    nmodes = comp_inds[0][:, 0, 0, 0]
-    mmodes = comp_inds[1][:, 0, 0, 0]
-    np.save(
-        os.path.join(output_dir, "nmodes.npy"),
-        nmodes
-    )
-    np.save(
-        os.path.join(output_dir, "mmodes.npy"),
-        mmodes
-    )
-    per_source_Dmatr_out = os.path.join(output_dir, "Dmatr.npy")
+    bess_matr, trig_matr, nmodes, mmodes, per_source_Dmatr_out, za, az = beam_example_utils.prep_beam_Dmatr_items(args, output_dir, array_lat, times, ra, dec, unpert_sb)
     if not os.path.exists(per_source_Dmatr_out):
-        if args.beam_type == "pert_sim" and args.per_ant: # Use PCA-based basis for sqrt(power beam) in a per antenna way
+        if args.beam_type == "pert_sim": # Use PCA-based basis for sqrt(power beam) in a per antenna way
             # Need a mode for the mean of the prior. 
             # Use the FB coeffs for the frequency closest to the center frequency of the simulation.
             mid_freq = freqs[args.Nfreqs // 2]
@@ -121,12 +99,6 @@ if __name__ == '__main__':
             BPmatr = np.tensordot(bess_matr, Pmatr, axes=1).transpose(3, 0, 1, 2) # Nbasis, Ntimes, Nsrc, Naz
             # Matrix evaluating subset of FB modes at source coordinates
             Dmatr = np.sum(BPmatr * trig_matr, axis=3).transpose(1, 2, 0) # Ntimes, Nsrc, Nbasis
-        elif args.beam_type in ["unpert", "pert_sim"]: # Use FB modes as in paper I/II
-            # Subset of Bessel and Fourier design matrices corresponding to compression recipe from paper I
-            bsparse = bess_matr[:, :, nmodes[:args.Nbasis]]
-            tsparse = trig_matr[:, :, mmodes[:args.Nbasis]]
-            # Matrix evaluating subset of FB modes at source coordinates
-            Dmatr = bsparse * tsparse
         else: # Using analytic beams, only use radial modes
             Dmatr = bess_matr[:, :, :args.Nbasis]
             Q, R = np.linalg.qr(unpert_sb.bess_matr[:, :args.Nbasis]) # orthoganalize radial modes...
@@ -199,16 +171,16 @@ if __name__ == '__main__':
                 # Square root of power beam
                 ref_beam_response = np.sqrt(ref_beam_response)
                 ref_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
-                                                                            ant_pos, 
-                                                                            fluxes, 
-                                                                            ra,
-                                                                            dec, 
-                                                                            freqs, 
-                                                                            times,
-                                                                            polarized=False, 
-                                                                            latitude=array_lat,
-                                                                            outer=False,
-                                                                            ref_beam_response=ref_beam_response)
+                                                                              ant_pos, 
+                                                                              fluxes, 
+                                                                              ra,
+                                                                              dec, 
+                                                                              freqs, 
+                                                                              times,
+                                                                              polarized=False, 
+                                                                              latitude=array_lat,
+                                                                              outer=False,
+                                                                              ref_beam_response=ref_beam_response)
 
                 np.save(ref_contraction_outpath, ref_contraction)
             coeff_mean = np.zeros_like(beam_coeffs[:, :, 0])

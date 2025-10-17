@@ -83,6 +83,8 @@ def plot_beam_slice(
 
     return
 
+
+
 if __name__ == '__main__':
 
     description = "Example analytic Bayesian inference of power beam parameters " \
@@ -144,47 +146,10 @@ if __name__ == '__main__':
         ftime
     )
 
-    txs, tys, tzs = convert_to_tops(ra, dec, times, array_lat)
-
-    za = np.arccos(tzs).flatten()
-    az = np.arctan2(tys, txs).flatten()
-    np.save(os.path.join(output_dir, "za.npy"), za)
-    np.save(os.path.join(output_dir, "az.npy"), az)
+    bess_matr, trig_matr, nmodes, mmodes, per_source_Dmatr_out, za, az = beam_example_utils.prep_beam_Dmatr_items(args, output_dir, array_lat, times, ra, dec, unpert_sb)
     
-    bess_matr, trig_matr = unpert_sb.get_dmatr_interp(az, 
-                                                      za)
-    bess_matr = bess_matr.reshape(args.Ntimes, args.Nptsrc, args.nmax)
-    trig_matr = trig_matr.reshape(args.Ntimes, args.Nptsrc, 2 * args.mmax + 1)
-    comp_inds = unpert_sb.get_comp_inds()
-    nmodes = comp_inds[0][:, 0, 0, 0]
-    mmodes = comp_inds[1][:, 0, 0, 0]
-    np.save(
-        os.path.join(output_dir, "nmodes.npy"),
-        nmodes
-    )
-    np.save(
-        os.path.join(output_dir, "mmodes.npy"),
-        mmodes
-    )
-    per_source_Dmatr_out = os.path.join(output_dir, "Dmatr.npy")
     if not os.path.exists(per_source_Dmatr_out):
-        if args.beam_type == "pert_sim" and args.per_ant: # Use PCA-based basis for sqrt(power beam) in a per antenna way
-            # Need a mode for the mean of the prior. 
-            # Use the FB coeffs for the frequency closest to the center frequency of the simulation.
-            mid_freq = freqs[args.Nfreqs // 2]
-            closest_chan = np.argmin(np.abs(mid_freq - pow_sb.freq_array))
-            mean_mode = unpert_sb.bess_fits[:, :, 0, 0, 0, closest_chan]
-            # Normalize it to have L^2 norm of 1
-            mean_mode = mean_mode / np.sqrt(np.sum(np.abs(mean_mode)**2))
-            # Load the PCA modes saved on disk ahead of time -- they are expressed in FB space
-            pca_modes = np.load(args.pca_modes)[:, :args.Nbasis - 1].reshape(args.nmax, 2 * args.mmax + 1, args.Nbasis - 1) 
-            # Make the full basis including the mean mode
-            Pmatr = np.concatenate([mean_mode[:, :, None], pca_modes], axis=2)
-            # Contract with FB design matrices so that the map goes from PCA -> source coordinates
-            BPmatr = np.tensordot(bess_matr, Pmatr, axes=1).transpose(3, 0, 1, 2) # Nbasis, Ntimes, Nsrc, Naz
-            # Matrix evaluating subset of FB modes at source coordinates
-            Dmatr = np.sum(BPmatr * trig_matr, axis=3).transpose(1, 2, 0) # Ntimes, Nsrc, Nbasis
-        elif args.beam_type in ["unpert", "pert_sim"]: # Use FB modes as in paper I/II
+        if args.beam_type in ["unpert", "pert_sim"]: # Use FB modes as in paper I/II
             # Subset of Bessel and Fourier design matrices corresponding to compression recipe from paper I
             bsparse = bess_matr[:, :, nmodes[:args.Nbasis]]
             tsparse = trig_matr[:, :, mmodes[:args.Nbasis]]
