@@ -129,9 +129,7 @@ if __name__ == '__main__':
     flux_inference, unpert_vis, data, inv_noise_var = beam_example_utils.vis_sim_wrapper(
         args, 
         output_dir, 
-        array_lat, 
         ant_pos, 
-        Nants, 
         times, 
         freqs, 
         ra, 

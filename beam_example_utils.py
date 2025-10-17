@@ -23,7 +23,7 @@ def run_vis_sim(
         dec,
         fluxes, 
         beams,  
-        sim_outpath, 
+        sim_outpath=None, 
         ftime=None,
         array_lat=np.deg2rad(-30.7215),
         ref=False
@@ -41,8 +41,6 @@ def run_vis_sim(
             Frequencies to simulate, in Hz.
         ant_pos (dict):
             Dictionary of antenna positions.
-        Nants (int):
-            Number of antennas.
         ra (array):
             Right ascension of sources.
         dec (array):
@@ -64,7 +62,8 @@ def run_vis_sim(
             Simulated visibilities with shape (Nfreqs, Ntimes, Nants, Nants).
             (Upper triangle?)
     """
-    if not os.path.exists(sim_outpath):
+    if (sim_outpath is None) or (not os.path.exists(sim_outpath)):
+        Nants = get_Nants(ant_pos)
         # Run a simulation
         t0 = time.time()
         _sim_vis = np.zeros([args.Nfreqs, args.Ntimes, Nants, Nants],
@@ -89,10 +88,16 @@ def run_vis_sim(
                     beam.clear_cache() # Otherwise memory gets gigantic
         if ftime is not None:
             timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
-        np.save(sim_outpath, _sim_vis)
+        if sim_outpath is not None: # Supplied an outpath but it didn't exist
+            np.save(sim_outpath, _sim_vis)
     else:
         _sim_vis = np.load(sim_outpath)
     return _sim_vis
+
+def get_Nants(ant_pos):
+    ant_list = np.array(list(ant_pos.keys()))
+    Nants = len(ant_list)
+    return Nants
 
 def perturbed_beam(
         args, 
@@ -491,8 +496,7 @@ def get_array_params(args):
     array_lat = np.deg2rad(args.array_lat)
 
     ant_pos = build_hex_array(hex_spec=hex_array, d=14.6)
-    ants = np.array(list(ant_pos.keys()))
-    Nants = len(ants)
+    Nants = get_Nants(ant_pos)
     print("Nants =", Nants)
 
     return array_lat, ant_pos, Nants
@@ -535,7 +539,6 @@ def vis_sim_wrapper(
         args, 
         output_dir,  
         ant_pos, 
-        Nants, 
         times, 
         freqs, 
         ra, 
@@ -592,12 +595,11 @@ def vis_sim_wrapper(
         times, 
         freqs, 
         ant_pos, 
-        Nants,
         ra, 
         dec, 
         fluxes, 
         beams, 
-        sim_outpath,
+        sim_outpath=sim_outpath,
         ftime=ftime,    
         array_lat=array_lat,            
     )
@@ -621,17 +623,16 @@ def vis_sim_wrapper(
             times, 
             freqs, 
             ant_pos, 
-            Nants,
             ra, 
             dec, 
             flux_inference, 
             unpert_beam_list, 
-            unpert_sim_outpath, 
+            sim_outpath=unpert_sim_outpath, 
             array_lat=array_lat, 
             ref=True,
             ftime=ftime,
         )
-
+    Nants = get_Nants(ant_pos)
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
 
@@ -648,12 +649,11 @@ def vis_sim_wrapper(
             times, 
             freqs, 
             ant_pos, 
-            Nants, 
             ra, 
             dec, 
             fluxes, 
             ref_beams, 
-            sim_outpath,
+            sim_outpath=sim_outpath,
             array_lat=array_lat,
             ftime=ftime,
         )
