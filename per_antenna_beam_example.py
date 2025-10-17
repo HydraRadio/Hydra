@@ -235,10 +235,10 @@ if __name__ == '__main__':
             if args.perts_only:
                 # Contract other antenna coefficients with object that has been pre-multiplied by reference beam
                 other_ants_with_ref = hydra.beam_sampler.get_bess_to_vis_from_contraction(ref_contraction,
-                                                                                            beam_coeffs, 
-                                                                                            Nants, 
-                                                                                            ant_samp_ind,
-                                                                                            ref_contraction=True)
+                                                                                          beam_coeffs, 
+                                                                                          Nants, 
+                                                                                          ant_samp_ind,
+                                                                                          ref_contraction=True)
                 data_use -= other_ants_with_ref
                 ant_inds = hydra.beam_sampler.get_ant_inds(ant_samp_ind, Nants)
                 # Add the term that contracts the reference beam with current antenna's perturbations
@@ -246,11 +246,11 @@ if __name__ == '__main__':
 
             # Construct RHS vector
             rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
-                                                            inv_noise_var_use,
-                                                            coeff_mean,
-                                                            bess_trans,
-                                                            cov_tuple,
-                                                            cho_tuple)
+                                                             inv_noise_var_use,
+                                                             coeff_mean,
+                                                             bess_trans,
+                                                             cov_tuple,
+                                                             cho_tuple)
             bbeam = rhs_unflatten.flatten()
                 
 
