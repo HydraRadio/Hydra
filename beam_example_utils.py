@@ -514,3 +514,12 @@ def get_src_za_az(output_dir, array_lat, times, ra, dec):
     np.save(os.path.join(output_dir, "za.npy"), za)
     np.save(os.path.join(output_dir, "az.npy"), az)
     return za, az
+
+def construct_radial_dmatr(args, unpert_sb, bess_matr):
+    Dmatr = bess_matr[:, :, :args.Nbasis]
+    _, R = np.linalg.qr(unpert_sb.bess_matr[:, :args.Nbasis]) # orthoganalize radial modes...
+    reshape = (args.Ntimes * args.Nptsrc, args.Nbasis)
+    shape = (args.Ntimes, args.Nptsrc, args.Nbasis)
+            # Get the orthogonalized basis evaluated at the source coordinates
+    Dmatr = np.linalg.solve(R.T, Dmatr.reshape(reshape).T).T.reshape(shape)
+    return Dmatr

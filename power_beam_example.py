@@ -168,12 +168,11 @@ if __name__ == '__main__':
             # Matrix evaluating subset of FB modes at source coordinates
             Dmatr = bsparse * tsparse
         else: # Using analytic beams, only use radial modes
-            Dmatr = bess_matr[:, :, :args.Nbasis]
-            Q, R = np.linalg.qr(unpert_sb.bess_matr[:, :args.Nbasis]) # orthoganalize radial modes...
-            reshape = (args.Ntimes * args.Nptsrc, args.Nbasis)
-            shape = (args.Ntimes, args.Nptsrc, args.Nbasis)
-            # Get the orthogonalized basis evaluated at the source coordinates
-            Dmatr = np.linalg.solve(R.T, Dmatr.reshape(reshape).T).T.reshape(shape)
+            Dmatr = beam_example_utils.construct_radial_dmatr(
+                args, 
+                unpert_sb, 
+                bess_matr
+            )
         np.save(per_source_Dmatr_out, Dmatr)
     else:
         Dmatr = np.load(per_source_Dmatr_out)
