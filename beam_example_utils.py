@@ -5,19 +5,12 @@ import time, os
 import numpy as np
 import hydra
 
-from scipy.stats import norm, rayleigh
-from scipy.linalg import cholesky
+
 from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
                          convert_to_tops
 from pyuvdata.analytic_beam import GaussianBeam, AiryBeam
-from pyuvdata import UVBeam, BeamInterface
 
 import argparse
-import glob
-import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm, SymLogNorm
-from matplotlib.gridspec import GridSpec
-import matplotlib.lines as mlines
 
 def run_vis_sim(args, ftime, times, freqs, ant_pos, Nants, ra, dec,
                 fluxes, beams, array_lat, sim_outpath, ref=False):
@@ -355,7 +348,7 @@ def init_prebeam_simulation_items(args, output_dir, freqs):
                                               
     return chain_seed, ftime, unpert_sb
 
-def get_src_params(args, output_dir):
+def get_src_params(args, output_dir, freqs):
     ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
     dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
     skyrng = np.random.default_rng(args.sky_seed)

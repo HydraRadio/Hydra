@@ -6,14 +6,7 @@ import numpy as np
 import hydra
 
 from scipy.stats import norm, rayleigh
-from scipy.linalg import cholesky
-from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
-                         convert_to_tops
-from pyuvdata.analytic_beam import GaussianBeam, AiryBeam
-from pyuvdata import UVBeam, BeamInterface
 
-import argparse
-import glob
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm, SymLogNorm
 from matplotlib.gridspec import GridSpec
@@ -97,7 +90,7 @@ if __name__ == '__main__':
     #-------------------------------------------------------------------------------
     array_lat, ant_pos, Nants = beam_example_utils.get_array_params(args)
     times, freqs = beam_example_utils.get_obs_params(args)
-    ra, dec, beta_ptsrc, ptsrc_amps, fluxes = beam_example_utils.get_src_params(args, output_dir)
+    ra, dec, beta_ptsrc, ptsrc_amps, fluxes = beam_example_utils.get_src_params(args, output_dir, freqs)
 
     if args.beam_type == "unpert":
         bm = UVBeam.from_file(args.beam_file)
