@@ -467,8 +467,6 @@ def vis_sim_wrapper(
     noise_rng = np.random.default_rng(args.noise_seed)
     noise = (noise_rng.normal(scale=np.sqrt(noise_var)) + 1.j * noise_rng.normal(scale=np.sqrt(noise_var))) / np.sqrt(2)
     data = _sim_vis + _sim_vis.swapaxes(-1,-2).conj() + noise # fix some zeros
-    del _sim_vis # Save some memory
-    del noise
 
     np.save(os.path.join(output_dir, "data0"), data)
     if args.perts_only: # Subtract off the vis. made with ref beam
@@ -477,9 +475,9 @@ def vis_sim_wrapper(
         ref_beam_vis = run_vis_sim(args, ftime, times, freqs, ant_pos, 
                                   Nants, ra, dec, fluxes, ref_beams, sim_outpath)
         data -= (ref_beam_vis + ref_beam_vis.swapaxes(-1, -2).conj())
-        del ref_beam_vis
         np.save(os.path.join(output_dir, "data_res"), data)
 
     inv_noise_var = 1/noise_var
     np.save(os.path.join(output_dir, "inv_noise_var.npy"), inv_noise_var)
+    
     return flux_inference, unpert_vis, data, inv_noise_var

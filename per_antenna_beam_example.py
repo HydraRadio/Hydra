@@ -48,7 +48,7 @@ if __name__ == '__main__':
         elif args.beam_type in ["gaussian", "airy"]:
             # Underilluminated HERA dishes
             beam_rng = np.random.default_rng(seed=args.beam_seed + ant_ind)
-            beam, beam_class = get_analytic_beam(args, beam_rng)
+            beam, beam_class = beam_example_utils.get_analytic_beam(args, beam_rng)
             beams.append(beam)
             if ref_cond:
                 ref_beam = beam_class(diameter=12.)
