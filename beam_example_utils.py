@@ -632,6 +632,8 @@ def vis_sim_wrapper(
             ref=True,
             ftime=ftime,
         )
+    else:
+        unpert_vis = None # Avoiding an annoying optional return signature
     Nants = get_Nants(ant_pos)
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)
