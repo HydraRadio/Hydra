@@ -153,8 +153,13 @@ if __name__ == '__main__':
         ra,
         dec
     )
-    bess_matr, trig_matr, nmodes, mmodes, per_source_Dmatr_out = beam_example_utils.prep_beam_Dmatr_items(args, output_dir, za, az, unpert_sb)
+    nmodes, mmodes = beam_example_utils.get_comp_modes(output_dir, unpert_sb)
+    bess_matr, trig_matr = beam_example_utils.prep_bt_matrs(args, 
+                                                            za, 
+                                                            az, 
+                                                            unpert_sb)
     
+    per_source_Dmatr_out = os.path.join(output_dir, "Dmatr.npy")
     if not os.path.exists(per_source_Dmatr_out):
         if args.beam_type in ["unpert", "pert_sim"]: # Use FB modes as in paper I/II
             # Subset of Bessel and Fourier design matrices corresponding to compression recipe from paper I
