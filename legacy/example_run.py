@@ -567,7 +567,7 @@ for n in range(Niters):
         # Have to have an initial guess and do some precompute
         if n == 0:
             # Make a copy of the data that is more convenient for the beam calcs.
-            data_beam = hydra.beam_sampler.reshape_data_arr(data,
+            data_beam = hydra.per_ant_beam_sampler.reshape_data_arr(data,
                                                             Nfreqs,
                                                             Ntimes,
                                                             Nants)
@@ -576,7 +576,7 @@ for n in range(Niters):
             # The beam coeffs or their conjugate!
             data_beam = data_beam + np.swapaxes(data_beam, -1, -2).conj()
 
-            inv_noise_var_beam = hydra.beam_sampler.reshape_data_arr(inv_noise_var,
+            inv_noise_var_beam = hydra.per_ant_beam_sampler.reshape_data_arr(inv_noise_var,
                                                                      Nfreqs,
                                                                      Ntimes,
                                                                      Nants)
@@ -584,13 +584,13 @@ for n in range(Niters):
 
             txs, tys, tzs = convert_to_tops(ra, dec, times, telescope_latitude)
 
-            Zmatr = hydra.beam_sampler.construct_zernike_matrix(beam_nmax,
+            Zmatr = hydra.per_ant_beam_sampler.construct_zernike_matrix(beam_nmax,
                                                                 np.array(txs),
                                                                 np.array(tys))
 
             # All the same, so just repeat (for now)
             beam_coeffs = np.array(Nants * \
-                                   [hydra.beam_sampler.fit_zernike_to_beam(
+                                   [hydra.per_ant_beam_sampler.fit_zernike_to_beam(
                                                                      beams[0],
                                                                      1e6 * freqs,
                                                                      Zmatr,
@@ -602,31 +602,31 @@ for n in range(Niters):
 
             amp_use = x_soln if SAMPLE_PTSRC_AMPS else ptsrc_amps
             flux_use = get_flux_from_ptsrc_amp(amp_use, freqs, beta_ptsrc)
-            Mjk = hydra.beam_sampler.construct_Mjk(Zmatr, ant_pos, flux_use, ra, dec,
+            Mjk = hydra.per_ant_beam_sampler.construct_Mjk(Zmatr, ant_pos, flux_use, ra, dec,
                                              freqs, times, polarized=False,
                                              latitude=telescope_latitude)
 
             # Hardcoded parameters. Make variations smooth in time/freq.
             sig_freq = 0.5 * (freqs[-1] - freqs[0])
             sig_time = 0.5 * (times[-1] - times[0])
-            cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, times, ncoeffs, 1e-4, sig_freq,
+            cov_tuple = hydra.per_ant_beam_sampler.make_prior_cov(freqs, times, ncoeffs, 1e-4, sig_freq,
                                                           sig_time, ridge=1e-6)
-            cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
+            cho_tuple = hydra.per_ant_beam_sampler.do_cov_cho(cov_tuple, check_op=False)
             # Be lazy and just use the initial guess.
-            coeff_mean = hydra.beam_sampler.split_real_imag(beam_coeffs[:, :, :, 0],
+            coeff_mean = hydra.per_ant_beam_sampler.split_real_imag(beam_coeffs[:, :, :, 0],
                                                             'vec')
 
         t0 = time.time()
 
         # Round robin loop through the antennas
         for ant_samp_ind in range(Nants):
-            zern_trans = hydra.beam_sampler.get_zernike_to_vis(Mjk, beam_coeffs,
+            zern_trans = hydra.per_ant_beam_sampler.get_zernike_to_vis(Mjk, beam_coeffs,
                                                      ant_samp_ind, Nants)
-            cov_Tdag = hydra.beam_sampler.get_cov_Tdag(cov_tuple, zern_trans)
+            cov_Tdag = hydra.per_ant_beam_sampler.get_cov_Tdag(cov_tuple, zern_trans)
 
-            inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var_beam,
+            inv_noise_var_use = hydra.per_ant_beam_sampler.select_subarr(inv_noise_var_beam,
                                                            ant_samp_ind, Nants)
-            data_use = hydra.beam_sampler.select_subarr(data_beam, ant_samp_ind, Nants)
+            data_use = hydra.per_ant_beam_sampler.select_subarr(data_beam, ant_samp_ind, Nants)
 
             # Have to split real/imag - circ. Gauss so just factor of 2, no off-diags :)
             inv_noise_var_use = np.repeat(inv_noise_var_use[:, :, :, np.newaxis],
@@ -635,10 +635,10 @@ for n in range(Niters):
 
 
             # This one is actually complex so we use a special fn. in hydra.beam_sampler
-            data_use = hydra.beam_sampler.split_real_imag(data_use, 'vec')
+            data_use = hydra.per_ant_beam_sampler.split_real_imag(data_use, 'vec')
 
             # Construct RHS vector
-            rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
+            rhs_unflatten = hydra.per_ant_beam_sampler.construct_rhs(data_use,
                                                              inv_noise_var_use,
                                                              inv_noise_var_sqrt_use,
                                                              coeff_mean,
@@ -646,7 +646,7 @@ for n in range(Niters):
                                                              cho_tuple)
             bbeam = rhs_unflatten.flatten()
             shape = (Nfreqs, Ntimes, ncoeffs,  2)
-            cov_Tdag_Ninv_T = hydra.beam_sampler.get_cov_Tdag_Ninv_T(inv_noise_var_use,
+            cov_Tdag_Ninv_T = hydra.per_ant_beam_sampler.get_cov_Tdag_Ninv_T(inv_noise_var_use,
                                                                      cov_Tdag,
                                                                      zern_trans)
             axlen = np.prod(shape)
@@ -660,7 +660,7 @@ for n in range(Niters):
 
 
             def beam_lhs_operator(x):
-                y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),
+                y = hydra.per_ant_beam_sampler.apply_operator(np.reshape(x, shape),
                                                       cov_Tdag_Ninv_T)
                 return(y.flatten())
 

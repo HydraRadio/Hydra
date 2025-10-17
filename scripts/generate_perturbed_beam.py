@@ -23,7 +23,7 @@ parser.add_argument("--nmax", required=False, type=int, default=80,
 parser.add_argument("--mmax", required=False, type=int, default=45,
                     help="The maximum azimuthal mode number to use.")
 args = parser.parse_args()
-_ = hydra.beam_sampler.get_pert_beam(args.seed, args.beam_file, 
+_ = hydra.per_ant_beam_sampler.get_pert_beam(args.seed, args.beam_file, 
                                      trans_std=args.trans_std, 
                                      rot_std_deg=args.rot_std_deg,
                                      stretch_std=args.stretch_std, 
