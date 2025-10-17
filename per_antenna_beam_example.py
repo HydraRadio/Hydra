@@ -119,20 +119,24 @@ if __name__ == '__main__':
     beam_coeffs = np.zeros([Nants, args.Nfreqs, args.Nbasis, 1, 1])
     if not args.perts_only:
         if args.decent_prior:
-            # FIXME: Hardcode!, start at answer!
-            beam_coeffs += np.load("data/14m_airy_bessel_soln.npy")[None, None, :, None, None] 
+            if args.prior_mean_path is None:
+                raise ValueError("Cannot make 'decent prior' without path to mean coefficients."
+                                 "Set --prior-mean-path arg.")
+            if args.prior_cov_path is None:
+                raise ValueError("Cannot make 'decent prior' without path to coefficients cov."
+                                 "Set --prior-cov-path arg.")
+            beam_coeffs += np.load(args.prior_mean_path)[None, None, :, None, None]
         else:
             beam_coeffs[:, :, 0] = 1
         # Want shape Nbasis, Nfreqs, Nants, Npol, Npol
     beam_coeffs = np.swapaxes(beam_coeffs, 0, 2).astype(complex)
 
     sig_freq = 0.1 * (freqs[-1] - freqs[0])
-    # FIXME: Hardcode!
-    cov_file = "data/ramped_variance_bessel_cov.npy" if args.decent_prior else None
+
     cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, args.beam_prior_std,
-                                                sig_freq, args.Nbasis,
-                                                ridge=1e-6,
-                                                cov_file=cov_file)
+                                                  sig_freq, args.Nbasis,
+                                                  ridge=1e-6,
+                                                  cov_file=args.cov_file)
     cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
 
     bsc_outpath = os.path.join(output_dir, "bsc.npy")

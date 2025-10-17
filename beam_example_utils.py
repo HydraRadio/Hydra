@@ -288,6 +288,12 @@ def get_parser(description):
     parser.add_argument("--beam-file", type=str, action="store",
                         required=True, dest="beam_file",
                         help="Path to file containing a fiducial beam.")
+    parser.add_argument("--prior-mean-path", type=str, action="store", default=None,
+                        required=False, dest="prior_mean_path",
+                        help="Path to npy file containing prior mean of basis function coefficients")
+    parser.add_argument("--prior-cov-path", type=str, action="store", default=None,
+                        required=False, dest="prior_cov_path",
+                        help="Path to npy file containing prior covariance of basis function coefficients")
     parser.add_argument("--beam-prior-std", type=float, action="store", default=1.,
                         required=False, dest="beam_prior_std",
                         help="Std. dev. of beam coefficient prior, in units of FB coefficient")
