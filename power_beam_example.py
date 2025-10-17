@@ -138,7 +138,7 @@ if __name__ == '__main__':
         dec, 
         fluxes, 
         beams, 
-        ftime,
+        ftime=ftime,
         array_lat=array_lat,
         ptsrc_amps=ptsrc_amps,
         ref_beam=ref_beam if args.perts_only else None, 

@@ -14,8 +14,7 @@ from pyuvdata import UVBeam
 import argparse
 
 def run_vis_sim(
-        args, 
-        ftime, 
+        args,  
         times, 
         freqs, 
         ant_pos, 
@@ -25,6 +24,7 @@ def run_vis_sim(
         fluxes, 
         beams,  
         sim_outpath, 
+        ftime=None,
         array_lat=np.deg2rad(-30.7215),
         ref=False
 ):
@@ -35,8 +35,6 @@ def run_vis_sim(
         args (Namespace):
             Arguments that were parsed with argparse. Will specifically make use
             of Nfreqs, Ntimes, and beam_type.
-        ftime (str):
-            Path to timing file.
         times (array):
             LSTs to simulate (radians)
         freqs (array):
@@ -53,10 +51,12 @@ def run_vis_sim(
             Flux density of sources.
         beams (List of UVBeam, AnalyticBeam, BeamInterface):
             Per-antenna beam objects.
-        array_lat (float):
-            The array latitude _in radians_
         sim_outpath (str):
             Path to output file.
+        array_lat (float):
+            The array latitude _in radians_
+        ftime (str):
+            Path to timing file.
         ref (bool):
             Whether this is a 'reference sim' based on a reference beam.
     Returns:
@@ -87,7 +87,8 @@ def run_vis_sim(
             if (args.beam_type == "pert_sim") and (not ref):
                 for beam in beams:
                     beam.clear_cache() # Otherwise memory gets gigantic
-        timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
+        if ftime is not None:
+            timing_info(ftime, 0, "(0) Simulation", time.time() - t0)
         np.save(sim_outpath, _sim_vis)
     else:
         _sim_vis = np.load(sim_outpath)
@@ -541,8 +542,8 @@ def vis_sim_wrapper(
         dec, 
         fluxes, 
         beams, 
-        ftime,
-        array_lat==np.deg2rad(-30.7215),
+        ftime=None,
+        array_lat=np.deg2rad(-30.7215),
         ptsrc_amps=None, 
         ref_beam=None, 
 ):
@@ -588,7 +589,6 @@ def vis_sim_wrapper(
     sim_outpath = os.path.join(output_dir, "model0.npy")
     _sim_vis = run_vis_sim(
         args, 
-        ftime, 
         times, 
         freqs, 
         ant_pos, 
@@ -597,7 +597,8 @@ def vis_sim_wrapper(
         dec, 
         fluxes, 
         beams, 
-        sim_outpath,    
+        sim_outpath,
+        ftime=ftime,    
         array_lat=array_lat,            
     )
     if args.beam_type == "pert_sim":
@@ -617,7 +618,6 @@ def vis_sim_wrapper(
             flux_inference = fluxes
         unpert_vis = run_vis_sim(
             args, 
-            ftime, 
             times, 
             freqs, 
             ant_pos, 
@@ -628,7 +628,8 @@ def vis_sim_wrapper(
             unpert_beam_list, 
             unpert_sim_outpath, 
             array_lat=array_lat, 
-            ref=True
+            ref=True,
+            ftime=ftime,
         )
 
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
@@ -644,7 +645,6 @@ def vis_sim_wrapper(
         ref_beams = Nants * [ref_beam]
         ref_beam_vis = run_vis_sim(
             args, 
-            ftime, 
             times, 
             freqs, 
             ant_pos, 
@@ -654,7 +654,8 @@ def vis_sim_wrapper(
             fluxes, 
             ref_beams, 
             sim_outpath,
-            array_lat=array_lat
+            array_lat=array_lat,
+            ftime=ftime,
         )
         data -= (ref_beam_vis + ref_beam_vis.swapaxes(-1, -2).conj())
         np.save(os.path.join(output_dir, "data_res"), data)
