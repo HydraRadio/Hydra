@@ -1,6 +1,6 @@
 import numpy as np
 
-from hydra.beam_sampler import gen_std_norm
+from hydra.per_ant_beam_sampler import gen_std_norm
 
 ################################################################################
 # The construct_LHS and construct_RHS options do a common computation, NinvB. ##

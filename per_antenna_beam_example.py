@@ -115,7 +115,7 @@ if __name__ == '__main__':
         Dmatr = np.load(per_source_Dmatr_out)
 
     
-    Dmatr_outer = hydra.beam_sampler.get_bess_outer(Dmatr)
+    Dmatr_outer = hydra.per_ant_beam_sampler.get_bess_outer(Dmatr)
     np.save(os.path.join(output_dir, "dmo.npy"), Dmatr_outer)
 
     beam_coeffs = np.zeros([Nants, args.Nfreqs, args.Nbasis, 1, 1])
@@ -135,18 +135,18 @@ if __name__ == '__main__':
 
     sig_freq = 0.1 * (freqs[-1] - freqs[0])
 
-    cov_tuple = hydra.beam_sampler.make_prior_cov(freqs, args.beam_prior_std,
+    cov_tuple = hydra.per_ant_beam_sampler.make_prior_cov(freqs, args.beam_prior_std,
                                                   sig_freq, args.Nbasis,
                                                   ridge=1e-6,
                                                   cov_file=args.cov_file)
-    cho_tuple = hydra.beam_sampler.do_cov_cho(cov_tuple, check_op=False)
+    cho_tuple = hydra.per_ant_beam_sampler.do_cov_cho(cov_tuple, check_op=False)
 
     bsc_outpath = os.path.join(output_dir, "bsc.npy")
     if os.path.exists(bsc_outpath):
         bess_sky_contraction = np.load(bsc_outpath)
     else:
         t0 = time.time()
-        bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
+        bess_sky_contraction = hydra.per_ant_beam_sampler.get_bess_sky_contraction(Dmatr_outer, 
                                                                         ant_pos, 
                                                                         fluxes, 
                                                                         ra,
@@ -176,7 +176,7 @@ if __name__ == '__main__':
                                                         args.Nptsrc,])
             # Square root of power beam
             ref_beam_response = np.sqrt(ref_beam_response)
-            ref_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
+            ref_contraction = hydra.per_ant_beam_sampler.get_bess_sky_contraction(Dmatr, 
                                                                           ant_pos, 
                                                                           fluxes, 
                                                                           ra,
@@ -217,33 +217,33 @@ if __name__ == '__main__':
             temp = 1.
 
         for ant_samp_ind in range(Nants):
-            bess_trans = hydra.beam_sampler.get_bess_to_vis_from_contraction(bess_sky_contraction,
+            bess_trans = hydra.per_ant_beam_sampler.get_bess_to_vis_from_contraction(bess_sky_contraction,
                                                                                 beam_coeffs, 
                                                                                 Nants, 
                                                                                 ant_samp_ind)
             
-            inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var[None, None], # add pol axes of length 1
+            inv_noise_var_use = hydra.per_ant_beam_sampler.select_subarr(inv_noise_var[None, None], # add pol axes of length 1
                                                                     ant_samp_ind, 
                                                                     Nants)
             if args.infnoise:
                 inv_noise_var_use[:] = 0
             else:
                 inv_noise_var_use /= temp
-            data_use = hydra.beam_sampler.select_subarr(data[None, None], ant_samp_ind, Nants)
+            data_use = hydra.per_ant_beam_sampler.select_subarr(data[None, None], ant_samp_ind, Nants)
             if args.perts_only:
                 # Contract other antenna coefficients with object that has been pre-multiplied by reference beam
-                other_ants_with_ref = hydra.beam_sampler.get_bess_to_vis_from_contraction(ref_contraction,
+                other_ants_with_ref = hydra.per_ant_beam_sampler.get_bess_to_vis_from_contraction(ref_contraction,
                                                                                           beam_coeffs, 
                                                                                           Nants, 
                                                                                           ant_samp_ind,
                                                                                           ref_contraction=True)
                 data_use -= other_ants_with_ref
-                ant_inds = hydra.beam_sampler.get_ant_inds(ant_samp_ind, Nants)
+                ant_inds = hydra.per_ant_beam_sampler.get_ant_inds(ant_samp_ind, Nants)
                 # Add the term that contracts the reference beam with current antenna's perturbations
                 bess_trans += ref_contraction[:, :, :, :, ant_inds, ant_samp_ind]
 
             # Construct RHS vector
-            rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
+            rhs_unflatten = hydra.per_ant_beam_sampler.construct_rhs(data_use,
                                                              inv_noise_var_use,
                                                              coeff_mean,
                                                              bess_trans,
@@ -253,7 +253,7 @@ if __name__ == '__main__':
                 
 
             shape = (args.Nfreqs, args.Nbasis,  1, 1, 2)
-            cov_Qdag_Ninv_Q = hydra.beam_sampler.get_cov_Qdag_Ninv_Q(inv_noise_var_use,
+            cov_Qdag_Ninv_Q = hydra.per_ant_beam_sampler.get_cov_Qdag_Ninv_Q(inv_noise_var_use,
                                                                     bess_trans,
                                                                     cov_tuple)
             
@@ -264,7 +264,7 @@ if __name__ == '__main__':
             
             # FIXME: This is skipped!
             def beam_lhs_operator(x):
-                y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),
+                y = hydra.per_ant_beam_sampler.apply_operator(np.reshape(x, shape),
                                                     cov_Qdag_Ninv_Q)
                 return(y.flatten())
 

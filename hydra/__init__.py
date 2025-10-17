@@ -1,7 +1,7 @@
 from . import (
-    beam_sampler,
     cosmo_sampler,
     gain_sampler,
+    per_ant_beam_sampler,
     ptsrc_sampler,
     region_sampler,
     sh_sampler,

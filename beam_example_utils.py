@@ -157,7 +157,7 @@ def perturbed_beam(
         stretch_x, stretch_y = rng.normal(loc=1, scale=args.stretch_std)
         sin_pert_coeffs = rng.normal(size=8)
 
-    pow_sb = hydra.beam_sampler.get_pert_beam(
+    pow_sb = hydra.per_ant_beam_sampler.get_pert_beam(
         args.beam_file, 
         outfile,
         mmax=args.mmax, 

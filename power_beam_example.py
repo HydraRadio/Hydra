@@ -178,7 +178,7 @@ if __name__ == '__main__':
     pow_beam_Dmatr_outfile = os.path.join(output_dir, "pow_beam_Dmatr.npy")
     if not os.path.exists(pow_beam_Dmatr_outfile):
         Dmatr_start = time.time()
-        pow_beam_Dmatr_dense = hydra.beam_sampler.get_bess_sky_contraction(
+        pow_beam_Dmatr_dense = hydra.per_ant_beam_sampler.get_bess_sky_contraction(
             Dmatr, 
             ant_pos, 
             flux_inference, 
@@ -675,7 +675,7 @@ if __name__ == '__main__':
         bbox_inches="tight"
     )
 
-    hydra.beam_sampler.plot_FB_beam(
+    hydra.per_ant_beam_sampler.plot_FB_beam(
         plotbeam,
         unpert_sb.axis2_array,
         unpert_sb.axis1_array, 
