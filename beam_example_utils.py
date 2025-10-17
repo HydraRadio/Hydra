@@ -98,7 +98,7 @@ def perturbed_beam(
     Parameters:
         args (Namespace):
             Arguments that were parsed with argparse. Specifically makes use of
-            beam_file, mmax, nmax, per_ant, Nbasis, csl. If seed is not None,
+            beam_file, mmax, nmax, sqrt, Nbasis, csl. If seed is not None,
             will make use of trans_std, rot_std_deg, stretch_std, for random
             beam generation.
         output_dir (str):
@@ -143,7 +143,7 @@ def perturbed_beam(
         outfile,
         mmax=args.mmax, 
         nmax=args.nmax,
-        sqrt=args.per_ant, 
+        sqrt=args.sqrt, 
         Nfeeds=2, 
         num_modes_comp=args.Nbasis, 
         save=save, 
@@ -335,11 +335,10 @@ def get_parser(description):
                         dest="beam_type", default="gaussian")
     parser.add_argument("--pca-modes", required=False, type=str,
                         dest="pca_modes", help="Path to saved PCA eigenvectors.")
-    parser.add_argument("--per-ant", required=False, action="store_true",
-                        dest="per_ant",
-                        help="Whether to use a different beam per antenna")
     parser.add_argument("--csl", required=False, type=float, default=0.2,
                         help="Sidelobe modulation amplitude")
+    parser.add_argument("--sqrt", required=False, action="store_true",
+                        help="Whether to take the square root of the primary beam before fitting. Useful for 'Eish' beams.")
                         
     return parser
 
@@ -350,7 +349,7 @@ def init_prebeam_simulation_items(args, output_dir, freqs):
     Parameters:
         args (Namespace):
             Arguments that were parsed with argparse. Specifically makes use of
-            chain_seed, mmax, beam_file, nmax, rho_const, Nbasis, per_ant.
+            chain_seed, mmax, beam_file, nmax, rho_const, Nbasis, sqrt.
         output_dir (str):
             Directory to where outputs will go.
         freqs (array):
@@ -380,7 +379,7 @@ def init_prebeam_simulation_items(args, output_dir, freqs):
                                               Nfeeds=2, 
                                               alpha=args.rho_const,
                                               num_modes_comp=args.Nbasis,
-                                              sqrt=args.per_ant,
+                                              sqrt=args.sqrt,
                                               freq_range=(np.amin(freqs), np.amax(freqs)),
                                               save_fn=f"{output_dir}/unpert_sb")
 
@@ -493,7 +492,7 @@ def setup_args_dirs(parser):
         unpert_beam = "dipole"
 
     # Check that output directory exists
-    output_dir = f"{args.output_dir}/per_ant/{args.per_ant}/beam_type/{args.beam_type}"
+    output_dir = f"{args.output_dir}/beam_type/{args.beam_type}"
     output_dir = f"{output_dir}/unpert_beam/{unpert_beam}/Nptsrc/{args.Nptsrc}/Ntimes/{args.Ntimes}"
     output_dir = f"{output_dir}/Nfreqs/{args.Nfreqs}/Nbasis/{args.Nbasis}"
     output_dir = f"{output_dir}/prior_std/{args.beam_prior_std}"
