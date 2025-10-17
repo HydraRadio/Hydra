@@ -242,6 +242,9 @@ def get_parser(description):
     parser.add_argument("--Nptsrc", type=int, action="store", default=100,
                         required=False, dest="Nptsrc",
                         help="Number of point sources to use in simulation (and model).")
+    parser.add_argument("--beta-ptsrc", type=float, action="store", default=2.7,
+                        required=False, dest="beta_ptsrc",
+                        help="Spectral index of all point source flux densities.")
     parser.add_argument("--Ntimes", type=int, action="store", default=10,
                         required=False, dest="Ntimes",
                         help="Number of times to use in the simulation.")
@@ -341,6 +344,25 @@ def get_parser(description):
     return parser
 
 def init_prebeam_simulation_items(args, output_dir, freqs):
+    """
+    Assign some items that are common to both beam examples.
+
+    Parameters:
+        args (Namespace):
+            Arguments that were parsed with argparse. Specifically makes use of
+            chain_seed, mmax, beam_file, nmax, rho_const, Nbasis, per_ant.
+        output_dir (str):
+            Directory to where outputs will go.
+        freqs (array):
+            Array of frequencies for the simulation, in MHz.
+    Returns:
+        chain_seed (int):
+            The seed for the MCMC RNG.
+        ftime (str):
+            Path to the timing file.
+        unpert_sb (sparse_beam):
+            A sparse beam object based on args.beam_file, with no perturbations.
+    """
     
     if args.chain_seed == "None":
         chain_seed = None
@@ -352,8 +374,10 @@ def init_prebeam_simulation_items(args, output_dir, freqs):
 
 
     mmodes = np.arange(-args.mmax, args.mmax + 1)
-    unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
-                                              mmodes=mmodes, Nfeeds=2, 
+    unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, 
+                                              nmax=args.nmax, 
+                                              mmodes=mmodes, 
+                                              Nfeeds=2, 
                                               alpha=args.rho_const,
                                               num_modes_comp=args.Nbasis,
                                               sqrt=args.per_ant,
@@ -366,6 +390,14 @@ def init_prebeam_simulation_items(args, output_dir, freqs):
     return chain_seed, ftime, unpert_sb
 
 def get_src_params(args, output_dir, freqs):
+    """
+    Construct a catalog of point sources based on command line arguments.
+
+    Parameters:
+        args (Namespace):
+            Arguments that were parsed with argparse. Specifically makes use of
+            ra_bounds, dec_bounds, sky_seed, Nptsrc, beta_ptsrc.
+    """
     ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
     dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
     skyrng = np.random.default_rng(args.sky_seed)
@@ -379,13 +411,12 @@ def get_src_params(args, output_dir, freqs):
     dec = np.arcsin(U * dsin + np.sin(dec_low)) # np.arcsin returns on [-pi / 2, +pi / 2]
 
     # Generate fluxes
-    beta_ptsrc = -2.7
     ptsrc_amps = 10.**skyrng.uniform(low=-1., high=2., size=args.Nptsrc)
-    fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs * 1e-6, beta_ptsrc) # Have to put this in MHz...
+    fluxes = get_flux_from_ptsrc_amp(ptsrc_amps, freqs * 1e-6, args.beta_ptsrc) # Have to put this in MHz...
     print("pstrc amps (input):", ptsrc_amps[:5])
     np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
     np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
-    return ra, dec, beta_ptsrc, ptsrc_amps, fluxes
+    return ra, dec, ptsrc_amps, fluxes
 
 def get_obs_params(args):
     lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
@@ -442,7 +473,6 @@ def vis_sim_wrapper(
         freqs, 
         ra, 
         dec, 
-        beta_ptsrc, 
         ptsrc_amps, 
         fluxes, 
         beams, 
@@ -475,12 +505,25 @@ def vis_sim_wrapper(
             flux_inference = get_flux_from_ptsrc_amp(
                 amps_inference, 
                 freqs * 1e-6, 
-                beta_ptsrc
+                args.beta_ptsrc
             )
         else:
             flux_inference = fluxes
-        unpert_vis = run_vis_sim(args, ftime, times, freqs, ant_pos, Nants,
-                                 ra, dec, flux_inference, unpert_beam_list, array_lat, unpert_sim_outpath, ref=True)
+        unpert_vis = run_vis_sim(
+            args, 
+            ftime, 
+            times, 
+            freqs, 
+            ant_pos, 
+            Nants,
+            ra, 
+            dec, 
+            flux_inference, 
+            unpert_beam_list, 
+            array_lat, 
+            unpert_sim_outpath, 
+            ref=True
+        )
 
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)

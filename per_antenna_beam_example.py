@@ -22,7 +22,11 @@ if __name__ == '__main__':
     
     array_lat, ant_pos, Nants = beam_example_utils.get_array_params(args)
     times, freqs = beam_example_utils.get_obs_params(args)
-    ra, dec, beta_ptsrc, ptsrc_amps, fluxes = beam_example_utils.get_src_params(args, output_dir, freqs)
+    ra, dec, ptsrc_amps, fluxes = beam_example_utils.get_src_params(
+        args, 
+        output_dir, 
+        freqs
+    )
     
     beams = []
     for ant_ind in range(Nants):
@@ -63,8 +67,7 @@ if __name__ == '__main__':
         times, 
         freqs, 
         ra, 
-        dec, 
-        beta_ptsrc, 
+        dec,
         ptsrc_amps, 
         fluxes, 
         beams, 
