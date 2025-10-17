@@ -68,8 +68,8 @@ if __name__ == '__main__':
         ptsrc_amps, 
         fluxes, 
         beams, 
-        ref_beam, 
-        ftime
+        ftime,
+        ref_beam=ref_beam if args.perts_only else None, 
     )
 
     za, az = beam_example_utils.get_src_za_az(

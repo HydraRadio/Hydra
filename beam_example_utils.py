@@ -187,6 +187,16 @@ def get_analytic_beam(args, beam_rng):
 
 
 def get_parser(description):
+    """
+    Construct the parser for either beam example script.
+
+    Parameters:
+        description (str):
+            Description string for the parser.
+    Returns:
+        parser (argparse.ArgumentParser):
+            The parser.
+    """
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--beam-seed", type=int, action="store", default=1001,
                         required=False, dest="beam_seed",
@@ -436,12 +446,24 @@ def vis_sim_wrapper(
         ptsrc_amps, 
         fluxes, 
         beams, 
-        ref_beam, 
-        ftime
+        ftime,
+        ref_beam=None, 
 ):
     sim_outpath = os.path.join(output_dir, "model0.npy")
-    _sim_vis = run_vis_sim(args, ftime, times, freqs, ant_pos, Nants,
-                           ra, dec, fluxes, beams, array_lat, sim_outpath)
+    _sim_vis = run_vis_sim(
+        args, 
+        ftime, 
+        times, 
+        freqs, 
+        ant_pos, 
+        Nants,
+        ra, 
+        dec, 
+        fluxes, 
+        beams, 
+        array_lat, 
+        sim_outpath               
+    )
     if args.beam_type == "pert_sim":
         unpert_sim_outpath = os.path.join(output_dir, "model_unpert.npy")
         unpert_beam_UVB = UVBeam.from_file(args.beam_file)
@@ -470,10 +492,20 @@ def vis_sim_wrapper(
 
     np.save(os.path.join(output_dir, "data0"), data)
     if args.perts_only: # Subtract off the vis. made with ref beam
-        ref_sim_outpath = os.path.join(output_dir, "model0_ref.npy")
         ref_beams = Nants * [ref_beam]
-        ref_beam_vis = run_vis_sim(args, ftime, times, freqs, ant_pos, 
-                                  Nants, ra, dec, fluxes, ref_beams, sim_outpath)
+        ref_beam_vis = run_vis_sim(
+            args, 
+            ftime, 
+            times, 
+            freqs, 
+            ant_pos, 
+            Nants, 
+            ra, 
+            dec, 
+            fluxes, 
+            ref_beams, 
+            sim_outpath
+        )
         data -= (ref_beam_vis + ref_beam_vis.swapaxes(-1, -2).conj())
         np.save(os.path.join(output_dir, "data_res"), data)
 
