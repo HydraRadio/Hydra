@@ -6,6 +6,7 @@ import numpy as np
 import hydra
 
 from scipy.stats import norm, rayleigh
+from pyuvdata import UVBeam
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm, SymLogNorm

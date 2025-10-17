@@ -9,6 +9,7 @@ import hydra
 from hydra.utils import timing_info, build_hex_array, get_flux_from_ptsrc_amp, \
                          convert_to_tops
 from pyuvdata.analytic_beam import GaussianBeam, AiryBeam
+from pyuvdata import UVBeam
 
 import argparse
 

@@ -171,16 +171,16 @@ if __name__ == '__main__':
             # Square root of power beam
             ref_beam_response = np.sqrt(ref_beam_response)
             ref_contraction = hydra.beam_sampler.get_bess_sky_contraction(Dmatr, 
-                                                                            ant_pos, 
-                                                                            fluxes, 
-                                                                            ra,
-                                                                            dec, 
-                                                                            freqs, 
-                                                                            times,
-                                                                            polarized=False, 
-                                                                            latitude=array_lat,
-                                                                            outer=False,
-                                                                            ref_beam_response=ref_beam_response)
+                                                                          ant_pos, 
+                                                                          fluxes, 
+                                                                          ra,
+                                                                          dec, 
+                                                                          freqs, 
+                                                                          times,
+                                                                          polarized=False, 
+                                                                          latitude=array_lat,
+                                                                          outer=False,
+                                                                          ref_beam_response=ref_beam_response)
 
             np.save(ref_contraction_outpath, ref_contraction)
         coeff_mean = np.zeros_like(beam_coeffs[:, :, 0])
