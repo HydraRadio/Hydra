@@ -19,9 +19,9 @@ from matplotlib.colors import LogNorm, SymLogNorm
 from matplotlib.gridspec import GridSpec
 import matplotlib.lines as mlines
 
-from .beam_example_utils import run_vis_sim, perturbed_beam, get_parser, \
-    init_prebeam_simulation_items, setup_args_dirs, get_analytic_beam, \
-    get_array_params
+import beam_example_utils
+
+from .beam_example_utils import run_vis_sim, init_prebeam_simulation_items
 
 def adjust_beamplot(ax_ob, gridcolor="white"):
     """
@@ -89,14 +89,15 @@ if __name__ == '__main__':
 
     description = "Example analytic Bayesian inference of power beam parameters " \
                   "assuming identical beams for all antennas." 
-    parser = get_parser(description)
+    parser = beam_example_utils.get_parser(description)
 
-    args, output_dir = setup_args_dirs(parser)
+    args, output_dir = beam_example_utils.setup_args_dirs(parser)
     #-------------------------------------------------------------------------------
     # (1) Simulate some data
     #-------------------------------------------------------------------------------
-    array_lat, ant_pos, Nants = get_array_params(args)
-
+    array_lat, ant_pos, Nants = beam_example_utils.get_array_params(args)
+    times, freqs = beam_example_utils.get_obs_params(args)
+    ra, dec, beta_ptsrc, ptsrc_amps, fluxes = beam_example_utils.get_src_params(args, output_dir)
 
     if args.beam_type == "unpert":
         bm = UVBeam.from_file(args.beam_file)
@@ -104,7 +105,7 @@ if __name__ == '__main__':
         beams = Nants * [bm]
     elif args.beam_type == "pert_sim":
         beam_rng = np.random.default_rng(seed=args.beam_seed)
-        pow_sb = perturbed_beam(
+        pow_sb = beam_example_utils.perturbed_beam(
             args, 
             output_dir, 
             seed=None,
@@ -115,10 +116,14 @@ if __name__ == '__main__':
         beams = Nants * [pow_sb]
     elif args.beam_type in ["gaussian", "airy"]:
         beam_rng = np.random.default_rng(seed=args.beam_seed)
-        beam, beam_class = get_analytic_beam(args, beam_rng)
+        beam, beam_class = beam_example_utils.get_analytic_beam(args, beam_rng)
         beams = Nants * [beam]
     
-    chain_seed, ftime, obs_params, src_params, unpert_sb = init_prebeam_simulation_items(args, output_dir)
+    chain_seed, ftime, unpert_sb = init_prebeam_simulation_items(
+        args, 
+        output_dir,
+        freqs
+    )
 
     sim_outpath = os.path.join(output_dir, "model0.npy")
     _sim_vis = run_vis_sim(args, ftime, times, freqs, ant_pos, Nants,
@@ -139,7 +144,7 @@ if __name__ == '__main__':
         else:
             flux_inference = fluxes
         unpert_vis = run_vis_sim(args, ftime, times, freqs, ant_pos, Nants,
-                                ra, dec, flux_inference, unpert_beam_list, array_lat, unpert_sim_outpath, ref=True)
+                                 ra, dec, flux_inference, unpert_beam_list, array_lat, unpert_sim_outpath, ref=True)
 
     autos = np.abs(_sim_vis[:, :, np.arange(Nants), np.arange(Nants)])
     noise_var = autos[:, :, None] * autos[:, :, :, None] / (args.integration_depth * args.ch_wid)

@@ -19,23 +19,27 @@ from matplotlib.colors import LogNorm, SymLogNorm
 from matplotlib.gridspec import GridSpec
 import matplotlib.lines as mlines
 
+import beam_example_utils
+
 from .beam_example_utils import run_vis_sim, perturbed_beam, get_analytic_beam, \
-    get_parser, init_prebeam_simulation_items, setup_args_dirs, \
-    get_array_params
+    init_prebeam_simulation_items
 
 if __name__ == '__main__':
 
     description = "Example Gibbs sampling of the joint posterior of per-antenna beam "  \
                   "parameters from a simulated visibility data set " 
-    parser = get_parser(description)
-    args, output_dir = setup_args_dirs(parser)
+    parser = beam_example_utils.get_parser(description)
+    args, output_dir = beam_example_utils.setup_args_dirs(parser)
     
-    array_lat, ant_pos, Nants = get_array_params(args)
+    array_lat, ant_pos, Nants = beam_example_utils.get_array_params(args)
+    times, freqs = beam_example_utils.get_obs_params(args)
+    ra, dec, beta_ptsrc, ptsrc_amps, fluxes = beam_example_utils.get_src_params(args, output_dir)
+    
     beams = []
     for ant_ind in range(Nants):
         ref_cond = args.perts_only and ant_ind == 0
         if args.beam_type == "pert_sim":
-            pow_sb = perturbed_beam(
+            pow_sb = beam_example_utils.perturbed_beam(
                 args, 
                 output_dir, 
                 seed=args.beam_seed + ant_ind
@@ -54,7 +58,11 @@ if __name__ == '__main__':
         else:
             raise ValueError("beam-type arg must be one of ('gaussian', 'airy', 'pert_sim')")
     
-    chain_seed, ftime, obs_params, src_params, unpert_sb = init_prebeam_simulation_items(args, output_dir)
+    chain_seed, ftime, unpert_sb = init_prebeam_simulation_items(
+        args, 
+        output_dir,
+        freqs
+    )
 
 
     sim_outpath = os.path.join(output_dir, "model0.npy")

@@ -330,28 +330,34 @@ def get_parser(description):
                         
     return parser
 
-def init_prebeam_simulation_items(args, output_dir):
+def init_prebeam_simulation_items(args, output_dir, freqs):
     
     if args.chain_seed == "None":
         chain_seed = None
     else:
         chain_seed = int(args.chain_seed)
 
-    # In case these are passed out of order, also shorter names
-    ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
-    dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
-    lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
-
-    # Random seed
-    beam_rng = np.random.default_rng(args.beam_seed)
-    print("    Seed:    %d" % args.beam_seed)
-
     # Timing file
     ftime = os.path.join(output_dir, "timing.dat")
 
-    times = np.linspace(lst_min, lst_max, args.Ntimes)
-    freqs = np.arange(args.freq_low, args.freq_low + args.Nfreqs * args.ch_wid, args.ch_wid)
 
+    mmodes = np.arange(-args.mmax, args.mmax + 1)
+    unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
+                                              mmodes=mmodes, Nfeeds=2, 
+                                              alpha=args.rho_const,
+                                              num_modes_comp=args.Nbasis,
+                                              sqrt=args.per_ant,
+                                              freq_range=(np.amin(freqs), np.amax(freqs)),
+                                              save_fn=f"{output_dir}/unpert_sb")
+
+
+
+                                              
+    return chain_seed, ftime, unpert_sb
+
+def get_src_params(args, output_dir):
+    ra_low, ra_high = (min(args.ra_bounds), max(args.ra_bounds))
+    dec_low, dec_high = (min(args.dec_bounds), max(args.dec_bounds))
     skyrng = np.random.default_rng(args.sky_seed)
     # Generate random point source locations
     # RA goes from [0, 2 pi] and Dec from [-pi / 2, +pi / 2].
@@ -369,30 +375,17 @@ def init_prebeam_simulation_items(args, output_dir):
     print("pstrc amps (input):", ptsrc_amps[:5])
     np.save(os.path.join(output_dir, "ptsrc_amps0"), ptsrc_amps)
     np.save(os.path.join(output_dir, "ptsrc_coords0"), np.column_stack((ra, dec)).T)
+    return ra, dec, beta_ptsrc, ptsrc_amps, fluxes
 
-    mmodes = np.arange(-args.mmax, args.mmax + 1)
-    unpert_sb = hydra.sparse_beam.sparse_beam(args.beam_file, nmax=args.nmax, 
-                                              mmodes=mmodes, Nfeeds=2, 
-                                              alpha=args.rho_const,
-                                              num_modes_comp=args.Nbasis,
-                                              sqrt=args.per_ant,
-                                              freq_range=(np.amin(freqs), np.amax(freqs)),
-                                              save_fn=f"{output_dir}/unpert_sb")
-    # Just makes some downstream code more readable
-    obs_params = {
-        "times": times,
-        "freqs": freqs
-    }
-    src_params = {
-        "ra": ra,
-        "dec": dec,
-        "beta_ptsrc": beta_ptsrc,
-        "ptsrc_amps": ptsrc_amps,
-        "fluxes": fluxes
-    }
-
-                                              
-    return chain_seed, ftime, obs_params, src_params, unpert_sb
+def get_obs_params(args):
+    lst_min, lst_max = (min(args.lst_bounds), max(args.lst_bounds))
+    times = np.linspace(lst_min, lst_max, args.Ntimes)
+    freqs = np.arange(
+        args.freq_low, 
+        args.freq_low + args.Nfreqs * args.ch_wid, 
+        args.ch_wid
+    )
+    return times, freqs
 
 def get_array_params(args):
     hex_array = tuple(args.hex_array)
