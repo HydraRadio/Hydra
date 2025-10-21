@@ -18,7 +18,7 @@ class sparse_beam(UVBeam):
         load=False,
         bound="Dirichlet",
         Nfeeds=None,
-        do_fit=True,
+        fit_beam=True,
         alpha=np.sqrt(1 - np.cos(46 * np.pi / 90)),
         num_modes_comp=64,
         nmodes_comp=None,
@@ -62,9 +62,63 @@ class sparse_beam(UVBeam):
                 conditions for the Laplace equation in cylindrical coordinates
                 i.e. it determines whether to use 0th order or 1st order
                 Bessel functions.
+            Nfeeds (int):
+                Number of feeds to read in. This does not usually need to be set,
+                but may need to be set depending on pyuvdata version.
+            fit_beam (bool):
+                Whether to do the FB fit after the beam is read in.
             alpha (float):
                 A constant to adjust where the boundary condition is satisfied
                 on the disk. Default is slightly underneath the horizon.
+            num_modes_comp (int):
+                Number of modes to use for the compressed representation of the 
+                beam.
+            nmodes_comp (array):
+                List of radial mode numbers to use for the compressed beam, if
+                not doing the fit from scratch (if not fit_beam).
+            mmodes_comp (array):
+                Azimuthal mode numbers for compressed beam corresponding to 
+                radial mode numbers contained in nmodes.
+            sparse_fit_coeffs (array):
+                Sparse fit coefficients from previous run if fit_beam is False.
+            perturb (bool):
+                Whether to perturb the beam.
+            za_ml (float):
+                A parameter determining the size in zenith angle for 
+                mainlobe-specific perturbations, not including coordinate
+                transformations.
+            dza (float):
+                An angular scale in radians that determines how rapidly sidelobe 
+                perturbations turn on after exiting the zone delineated by za_ml.
+            Nsin_pert (int):
+                Number of sine modes for the sidelobe perturbations.
+            sin_pert_coeffs (array):
+                The low order Fourier coefficients for the sidelobe perturbations.
+            cSL (float):
+                Parameter controlling the maximum strength of the sidelobe
+                perturbations.
+            gam (float):
+                Parameter controlling additional mainlobe perturbations (Not
+                used in Wilensky+ 2025 but was used in Choudhuri+ 2021.)
+            sqrt (bool):
+                Whether to take the square root of the beam before evaluating,
+                interpolating, etc. This is useful for Eish beams (power beam
+                based E-field beams). 
+            rot (float):
+                How many radians by which to rotate the coordinate system for
+                perturbed beams.
+            stretch_x (float):
+                Factor by which to stretch the az=0 direction.
+            stretch_y (float):
+                Factor by which to stretch the az=pi/2 direction.
+            trans_x (float):
+                Radians by which to translate along the az=0 direction 
+                (tilts the beam).
+            trans_y (float):
+                Radians by which to translate along the az=pi/2 direction
+                (tilts the beam).
+            kwargs:
+                Additional kwargs to pass to UVBeam.read_beamfits
         """
         super().__init__()
         self.bound = bound
@@ -100,7 +154,7 @@ class sparse_beam(UVBeam):
         self.az_array = self.axis1_array
         self.rad_array = self.get_rad_array()
 
-        if do_fit:
+        if fit_beam:
             self.az_grid, self.rad_grid = np.meshgrid(self.az_array, self.rad_array)
             self.ncoord = self.az_grid.size
             self.daz = self.axis1_array[1] - self.axis1_array[0]
@@ -118,7 +172,7 @@ class sparse_beam(UVBeam):
 
         elif sparse_fit_coeffs is None:
             raise ValueError(
-                "Must either set full_fit=True or supply " "sparse_fit_coeffs"
+                "Must either set fit_beam=True or supply " "sparse_fit_coeffs"
             )
         else:
             self.comp_fits = sparse_fit_coeffs
@@ -271,6 +325,10 @@ class sparse_beam(UVBeam):
         Parameters:
             load (bool):
                 Whether to load precomputed solutions
+            data_array (array, complex):
+                A data array to be fit. If None, just use the data_array attribute.
+                Useful for fitting the result of a perturbed beam using the
+                original basis function.
 
         Returns:
             fit_coeffs (array, complex):
@@ -291,24 +349,28 @@ class sparse_beam(UVBeam):
             # Saves loads of memory and time
             az_fit = (
                 data_array @ self.trig_matr.conj()
-            )  # Naxes_vec, 1, Nfeeds, Nfreq, Nza, Nm
-
+            )  # Naxes_vec, Nfeeds, Nfreq, Nza, Nm
+            
             BtB = self.bess_matr.T @ self.bess_matr
-            Baz = self.bess_matr.T @ az_fit  # Naxes_vec, 1, Nfeeds, Nfreq, Nn, Nm
-            Baz = Baz.transpose(4, 5, 0, 1, 2, 3)  # Nn, Nm, Naxes_vec, 1, Nfeeds, Nfreq
+            Baz = self.bess_matr.T @ az_fit  # Naxes_vec, Nfeeds, Nfreq, Nn, Nm
+            Baz = Baz.transpose(3, 4, 0, 1, 2)  # Nn, Nm, Naxes_vec, Nfeeds, Nfreq
 
+            # Reshape Baz to have max. 2 dimensions before solving, as scipy.linalg.solve() 
+            # needs that
+            Baz_shape = Baz.shape
             fit_coeffs = solve(
-                BtB, Baz, assume_a="sym"
-            )  # Nn, Nm, Naxes_vec, 1, Nfeeds, Nfreq
+                BtB, Baz.reshape((Baz.shape[0], -1)), assume_a="sym"
+            )  # Nn, Nm, Naxes_vec, Nfeeds, Nfreq
+            fit_coeffs = fit_coeffs.reshape(Baz_shape)
 
             # Apply design matrices to get fit beams
             fit_beam_az = np.tensordot(
                 self.trig_matr, fit_coeffs, axes=((1,), (1,))
-            )  # Naz, Nn, Naxes_vec, 1, Nfeeds, Nfreq
+            )  # Naz, Nn, Naxes_vec, Nfeeds, Nfreq
             fit_beam = np.tensordot(
                 self.bess_matr, fit_beam_az, axes=((1,), (1,))
-            )  # Nza, Naz, Naxes_vec, 1, Nfeeds, Nfreq
-            fit_beam = fit_beam.transpose(2, 3, 4, 5, 0, 1)
+            )  # Nza, Naz, Naxes_vec, Nfeeds, Nfreq
+            fit_beam = fit_beam.transpose(2, 3, 4, 0, 1)
 
             np.save(f"{self.save_fn}_bess_fit_coeffs.npy", fit_coeffs)
             np.save(f"{self.save_fn}_bess_fit_beam.npy", fit_beam)
@@ -339,7 +401,7 @@ class sparse_beam(UVBeam):
 
         ps_sort_inds = np.argsort(
             self.bess_ps.reshape(
-                (self.ncoeff_bess, self.Naxes_vec, 1, self.Nfeeds, self.Nfreqs)
+                (self.ncoeff_bess, self.Naxes_vec, self.Nfeeds, self.Nfreqs)
             ),
             axis=0,
         )
@@ -351,21 +413,21 @@ class sparse_beam(UVBeam):
         if make_const_in_freq:
             mid_freq_ind = self.Nfreqs // 2
             nmodes_comp = np.repeat(
-                nmodes_comp[:, :, :, :, mid_freq_ind : mid_freq_ind + 1],
+                nmodes_comp[:, :, :, mid_freq_ind : mid_freq_ind + 1],
                 self.Nfreqs,
-                axis=4,
+                axis=3,
             )
             mmodes_comp = np.repeat(
-                mmodes_comp[:, :, :, :, mid_freq_ind : mid_freq_ind + 1],
+                mmodes_comp[:, :, :, mid_freq_ind : mid_freq_ind + 1],
                 self.Nfreqs,
-                axis=4,
+                axis=3,
             )
 
         return nmodes_comp, mmodes_comp
 
     def sparse_fit_loop(
         self,
-        do_fit=True,
+        fit_beam=True,
         bess_matr=None,
         trig_matr=None,
         fit_coeffs=None,
@@ -373,29 +435,37 @@ class sparse_beam(UVBeam):
         data_array=None,
     ):
         """
-        Do a loop over all the axes and fit/evaluate fit in position space.
+        Do a loop over all the axes and fit _or_ evaluate fit in position space,
+        using only the radial and azimuthal modes determined by the nmodes_comp
+        and mmodes_comp attributes.
 
         Parameters:
-            fit_coeffs (array, complex):
-                Precomputed fit coefficients (if just evaluating).
-            do_fit (bool):
+            fit_beam (bool):
                 Whether to do the fit (set to False if fit_coeffs supplied).
             bess_matr (array):
                 Bessel part of design matrix.
             trig_matr (array, complex):
                 Fourier part of design matrix.
+            fit_coeffs (array, complex):
+                Precomputed fit coefficients (if just evaluating).
+            freq_array (array):
+                The frequencies for the fit/evaluation.
+            data_array (array):
+                An array to be fit. If not provided, use the data_array attribute.
 
         Returns:
-            fit_coeffs (array, complex; if do_fit is True):
+            fit_coeffs (array, complex; if fit_beam is True):
                 The newly calculated fit coefficients in the sparse basis.
-            fit_beam (array, complex):
+                The units are in the same units as the supplied beam since the 
+                basis functions are dimensionless. 
+            fitted_beam (array, complex):
                 The sparsely fit beam evaluated in position space.
         """
         # nmodes might vary from pol to pol, freq to freq. The fit is fast, just do a big for loop.
         interp_kwargs = [bess_matr, trig_matr, fit_coeffs]
-        if do_fit:
+        if fit_beam:
             fit_coeffs = np.zeros(
-                [self.Naxes_vec, 1, self.Nfeeds, self.Nfreqs, self.num_modes_comp],
+                [self.Naxes_vec, self.Nfeeds, self.Nfreqs, self.num_modes_comp],
                 dtype=complex,
             )
             if data_array is None:
@@ -409,20 +479,20 @@ class sparse_beam(UVBeam):
             )
         else:
             Npos = bess_matr.shape[0]
-            beam_shape = (self.Naxes_vec, 1, self.Nfeeds, self.Nfreqs, Npos)
+            beam_shape = (self.Naxes_vec, self.Nfeeds, self.Nfreqs, Npos)
             if fit_coeffs is None:  # already have some fits
                 fit_coeffs = self.comp_fits
-        fit_beam = np.zeros(beam_shape, dtype=complex)
+        fitted_beam = np.zeros(beam_shape, dtype=complex)
 
         Nfreqs = self.Nfreqs if freq_array is None else len(freq_array)
 
         for vec_ind in range(self.Naxes_vec):
             for feed_ind in range(self.Nfeeds):
                 for freq_ind in range(Nfreqs):
-                    if do_fit:
-                        dat_iter = data_array[vec_ind, 0, feed_ind, freq_ind]
-                    nmodes_iter = self.nmodes_comp[:, vec_ind, 0, feed_ind, freq_ind]
-                    mmodes_iter = self.mmodes_comp[:, vec_ind, 0, feed_ind, freq_ind]
+                    if fit_beam:
+                        dat_iter = data_array[vec_ind, feed_ind, freq_ind]
+                    nmodes_iter = self.nmodes_comp[:, vec_ind, feed_ind, freq_ind]
+                    mmodes_iter = self.mmodes_comp[:, vec_ind, feed_ind, freq_ind]
                     unique_mmodes_iter = np.unique(mmodes_iter)
 
                     for mmode in unique_mmodes_iter:
@@ -433,28 +503,28 @@ class sparse_beam(UVBeam):
                         bess_matr_mmode = bess_matr[:, nmodes_mmode]
                         trig_mode = trig_matr[:, mmode]
 
-                        if do_fit:
+                        if fit_beam:
                             az_fit_mmode = dat_iter @ trig_mode.conj()  # Nza
 
                             fit_coeffs_mmode = lstsq(bess_matr_mmode, az_fit_mmode)[0]
-                            fit_coeffs[vec_ind, 0, feed_ind, freq_ind, mmode_inds] = (
+                            fit_coeffs[vec_ind, feed_ind, freq_ind, mmode_inds] = (
                                 fit_coeffs_mmode
                             )
-                            fit_beam[vec_ind, 0, feed_ind, freq_ind] += np.outer(
+                            fitted_beam[vec_ind, feed_ind, freq_ind] += np.outer(
                                 bess_matr_mmode @ fit_coeffs_mmode, trig_mode
                             )
                         else:
                             fit_coeffs_mmode = fit_coeffs[
-                                vec_ind, 0, feed_ind, freq_ind, mmode_inds
+                                vec_ind, feed_ind, freq_ind, mmode_inds
                             ]
-                            fit_beam[vec_ind, 0, feed_ind, freq_ind] += (
+                            fitted_beam[vec_ind, feed_ind, freq_ind] += (
                                 bess_matr_mmode @ fit_coeffs_mmode
                             ) * trig_mode
 
-        if do_fit:
+        if fit_beam:
             return fit_coeffs, fit_beam
         else:
-            return fit_beam
+            return fitted_beam
 
     def interp(
         self,
@@ -500,6 +570,10 @@ class sparse_beam(UVBeam):
                 frequencies/spatial positions. Has shape
                 (Naxes_vec, 1, Npols, Nfreqs, Npos).
         """
+        if 'az_za_grid' in kwargs.keys():
+            if kwargs['az_za_grid']:
+                raise ValueError("This object does not support `az_za_grid=True`")
+        
         if az_array is None and za_array is None and freq_array is not None:
             # vis_cpu wants to get a new object with frequency freq_array. No can do. Return the whole thing.
             # FIXME: Can make a new_sparse_beam_from_self method to accomplish this
@@ -509,7 +583,7 @@ class sparse_beam(UVBeam):
             raise ValueError("Must specify an azimuth array.")
         if za_array is None:
             raise ValueError("Must specify a zenith-angle array.")
-
+            
         if reuse_spline:
             az_hash = hashlib.sha1(az_array).hexdigest()
             za_hash = hashlib.sha1(za_array).hexdigest()
@@ -536,7 +610,7 @@ class sparse_beam(UVBeam):
                 fit_coeffs = self.comp_fits
             else:
                 for ind_ob in [self.nmodes_comp, self.mmodes_comp]:
-                    if not np.all(ind_ob == ind_ob[:, :, :, :, :1]):
+                    if not np.all(ind_ob == ind_ob[:, :, :, :1]):
                         raise NotImplementedError(
                             "Basis is not constant in "
                             "frequency. Cannot do "
@@ -547,10 +621,10 @@ class sparse_beam(UVBeam):
                     freq_array
                 )
 
-                fit_coeffs_interp = interp1d(freq_array_knots, self.comp_fits, axis=3)
+                fit_coeffs_interp = interp1d(freq_array_knots, self.comp_fits, axis=2)
                 fit_coeffs = fit_coeffs_interp(freq_array)
             beam_vals = self.sparse_fit_loop(
-                do_fit=False,
+                fit_beam=False,
                 fit_coeffs=fit_coeffs,
                 bess_matr=bess_matr,
                 trig_matr=trig_matr,
@@ -564,11 +638,12 @@ class sparse_beam(UVBeam):
                     freq_array
                 )
                 bess_fits_interp = interp1d(
-                    freq_array_knots, self.bess_fits, axis=5, kind=freq_interp_kind
+                    freq_array_knots, self.bess_fits, axis=4, kind=freq_interp_kind
                 )
                 bess_fits = bess_fits_interp(freq_array)
+            #snm, nmpxf -> pxfs (Naxes_vec, Nfreed, Nfreqs, Nsource_pos)
             beam_vals = np.tensordot(bt_matr, bess_fits, axes=2).transpose(
-                1, 2, 3, 4, 0
+                1, 2, 3, 0
             )
         if self.beam_type == "power":
             # FIXME: This assumes you are reading in a power beam and is just to get rid of the imaginary component
@@ -577,6 +652,19 @@ class sparse_beam(UVBeam):
         return beam_vals, None
 
     def prep_freq_array_for_interp(self, freq_array):
+        """
+        A helper function that prepares the frequency array for 
+        interpolation.
+
+        Parameters:
+            freq_array (array):
+                The frequency array within which to interpolate.
+        Returns:
+            freq_array (array):
+                The input freq_array, potentially with its array shape modified.
+            freq_array_knots (array):
+                The knows for the freq spline.
+        """
         freq_array = np.atleast_1d(freq_array)
         assert freq_array.ndim == 1, "Freq array for interp must be exactly 1d"
 
@@ -588,6 +676,9 @@ class sparse_beam(UVBeam):
         return freq_array, freq_array_knots
 
     def clear_cache(self):
+        """
+        Clear the interpolation cache (it can take a lot of memory).
+        """
         self.az_array_dict.clear()
         self.za_array_dict.clear()
         self.trig_matr_interp_dict.clear()
@@ -603,25 +694,61 @@ class sparse_beam(UVBeam):
         raise NotImplementedError("efield_to_pstokes is not implemented yet.")
 
     def sigmoid_mod(self, rad_array=None):
+        """
+        Make the tanh-based modulator for the perturbed beam that separates
+        main lobe from sidelobe perturbations.
+
+        Parameters:
+            rad_array (array):
+                An array containing the radial coordinates. Supply if perturbing
+                the coordinate system). Otherwise just uses the rad_array attribute.
+
+        Reutrns:
+            sigmoid (array):
+                The sigmoidal function evaluated at the radial coordinates.
+        """
         if rad_array is None:
             rad_array = self.rad_array
         za_array = np.arccos(1 - (self.alpha * rad_array) ** 2)
         return 0.5 * (1 + np.tanh((za_array - self.za_ml) / self.dza))
 
     def sin_perts(self, rad_array=None):
+        """
+        Generate the Fourier based sidelobe perturbations.
+
+        Parameters:
+            rad_array (array):
+                An array containing the radial coordinates. Supply if perturbing
+                the coordinate system). Otherwise just uses the rad_array attribute.
+
+        Reutrns:
+            sin_perts (array):
+                The Fourier series evaluated at the radial coordinates.
+        """
         if rad_array is None:
             rad_array = self.rad_array
         L = self.rad_array[
             -1
         ]  # Always make this zero-out at the horizon in unstretched coordinates
         dmatr = np.array(
-            [np.sin(2 * np.pi * m * rad_array / L) for m in range(self.Nsin_pert)]
+            [np.sin(2 * np.pi * m * rad_array / L) for m in range(1, self.Nsin_pert + 1)]
         ).T
         sin_pert_unnorm = dmatr @ self.sin_pert_coeffs
         sp_range = np.amax(sin_pert_unnorm) - np.amin(sin_pert_unnorm)
         return sin_pert_unnorm / sp_range
 
     def SL_pert(self, rad_array=None):
+        """
+        Combine all the sidelobe perturbations.
+
+        Parameters:
+            rad_array (array):
+                An array containing the radial coordinates. Supply if perturbing
+                the coordinate system). Otherwise just uses the rad_array attribute.
+        Returns:
+            SL_pert (array):
+                The perturbations evaluated at the radial coordinate.
+        """
         if self.sin_pert_coeffs is None:
             return np.ones_like(rad_array)
         else:
@@ -630,24 +757,30 @@ class sparse_beam(UVBeam):
             ) * self.sigmoid_mod(rad_array=rad_array)
 
     def ML_gauss_term(self, gam):
+        """
+        A contributing term to a mainlobe perturbation that essentially changes 
+        the width of the main lobe.
+
+        Parameters:
+            gam (float):
+                A scale factor that adjusts the width of the perturbation.
+        Returns:
+            gauss_term (float):
+                The gaussian term evaluated at the _unperturbed_ radial coordinates.
+        """
         return np.exp(-0.5 * self.axis2_array**2 / (gam * self.za_ml) ** 2)
 
     def ML_pert(self):
+        """
+        Generate mainlobe perturbations based on the gaussian term from
+        ML_gauss_term and the sigmoidal term.
+
+        Returns:
+            ML_pert (array):
+                The mainlobe perturbation evaluated at the _unperturbed_ radial
+                coordinates.
+        """
         sig_factor = 1 - self.sigmoid_mod()
         gauss_diff = self.ML_gauss_term(gam=self.gam) - self.ML_gauss_term(gam=1)
         return sig_factor * gauss_diff
 
-    def az_pert(self):
-        dmatr_cos = np.array(
-            [np.cos(m * self.axis1_array) for m in range(1, 1 + self.Naz_pert)]
-        ).T
-        dmatr_sin = np.array(
-            [np.sin(m * self.axis1_array) for m in range(1, 1 + self.Naz_pert)]
-        ).T
-
-        cos_modes = dmatr_cos @ self.az_cos_pert_coeffs
-        sin_modes = dmatr_sin @ self.az_sin_pert_coeffs
-
-        az_pert_unnorm = cos_modes + sin_modes
-        az_pert_range = np.amax(az_pert_unnorm) - np.amin(az_pert_unnorm)
-        return az_pert_unnorm / az_pert_range

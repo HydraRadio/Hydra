@@ -1,7 +1,8 @@
 import numpy as np
-from matvis import coordinates as conversions
+from matvis import coordinates
 import pyuvdata
-#from pyuvsim import AnalyticBeam
+from pyuvdata import BeamInterface
+from pyuvdata.analytic_beam import AnalyticBeam
 
 """
 # Terminal colour codes
@@ -438,10 +439,10 @@ def convert_to_tops(ra, dec, lsts, latitude, precision=1):
     else:
         real_dtype = np.float64
     # Source coordinate transform, from equatorial to Cartesian
-    crd_eq = conversions.point_source_crd_eq(ra, dec)
+    crd_eq = coordinates.point_source_crd_eq(ra, dec)
 
     # Get coordinate transforms as a function of LST
-    eq2tops = np.array([conversions.eci_to_enu_matrix(lst, latitude) for lst in lsts])
+    eq2tops = np.array([coordinates.eci_to_enu_matrix(lst, latitude) for lst in lsts])
 
     txs, tys, tzs = [], [], []
 
@@ -549,7 +550,10 @@ def get_beam_interp_shape(beam):
         spw_axis_present (bool): Whether the spw axis is present.
     """
     # Check beam type to see shape for return of interp method
-    if isinstance(beam, pyuvdata.UVBeam):
+    if isinstance(beam, AnalyticBeam) or isinstance(beam, BeamInterface):
+        spw_axis_present = False
+
+    elif isinstance(beam, pyuvdata.UVBeam):
         spw_axis_present = not beam.future_array_shapes
     else:
         spw_axis_present = False
