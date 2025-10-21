@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "setuptools_scm>=8.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hydra"
+authors = [
+    {name = "Phil Bull", email="phil.bull@manchester.ac.uk"},
+    {name = "Hugh Garsden", email="hugh.garsden@manchester.ac.uk"}
+    {name = "Katrine A. Glasscock", email="katrine.glasscock@manchester.ac.uk"},
+    {name = "Michael J. Wilensky", email="michael.wilensky@mcgill.ca"},
+]
+maintainers = [
+    {name = "Phil Bull", email="phil.bull@manchester.ac.uk"},
+]
+description = "Gibbs sampling for 21cm cosmology experiments"
+readme = "README.md"
+dynamic = ["version"]
+dependencies = [
+    "numpy<2.0",
+    scipy,
+    healpy,
+    matvis,
+    pygdsm,
+    pyuvsim,
+    spherical,
+    hera_sim,
+]
+requires-python = ">=3.10"
+keywords = ["Gibbs sampling", "Bayesian inference"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+
+[project.urls]
+Repository = "https://github.com/HydraRadio/Hydra"
+Documentation = "https://hydraradio.github.io/Hydra/api/"
+
+# Note that this approach is "discouraged" in favor of [project.scripts], but
+# that requires entry-point functions, which would require some refactoring.
+[tool.setuptools]
+script-files = [
+    "scripts/beam_diagnostic.py",
+    "scripts/chain_mix.py",
+    "scripts/concatenate_uvh5.py",
+    "scripts/freqidx_select.py,
+    "scripts/generate_perturbed_beam.py",
+    "scripts/generate_slurm.py",
+    "scripts/minimal_antenna_set.py",
+    "scripts/precompute_response_sh.py",
+    "scripts/precompute_response_sh_singlefreq.py",
+    "scripts/precompute_response_sh_singlefreq_general.py",
+    "scripts/redundant_select.py",
+    "scripts/shortbls_select.py",
+    "beam_example.py"
+    "example.py"
+]
+
+# This has to be here for Mac builds to work.
+[tool.setuptools_scm]
+version_file = "hydra/version.py"
