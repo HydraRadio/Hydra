@@ -11,6 +11,7 @@ from scipy.sparse.linalg import cg, gmres, LinearOperator, bicgstab
 from scipy.signal.windows import blackmanharris
 from scipy.sparse import coo_matrix
 import pyuvsim
+import pyuvdata
 from hera_sim.beams import PolyBeam
 import time, os, sys, resource
 from hydra.utils import flatten_vector, reconstruct_vector, timing_info, \
@@ -255,7 +256,7 @@ if __name__ == '__main__':
             sim_beams = [PolyBeam(beam_coeffs, spectral_index=-0.6975, ref_freq=1.e8)
                          for ant in ants]
         else:
-            sim_beams = [pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14.)
+            sim_beams = [pyuvdata.GaussianBeam(diameter=14.)
                          for ant in ants]
         if myid == 0:
             status(None, "Simulation beam type: %s" % args.beam_sim_type, 'y')
@@ -1090,7 +1091,7 @@ if __name__ == '__main__':
 
             t0b = time.time()
             t0 = time.time()
-            bess_sky_contraction = hydra.per_ant_beam_sampler.get_bess_sky_contraction(bess_outer, 
+            bess_sky_contraction = hydra.beam_sampler.get_bess_sky_contraction(bess_outer, 
                                                                                ant_pos, 
                                                                                flux_use, 
                                                                                ra,
@@ -1113,7 +1114,7 @@ if __name__ == '__main__':
 
                 # Construct beam projection operator
                 t0 = time.time()
-                bess_trans = hydra.per_ant_beam_sampler.get_bess_to_vis(bess_matr, ant_pos,
+                bess_trans = hydra.beam_sampler.get_bess_to_vis(bess_matr, ant_pos,
                                                                    flux_use, ra, dec,
                                                                    freqs*1e6, times,
                                                                    beam_coeffs,
@@ -1125,7 +1126,7 @@ if __name__ == '__main__':
                 timing_info(ftime, n, "(D) Computed beam get_bess_to_vis", time.time() - t0)
                 
                 t0 = time.time()
-                bess_trans = hydra.per_ant_beam_sampler.get_bess_to_vis_from_contraction(bess_sky_contraction,
+                bess_trans = hydra.beam_sampler.get_bess_to_vis_from_contraction(bess_sky_contraction,
                                                                                  beam_coeffs, 
                                                                                  ants, 
                                                                                  ant_samp_ind)
@@ -1141,12 +1142,12 @@ if __name__ == '__main__':
                        #                                            multiprocess=MULTIPROCESS)
 
                 status(None, "\tDoing other per-iteration pre-compute", 'c')
-                inv_noise_var_use = hydra.per_ant_beam_sampler.select_subarr(inv_noise_var_beam,
+                inv_noise_var_use = hydra.beam_sampler.select_subarr(inv_noise_var_beam,
                                                                ant_samp_ind, Nants)
-                data_use = hydra.per_ant_beam_sampler.select_subarr(data_beam, ant_samp_ind, Nants)
+                data_use = hydra.beam_sampler.select_subarr(data_beam, ant_samp_ind, Nants)
 
                 # Construct RHS vector
-                rhs_unflatten = hydra.per_ant_beam_sampler.construct_rhs(data_use,
+                rhs_unflatten = hydra.beam_sampler.construct_rhs(data_use,
                                                                  inv_noise_var_use,
                                                                  coeff_mean,
                                                                  bess_trans,
@@ -1156,7 +1157,7 @@ if __name__ == '__main__':
                 
 
                 shape = (Nfreqs, ncoeffs,  1, 1, 2)
-                cov_Qdag_Ninv_Q = hydra.per_ant_beam_sampler.get_cov_Qdag_Ninv_Q(inv_noise_var_use,
+                cov_Qdag_Ninv_Q = hydra.beam_sampler.get_cov_Qdag_Ninv_Q(inv_noise_var_use,
                                                                          bess_trans,
                                                                          cov_tuple_use)
 
@@ -1176,7 +1177,7 @@ if __name__ == '__main__':
 
 
                 def beam_lhs_operator(x):
-                    y = hydra.per_ant_beam_sampler.apply_operator(np.reshape(x, shape),
+                    y = hydra.beam_sampler.apply_operator(np.reshape(x, shape),
                                                           cov_Qdag_Ninv_Q)
                     return(y.flatten())
 
