@@ -1166,7 +1166,7 @@ def get_pert_beam(
 
     if save:
         np.save(outfile, pert_beam)
-        np.save(f"{outfile[:outfile.rfind(".npy")]}_fit_coeffs.npy", fit_coeffs)
+        np.save(f"{outfile[:outfile.rfind('.npy')]}_fit_coeffs.npy", fit_coeffs)
 
     return sb
 
