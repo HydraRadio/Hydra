@@ -57,7 +57,9 @@ script-files = [
     "scripts/precompute_response_sh_singlefreq_general.py",
     "scripts/redundant_select.py",
     "scripts/shortbls_select.py",
-    "beam_example.py",
+    "power_beam_example.py",
+    "per_antenna_beam_example.py",
+    "beam_example_utils.py",
     "example.py"
 ]
 
