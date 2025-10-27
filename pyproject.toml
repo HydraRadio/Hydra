@@ -17,7 +17,8 @@ description = "Gibbs sampling for 21cm cosmology experiments"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
-    "numpy<2.0",
+    numpy,
+    pyuvdata,
     scipy,
     healpy,
     matvis,

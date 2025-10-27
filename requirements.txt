@@ -1,4 +1,4 @@
-numpy<2.0
+numpy
 scipy
 healpy
 matvis
@@ -6,3 +6,4 @@ pygdsm
 pyuvsim
 spherical
 hera_sim
+pyuvdata
