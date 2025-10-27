@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "hydra"
 authors = [
     {name = "Phil Bull", email="phil.bull@manchester.ac.uk"},
-    {name = "Hugh Garsden", email="hugh.garsden@manchester.ac.uk"}
+    {name = "Hugh Garsden", email="hugh.garsden@manchester.ac.uk"},
     {name = "Katrine A. Glasscock", email="katrine.glasscock@manchester.ac.uk"},
     {name = "Michael J. Wilensky", email="michael.wilensky@mcgill.ca"},
 ]
@@ -48,7 +48,7 @@ script-files = [
     "scripts/beam_diagnostic.py",
     "scripts/chain_mix.py",
     "scripts/concatenate_uvh5.py",
-    "scripts/freqidx_select.py,
+    "scripts/freqidx_select.py",
     "scripts/generate_perturbed_beam.py",
     "scripts/generate_slurm.py",
     "scripts/minimal_antenna_set.py",
@@ -57,7 +57,7 @@ script-files = [
     "scripts/precompute_response_sh_singlefreq_general.py",
     "scripts/redundant_select.py",
     "scripts/shortbls_select.py",
-    "beam_example.py"
+    "beam_example.py",
     "example.py"
 ]
 
