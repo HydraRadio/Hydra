@@ -26,7 +26,7 @@ dependencies = [
     spherical,
     hera_sim,
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["Gibbs sampling", "Bayesian inference"]
 classifiers = [
     "Development Status :: 3 - Alpha",
