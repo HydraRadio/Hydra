@@ -11,6 +11,7 @@ from scipy.sparse.linalg import cg, gmres, LinearOperator, bicgstab
 from scipy.signal.windows import blackmanharris
 from scipy.sparse import coo_matrix
 import pyuvsim
+import pyuvdata
 from hera_sim.beams import PolyBeam
 import time, os, sys, resource
 from hydra.utils import flatten_vector, reconstruct_vector, timing_info, \
@@ -255,7 +256,7 @@ if __name__ == '__main__':
             sim_beams = [PolyBeam(beam_coeffs, spectral_index=-0.6975, ref_freq=1.e8)
                          for ant in ants]
         else:
-            sim_beams = [pyuvsim.analyticbeam.AnalyticBeam('gaussian', diameter=14.)
+            sim_beams = [pyuvdata.GaussianBeam(diameter=14.)
                          for ant in ants]
         if myid == 0:
             status(None, "Simulation beam type: %s" % args.beam_sim_type, 'y')

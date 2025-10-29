@@ -11,6 +11,4 @@ plugins:
       handlers:
         python:
           load_external_modules: true
-          selection:
-              new_path_syntax: true
           paths: [../../../Hydra]

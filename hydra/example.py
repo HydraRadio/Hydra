@@ -2,6 +2,7 @@ import numpy as np
 
 from scipy.signal.windows import blackmanharris
 import pyuvsim
+import pyuvdata
 from hera_sim.beams import PolyBeam
 import time, os, resource
 from .vis_simulator import simulate_vis
@@ -167,7 +168,7 @@ def run_example_simulation(
         ]
     else:
         beams = [
-            pyuvsim.analyticbeam.AnalyticBeam("gaussian", diameter=14.0) for ant in ants
+            pyuvdata.GaussianBeam(diameter=14.) for ant in ants
         ]
 
     # Run a simulation

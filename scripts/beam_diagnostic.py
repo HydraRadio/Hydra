@@ -6,7 +6,7 @@ import argparse
 import glob
 import sys
 
-from hydra.beam_sampler import get_bess_matr
+from hydra.per_ant_beam_sampler import get_bess_matr
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--chdir", required=True, type=str,
