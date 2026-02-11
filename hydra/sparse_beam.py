@@ -139,8 +139,10 @@ class sparse_beam(UVBeam):
             self.cSL = cSL
 
         if Nfeeds is not None:  # power beam may not have the Nfeeds set
-            assert self.Nfeeds is None, "Nfeeds already set on the beam"
-            self.Nfeeds = Nfeeds
+            if self.Nfeeds is None:
+                self.Nfeeds = Nfeeds
+            else:
+                print("Nfeeds already set on beam")
 
         if sqrt:
             self.data_array = np.sqrt(self.data_array)
