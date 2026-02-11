@@ -298,6 +298,8 @@ def get_parser(description):
     parser.add_argument("--missing-sources", required=False, 
                         action="store_true", dest="missing_sources",
                         help="Whether to drop the bottom 10 percent of sources when inferring the beam")
+    parser.add_argument("--device-count", help="Number of CPUs or GPUs to use",
+                        action="store", type=int, dest="device_count")
     
     # Point source sim params
     parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 2*np.pi),
@@ -357,6 +359,9 @@ def get_parser(description):
                         help="Sidelobe modulation amplitude")
     parser.add_argument("--sqrt", required=False, action="store_true",
                         help="Whether to take the square root of the primary beam before fitting. Useful for 'Eish' beams.")
+    parser.add_argument("--log-beam", required=False, action="store_true",
+                        dest="log_beam",
+                          help="Fit the log of the beam. Useful for enforcing positivity. Requires numpyro.")
                         
     return parser
 
