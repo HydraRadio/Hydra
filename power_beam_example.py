@@ -173,86 +173,131 @@ if __name__ == '__main__':
     else:
         Dmatr = np.load(per_source_Dmatr_out)
 
-    
-    # Have everything we need to analytically evaluate single-array beam
-    pow_beam_Dmatr_outfile = os.path.join(output_dir, "pow_beam_Dmatr.npy")
-    if not os.path.exists(pow_beam_Dmatr_outfile):
-        Dmatr_start = time.time()
-        pow_beam_Dmatr_dense = hydra.per_ant_beam_sampler.get_bess_sky_contraction(
-            Dmatr, 
-            ant_pos, 
-            flux_inference, 
-            ra,
-            dec, 
-            freqs, 
-            times,
-            polarized=False, 
-            latitude=array_lat,
-            outer=False
-        )
-        Dmatr_end = time.time()
-        print(f"Dmatr calculation took {Dmatr_end - Dmatr_start} seconds")
-
-
-        pow_beam_Dmatr_dense = pow_beam_Dmatr_dense[0, 0]
-        np.save(pow_beam_Dmatr_outfile, pow_beam_Dmatr_dense)
-    else:
-        pow_beam_Dmatr_dense = np.load(pow_beam_Dmatr_outfile)
-
-
     triu_inds = np.triu_indices(Nants, k=1)
-    pow_beam_Dmatr = pow_beam_Dmatr_dense[
-        :, ::2, triu_inds[0], triu_inds[1]
-    ] # ftub
-    Ninv = inv_noise_var[:, ::2, triu_inds[0], triu_inds[1]] # ftu
-    pci_file = os.path.join(output_dir, "post_cov_inv.npy")
-    pc_file = os.path.join(output_dir, "post_cov.npy")
-    MAP_file = os.path.join(output_dir, "MAP_soln.npy")
-    inference_files = [pci_file, pc_file, MAP_file]
-    if all([os.path.exists(file) for file in inference_files]):
-        LHS = np.load(pci_file)
-        post_cov = np.load(pc_file)
-        MAP_soln = np.load(MAP_file)
-    else:
-        if args.decent_prior:
-            prior_mean = unpert_sb.comp_fits[0, 0]
-            inv_prior_var = 1/(args.beam_prior_std * np.abs(prior_mean))**2 # Fractional uncertainty
-            prior_Cinv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis],
-                                    dtype=complex)
-            prior_Cinv = [np.diag(inv_prior_var[chan]) for chan in range(args.Nfreqs)]
-            prior_Cinv = np.array(prior_Cinv)
-        else:
-            prior_Cinv = np.repeat(np.eye(args.Nbasis)[None], args.Nfreqs, axis=0)
-            prior_Cinv /= args.beam_prior_std**2
-            prior_mean = np.zeros([args.Nfreqs, args.Nbasis], dtype=complex)
-        LHS = hydra.power_beam_sampler.construct_LHS(
-            pow_beam_Dmatr,
-            Ninv,
-            prior_Cinv
-        )
-        # Use every other time step. Reserve other half for PPD check.
-        inference_vis = data[:, ::2, triu_inds[0], triu_inds[1]]
-        RHS = hydra.power_beam_sampler.construct_RHS(
-            pow_beam_Dmatr,
-            Ninv,
-            prior_Cinv,
-            inference_vis,
-            prior_mean,
-            flx=False
-        )
-
-        post_cov = np.linalg.inv(LHS)
-        MAP_soln = np.linalg.solve(LHS, RHS[:, :, None])[:, :, 0]
+    inference_vis = data[:, ::2, triu_inds[0], triu_inds[1]]
+    if args.log_beam:
+        import numpyro
+        numpyro.set_host_device_count(args.device_count)
+        from numpyro import distributions as dist
+        from numpyro.infer import MCMC, NUTS
         
+        from jax import random
+        import jax.numpy as jnp
 
-        np.save(pci_file, LHS)
-        np.save(MAP_file, MAP_soln)
-        np.save(pc_file, post_cov)
+        import yaml
 
-    # Make matrix for transforming to image space.
-    sparse_bmatr = unpert_sb.bess_matr[:, nmodes[:args.Nbasis]]
-    sparse_tmatr = unpert_sb.trig_matr[:, mmodes[:args.Nbasis]]
-    sparse_dmatr_recon = sparse_bmatr[:, None] * sparse_tmatr[None, :]
+        noise_var = 1/inv_noise_var
+        noise_scale = noise_var[:, ::2, triu_inds[0], triu_inds[1]]
+        def model(dat=None): # FIXME: Need to realify!
+            with numpyro.plate("Nbasis", args.Nbasis):
+                coeffs = numpyro.sample("coeffs", dist.Normal(loc=0, scale=1))
+            log_beam = Dmatr @ coeffs
+            model_vis = hydra.per_ant_beam_sampler.get_bess_sky_contraction(
+                jnp.exp(log_beam)[:, :, None], # Cheat by pretending there is a coeff
+                ant_pos, 
+                flux_inference, 
+                ra,
+                dec, 
+                freqs, 
+                times,
+                polarized=False, 
+                latitude=array_lat,
+                outer=False
+            )[0,0,:,:,:,:, 0]
+            with numpyro.plate_stack("Nvis", inference_vis.shape):
+                obs = numpyro.sample(
+                    "obs",
+                    dist.Normal(loc=model_vis, scale=noise_scale)
+                )
+        kernel = NUTS(model)
+        mcmc = MCMC(kernel, num_warmup=1000, num_samples=2000, num_chains=4)
+        key = random.key(args.chain_seed)
+        mcmc.run(key)
+
+        samples = mcmc.get_samples()
+        with open(os.path.join(output_dir, "log_beam_samps.yaml"), "w") as samp_file:
+            yaml.dump(samp_file, samples)
+
+
+    else:
+        # Have everything we need to analytically evaluate single-array beam
+        pow_beam_Dmatr_outfile = os.path.join(output_dir, "pow_beam_Dmatr.npy")
+        if not os.path.exists(pow_beam_Dmatr_outfile):
+            Dmatr_start = time.time()
+            pow_beam_Dmatr_dense = hydra.per_ant_beam_sampler.get_bess_sky_contraction(
+                Dmatr, 
+                ant_pos, 
+                flux_inference, 
+                ra,
+                dec, 
+                freqs, 
+                times,
+                polarized=False, 
+                latitude=array_lat,
+                outer=False
+            )
+            Dmatr_end = time.time()
+            print(f"Dmatr calculation took {Dmatr_end - Dmatr_start} seconds")
+
+
+            pow_beam_Dmatr_dense = pow_beam_Dmatr_dense[0, 0]
+            np.save(pow_beam_Dmatr_outfile, pow_beam_Dmatr_dense)
+        else:
+            pow_beam_Dmatr_dense = np.load(pow_beam_Dmatr_outfile)
+
+
+        
+        pow_beam_Dmatr = pow_beam_Dmatr_dense[
+            :, ::2, triu_inds[0], triu_inds[1]
+        ] # ftub
+        Ninv = inv_noise_var[:, ::2, triu_inds[0], triu_inds[1]] # ftu
+        pci_file = os.path.join(output_dir, "post_cov_inv.npy")
+        pc_file = os.path.join(output_dir, "post_cov.npy")
+        MAP_file = os.path.join(output_dir, "MAP_soln.npy")
+        inference_files = [pci_file, pc_file, MAP_file]
+        if all([os.path.exists(file) for file in inference_files]):
+            LHS = np.load(pci_file)
+            post_cov = np.load(pc_file)
+            MAP_soln = np.load(MAP_file)
+        else:
+            if args.decent_prior:
+                prior_mean = unpert_sb.comp_fits[0, 0]
+                inv_prior_var = 1/(args.beam_prior_std * np.abs(prior_mean))**2 # Fractional uncertainty
+                prior_Cinv = np.zeros([args.Nfreqs, args.Nbasis, args.Nbasis],
+                                        dtype=complex)
+                prior_Cinv = [np.diag(inv_prior_var[chan]) for chan in range(args.Nfreqs)]
+                prior_Cinv = np.array(prior_Cinv)
+            else:
+                prior_Cinv = np.repeat(np.eye(args.Nbasis)[None], args.Nfreqs, axis=0)
+                prior_Cinv /= args.beam_prior_std**2
+                prior_mean = np.zeros([args.Nfreqs, args.Nbasis], dtype=complex)
+            LHS = hydra.power_beam_sampler.construct_LHS(
+                pow_beam_Dmatr,
+                Ninv,
+                prior_Cinv
+            )
+            # Use every other time step. Reserve other half for PPD check.
+            RHS = hydra.power_beam_sampler.construct_RHS(
+                pow_beam_Dmatr,
+                Ninv,
+                prior_Cinv,
+                inference_vis,
+                prior_mean,
+                flx=False
+            )
+
+            post_cov = np.linalg.inv(LHS)
+            MAP_soln = np.linalg.solve(LHS, RHS[:, :, None])[:, :, 0]
+            
+
+            np.save(pci_file, LHS)
+            np.save(MAP_file, MAP_soln)
+            np.save(pc_file, post_cov)
+
+        # Make matrix for transforming to image space.
+        sparse_bmatr = unpert_sb.bess_matr[:, nmodes[:args.Nbasis]]
+        sparse_tmatr = unpert_sb.trig_matr[:, mmodes[:args.Nbasis]]
+        sparse_dmatr_recon = sparse_bmatr[:, None] * sparse_tmatr[None, :]
 
     ##########################################
     # Below here is just a bunch of plotting #
