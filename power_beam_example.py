@@ -188,10 +188,12 @@ if __name__ == '__main__':
 
         noise_var = 1/inv_noise_var
         noise_scale = noise_var[:, ::2, triu_inds[0], triu_inds[1]]
-        def model(dat=None): # FIXME: Need to realify!
-            with numpyro.plate("Nbasis", args.Nbasis):
+        inference_vis = hydra.per_ant_beam_sampler.split_real_imag(inference_vis, kind="vec")
+        noise_scale = np.array([noise_scale, noise_scale]) / np.sqrt(2)
+        def model(dat=None): # FIXME: No idea if this prior is sane
+            with numpyro.plate_stack("Nbasis", [2, args.Nbasis]):
                 coeffs = numpyro.sample("coeffs", dist.Normal(loc=0, scale=1))
-            log_beam = Dmatr @ coeffs
+            log_beam = Dmatr @ (coeffs[0] + 1.j * coeffs[1])
             model_vis = hydra.per_ant_beam_sampler.get_bess_sky_contraction(
                 jnp.exp(log_beam)[:, :, None], # Cheat by pretending there is a coeff
                 ant_pos, 
@@ -204,6 +206,7 @@ if __name__ == '__main__':
                 latitude=array_lat,
                 outer=False
             )[0,0,:,:,:,:, 0]
+            model_vis = hydra.per_ant_beam_sampler.split_real_imag(model_vis, kind="vec")
             with numpyro.plate_stack("Nvis", inference_vis.shape):
                 obs = numpyro.sample(
                     "obs",
