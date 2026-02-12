@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-import numpyro
-numpyro.set_host_device_count(12)
 
 import time, os
 
@@ -178,6 +176,8 @@ if __name__ == '__main__':
     triu_inds = np.triu_indices(Nants, k=1)
     inference_vis = data[:, ::2, triu_inds[0], triu_inds[1]]
     if args.log_beam:
+        import numpyro
+        numpyro.set_host_device_count(12)
         from numpyro import distributions as dist
         from numpyro.infer import MCMC, NUTS
         
@@ -231,7 +231,7 @@ if __name__ == '__main__':
                     dist.Normal(loc=model_vis, scale=noise_scale)
                 )
         kernel = NUTS(model)
-        mcmc = MCMC(kernel, num_warmup=1000, num_samples=2000, num_chains=1)
+        mcmc = MCMC(kernel, num_warmup=1000, num_samples=2000, num_chains=4)
         key = random.key(int(args.chain_seed))
         mcmc.run(key, dat=inference_vis)
 
