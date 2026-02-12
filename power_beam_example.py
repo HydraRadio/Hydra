@@ -197,7 +197,7 @@ if __name__ == '__main__':
             # Cribbing a function in per_ant_beam_sampler
             sky_amp_phase = hydra.vis_simulator.simulate_vis_per_source(
                 ant_pos,
-                fluxes,
+                flux_inference,
                 ra,
                 dec,
                 freqs,
