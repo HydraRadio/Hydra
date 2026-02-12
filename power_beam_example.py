@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import numpyro
+numpyro.set_host_device_count(12)
 
 import time, os
 
@@ -176,8 +178,6 @@ if __name__ == '__main__':
     triu_inds = np.triu_indices(Nants, k=1)
     inference_vis = data[:, ::2, triu_inds[0], triu_inds[1]]
     if args.log_beam:
-        import numpyro
-        numpyro.set_host_device_count(args.device_count)
         from numpyro import distributions as dist
         from numpyro.infer import MCMC, NUTS
         
@@ -186,36 +186,54 @@ if __name__ == '__main__':
 
         import yaml
 
+
         noise_var = 1/inv_noise_var
         noise_scale = noise_var[:, ::2, triu_inds[0], triu_inds[1]]
-        inference_vis = hydra.per_ant_beam_sampler.split_real_imag(inference_vis, kind="vec")
-        noise_scale = np.array([noise_scale, noise_scale]) / np.sqrt(2)
-        def model(dat=None): # FIXME: No idea if this prior is sane
-            with numpyro.plate_stack("Nbasis", [2, args.Nbasis]):
-                coeffs = numpyro.sample("coeffs", dist.Normal(loc=0, scale=1))
-            log_beam = Dmatr @ (coeffs[0] + 1.j * coeffs[1])
-            model_vis = hydra.per_ant_beam_sampler.get_bess_sky_contraction(
-                jnp.exp(log_beam)[:, :, None], # Cheat by pretending there is a coeff
-                ant_pos, 
-                flux_inference, 
+        inference_vis = jnp.array([inference_vis.real, inference_vis.imag])
+        noise_scale = jnp.array([noise_scale, noise_scale]) / np.sqrt(2)
+
+        sky_amp_phase_outpath = os.path.join(output_dir, "sky_amp_phase.npy")
+        if not os.path.exists(sky_amp_phase_outpath):
+            # Cribbing a function in per_ant_beam_sampler
+            sky_amp_phase = hydra.vis_simulator.simulate_vis_per_source(
+                ant_pos,
+                fluxes,
                 ra,
-                dec, 
-                freqs, 
-                times,
-                polarized=False, 
+                dec,
+                freqs,
+                times[::2],
+                beams=beams,
+                polarized=False,
                 latitude=array_lat,
-                outer=False
-            )[0,0,:,:,:,:, 0]
-            model_vis = hydra.per_ant_beam_sampler.split_real_imag(model_vis, kind="vec")
+            )
+
+            # Need this conjugation since only lower half of array is filled
+            # less memory efficient but this isn't the dominant term
+            # makes compute later easier to think about
+            sky_amp_phase = sky_amp_phase + sky_amp_phase.swapaxes(2, 3).conj()
+            sky_amp_phase = sky_amp_phase[:, :, triu_inds[0], triu_inds[1]] # ftbs
+            np.save(sky_amp_phase_outpath, sky_amp_phase)
+        else:
+            sky_amp_phase = np.load(sky_amp_phase_outpath)
+
+        sky_amo_phase = jnp.array(sky_amp_phase)
+        inference_Dmatr = jnp.array(Dmatr[::2])
+        def model(dat=None): # FIXME: No idea if this prior is sane
+            with numpyro.plate_stack("Nbasis", [2, args.Nbasis, args.Nfreqs]):
+                coeffs = numpyro.sample("coeffs", dist.Normal(loc=0, scale=1))
+            log_beam = inference_Dmatr @ (coeffs[0] + 1.j * coeffs[1]) # tsf
+            beam = jnp.exp(log_beam).transpose(2, 0, 1) # fts
+            model_vis = (sky_amp_phase * beam[:, :, None]).sum(axis=-1)
+            model_vis = jnp.array([model_vis.real, model_vis.imag])
             with numpyro.plate_stack("Nvis", inference_vis.shape):
                 obs = numpyro.sample(
                     "obs",
                     dist.Normal(loc=model_vis, scale=noise_scale)
                 )
         kernel = NUTS(model)
-        mcmc = MCMC(kernel, num_warmup=1000, num_samples=2000, num_chains=4)
-        key = random.key(args.chain_seed)
-        mcmc.run(key)
+        mcmc = MCMC(kernel, num_warmup=1000, num_samples=2000, num_chains=1)
+        key = random.key(int(args.chain_seed))
+        mcmc.run(key, dat=inference_vis)
 
         samples = mcmc.get_samples()
         with open(os.path.join(output_dir, "log_beam_samps.yaml"), "w") as samp_file:
@@ -302,437 +320,437 @@ if __name__ == '__main__':
         sparse_tmatr = unpert_sb.trig_matr[:, mmodes[:args.Nbasis]]
         sparse_dmatr_recon = sparse_bmatr[:, None] * sparse_tmatr[None, :]
 
-    ##########################################
-    # Below here is just a bunch of plotting #
-    ##########################################
+        ##########################################
+        # Below here is just a bunch of plotting #
+        ##########################################
 
-    
-    # Show image space projection of beam.
-    # fb,zab->fza but without einsum as the middleman
-    MAP_beam = np.tensordot(MAP_soln,
-                            sparse_dmatr_recon,
-                            axes=((-1,), (-1,)))
+        
+        # Show image space projection of beam.
+        # fb,zab->fza but without einsum as the middleman
+        MAP_beam = np.tensordot(MAP_soln,
+                                sparse_dmatr_recon,
+                                axes=((-1,), (-1,)))
 
-    midchan = args.Nfreqs // 2
-    plotbeam = MAP_beam[midchan]
-    np.save(os.path.join(output_dir, "MAP_beam.npy"), plotbeam)
-    Az, Za = np.meshgrid(unpert_sb.axis1_array, unpert_sb.axis2_array)
-    if args.missing_sources:
-        np_attr = "abs"
-    else:
-        np_attr = "real"
-    beam_color_scale = {"vmin": 1e-4, "vmax": 1}
-    residual_color_scale = {"vmin": -1e-2, "vmax": 1e-2, "linthresh": 1e-4}
+        midchan = args.Nfreqs // 2
+        plotbeam = MAP_beam[midchan]
+        np.save(os.path.join(output_dir, "MAP_beam.npy"), plotbeam)
+        Az, Za = np.meshgrid(unpert_sb.axis1_array, unpert_sb.axis2_array)
+        if args.missing_sources:
+            np_attr = "abs"
+        else:
+            np_attr = "real"
+        beam_color_scale = {"vmin": 1e-4, "vmax": 1}
+        residual_color_scale = {"vmin": -1e-2, "vmax": 1e-2, "linthresh": 1e-4}
 
-    fig = plt.figure(figsize=[6.5, 7])
-    gs = GridSpec(3, 2)
-    ax = np.empty([2, 2], dtype=object)
-    for row_ind in range(2):
-        for col_ind in range(2):
-            ax[row_ind, col_ind] = fig.add_subplot(
-                gs[row_ind, col_ind],
-                projection="polar"
-            )
-    im = ax[0, 0].pcolormesh(
-        Az,
-        Za * 180/np.pi,
-        plotbeam.real,
-        norm=LogNorm(**beam_color_scale),
-        cmap="inferno",
-    )
-    ax[0, 0].set_title("MAP Beam")
-    fig.colorbar(im, ax=ax[0,0])
-
-    image_var = np.einsum("bB,azb,azB->az",
-                            post_cov[midchan],
-                            sparse_dmatr_recon,
-                            sparse_dmatr_recon.conj(),
-                            optimize=True)
-    image_std = np.sqrt(np.abs(image_var))
-    im = ax[0, 1].pcolormesh(
-        Az,
-        Za * 180/np.pi,
-        image_std,
-        norm=LogNorm(),
-        cmap="inferno"
-    )
-    ax[0, 1].set_title("Posterior uncertainty")
-    fig.colorbar(im, ax=ax[0,1])
-
-    if args.beam_type == "pert_sim":
-        input_beam, _ = pow_sb.interp(
-            az_array=Az.flatten(),
-            za_array=Za.flatten(),
-            freq_array=freqs,
-        )
-        input_beam = input_beam[0, 0, midchan].reshape(Az.shape)
-    else:
-        input_beam = unpert_sb.data_array[0, 0, midchan]
-    errors = (input_beam - plotbeam)
-    im = ax[1, 0].pcolormesh(
-        Az,
-        Za * 180/np.pi,
-        errors.real,
-        norm=SymLogNorm(**residual_color_scale),
-        cmap="Spectral",
-    )
-    ax[1, 0].set_title("MAP Errors")
-    fig.colorbar(im, ax=ax[1, 0])
-    image_z = np.abs(errors)/image_std
-    im = ax[1, 1].pcolormesh(
-        Az,
-        Za * 180/np.pi,
-        image_z,
-        norm=LogNorm(),
-        cmap="inferno",
-    )
-    ax[1, 1].set_title("$z$ score")
-    fig.colorbar(im, ax=ax[1,1])
-
-    for row_ind in range(2):
-        for col_ind in range(2):
-            ax_ob = ax[row_ind, col_ind]
-            if (row_ind == 1) and (col_ind == 0):
-                gridcolor="black"
-            else:
-                gridcolor="white"
-            adjust_beamplot(ax_ob, gridcolor=gridcolor)
-    line_ax = fig.add_subplot(gs[2, :])
-    beam_obs = [input_beam, getattr(np, np_attr)(plotbeam)]
-    beam_labels = ["Perturbed Beam", "MAP Beam"]
-    plot_beam_slice(line_ax, beam_obs, beam_labels)
-    fig.tight_layout()
-    fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"),
-                bbox_inches="tight")
-
-    fig, ax = plt.subplots(figsize=[3.25, 3.25])
-    _, bins, _ = ax.hist(
-        image_z.flatten(), 
-        bins="auto", 
-        histtype="step",
-        density=True
-    )
-    rayl_x = np.linspace(0, 10, num=100)
-    rayl = rayleigh.pdf(rayl_x, scale=1/np.sqrt(2))
-    ax.plot(rayl_x, rayl, linestyle="--", color="black")
-    ax.set_xlabel("|z|")
-    ax.set_ylabel("Probability Density")
-    fig.tight_layout()
-    fig.savefig(os.path.join(output_dir, "image_z_score.pdf"),
-                bbox_inches="tight")
-
-
-    if args.beam_type == "pert_sim":
-        fig = plt.figure(figsize=[6.5, 6.5])
-        gs = GridSpec(2, 2)
-        unpert_ax = fig.add_subplot(gs[0, 0],
-                                    projection="polar")
-        unpert_beam = unpert_sb.data_array[0, 0, midchan]
-        im = unpert_ax.pcolormesh(
+        fig = plt.figure(figsize=[6.5, 7])
+        gs = GridSpec(3, 2)
+        ax = np.empty([2, 2], dtype=object)
+        for row_ind in range(2):
+            for col_ind in range(2):
+                ax[row_ind, col_ind] = fig.add_subplot(
+                    gs[row_ind, col_ind],
+                    projection="polar"
+                )
+        im = ax[0, 0].pcolormesh(
             Az,
             Za * 180/np.pi,
-            unpert_beam,
+            plotbeam.real,
             norm=LogNorm(**beam_color_scale),
             cmap="inferno",
         )
-        unpert_ax.set_title("Unperturbed Beam")
-        adjust_beamplot(unpert_ax)
-        fig.colorbar(im, ax=unpert_ax)
+        ax[0, 0].set_title("MAP Beam")
+        fig.colorbar(im, ax=ax[0,0])
 
-        pert_ax = fig.add_subplot(gs[0, 1],
-                                    projection="polar")
-        im = pert_ax.pcolormesh(
+        image_var = np.einsum("bB,azb,azB->az",
+                                post_cov[midchan],
+                                sparse_dmatr_recon,
+                                sparse_dmatr_recon.conj(),
+                                optimize=True)
+        image_std = np.sqrt(np.abs(image_var))
+        im = ax[0, 1].pcolormesh(
             Az,
             Za * 180/np.pi,
-            (input_beam - unpert_beam).real,
+            image_std,
+            norm=LogNorm(),
+            cmap="inferno"
+        )
+        ax[0, 1].set_title("Posterior uncertainty")
+        fig.colorbar(im, ax=ax[0,1])
+
+        if args.beam_type == "pert_sim":
+            input_beam, _ = pow_sb.interp(
+                az_array=Az.flatten(),
+                za_array=Za.flatten(),
+                freq_array=freqs,
+            )
+            input_beam = input_beam[0, 0, midchan].reshape(Az.shape)
+        else:
+            input_beam = unpert_sb.data_array[0, 0, midchan]
+        errors = (input_beam - plotbeam)
+        im = ax[1, 0].pcolormesh(
+            Az,
+            Za * 180/np.pi,
+            errors.real,
             norm=SymLogNorm(**residual_color_scale),
             cmap="Spectral",
         )
-        pert_ax.set_title("Perturbations")
-        adjust_beamplot(pert_ax, gridcolor="black")
-        fig.colorbar(im, ax=pert_ax)
+        ax[1, 0].set_title("MAP Errors")
+        fig.colorbar(im, ax=ax[1, 0])
+        image_z = np.abs(errors)/image_std
+        im = ax[1, 1].pcolormesh(
+            Az,
+            Za * 180/np.pi,
+            image_z,
+            norm=LogNorm(),
+            cmap="inferno",
+        )
+        ax[1, 1].set_title("$z$ score")
+        fig.colorbar(im, ax=ax[1,1])
 
-        line_ax = fig.add_subplot(gs[1, :])
-        beam_obs = [unpert_beam, input_beam]
-        beam_labels = ["Unperturbed", "Perturbed"]
+        for row_ind in range(2):
+            for col_ind in range(2):
+                ax_ob = ax[row_ind, col_ind]
+                if (row_ind == 1) and (col_ind == 0):
+                    gridcolor="black"
+                else:
+                    gridcolor="white"
+                adjust_beamplot(ax_ob, gridcolor=gridcolor)
+        line_ax = fig.add_subplot(gs[2, :])
+        beam_obs = [input_beam, getattr(np, np_attr)(plotbeam)]
+        beam_labels = ["Perturbed Beam", "MAP Beam"]
         plot_beam_slice(line_ax, beam_obs, beam_labels)
         fig.tight_layout()
-        fig.savefig(os.path.join(output_dir, "input_residual_plot.pdf"),
+        fig.savefig(os.path.join(output_dir, "reconstruction_residual_plot.pdf"),
                     bbox_inches="tight")
+
+        fig, ax = plt.subplots(figsize=[3.25, 3.25])
+        _, bins, _ = ax.hist(
+            image_z.flatten(), 
+            bins="auto", 
+            histtype="step",
+            density=True
+        )
+        rayl_x = np.linspace(0, 10, num=100)
+        rayl = rayleigh.pdf(rayl_x, scale=1/np.sqrt(2))
+        ax.plot(rayl_x, rayl, linestyle="--", color="black")
+        ax.set_xlabel("|z|")
+        ax.set_ylabel("Probability Density")
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_dir, "image_z_score.pdf"),
+                    bbox_inches="tight")
+
+
+        if args.beam_type == "pert_sim":
+            fig = plt.figure(figsize=[6.5, 6.5])
+            gs = GridSpec(2, 2)
+            unpert_ax = fig.add_subplot(gs[0, 0],
+                                        projection="polar")
+            unpert_beam = unpert_sb.data_array[0, 0, midchan]
+            im = unpert_ax.pcolormesh(
+                Az,
+                Za * 180/np.pi,
+                unpert_beam,
+                norm=LogNorm(**beam_color_scale),
+                cmap="inferno",
+            )
+            unpert_ax.set_title("Unperturbed Beam")
+            adjust_beamplot(unpert_ax)
+            fig.colorbar(im, ax=unpert_ax)
+
+            pert_ax = fig.add_subplot(gs[0, 1],
+                                        projection="polar")
+            im = pert_ax.pcolormesh(
+                Az,
+                Za * 180/np.pi,
+                (input_beam - unpert_beam).real,
+                norm=SymLogNorm(**residual_color_scale),
+                cmap="Spectral",
+            )
+            pert_ax.set_title("Perturbations")
+            adjust_beamplot(pert_ax, gridcolor="black")
+            fig.colorbar(im, ax=pert_ax)
+
+            line_ax = fig.add_subplot(gs[1, :])
+            beam_obs = [unpert_beam, input_beam]
+            beam_labels = ["Unperturbed", "Perturbed"]
+            plot_beam_slice(line_ax, beam_obs, beam_labels)
+            fig.tight_layout()
+            fig.savefig(os.path.join(output_dir, "input_residual_plot.pdf"),
+                        bbox_inches="tight")
+
+            
+
+        PPD_Dmatr = pow_beam_Dmatr_dense[:, 1::2, triu_inds[0], triu_inds[1]]
+
+        postdicted_mean = np.einsum(
+            "ftub,fb->ftu",
+            PPD_Dmatr,
+            MAP_soln,
+            optimize=True
+        )
+        def get_z_scores(model, post_pred=False):
+            if post_pred:
+                var_post = np.einsum(
+                    "ftub,fbB,ftuB->ftu",
+                    PPD_Dmatr,
+                    post_cov,
+                    PPD_Dmatr.conj(),
+                    optimize=True
+                )
+                var_ppd = 1/Ninv + np.abs(var_post)
+                isig = np.sqrt(2 / var_ppd)
+            else:
+                isig = np.sqrt(2 * Ninv)
+
+            PPD_data = data[:, 1::2, triu_inds[0], triu_inds[1]]
+            zscore = (PPD_data - model) * isig
+            zreal = zscore.real.flatten()
+            zimag = zscore.imag.flatten()
+            to_hist = np.array([zreal, zimag]).T
+
+            return to_hist
+        to_hist = get_z_scores(unpert_vis[:, 1::2, triu_inds[0], triu_inds[1]])
+        to_hist_ppd = get_z_scores(postdicted_mean, post_pred=True)
+
+        fig, ax = plt.subplots(figsize=(6.5, 3), ncols=2)
+        bins = np.linspace(-10, 10, num=100)
+        counts, _, _ = ax[0].hist(
+            to_hist.flatten(), 
+            bins="auto",
+            histtype="step",
+            density=True,
+            label="Unperturbed Beam",
+        )
+        ax[0].hist(
+            to_hist_ppd.flatten(),
+            bins="auto", 
+            histtype="step", 
+            density=True, 
+            label="Inferred Beam"
+        )
+
+        for ax_ob in ax:
+            ax_ob.set_xlabel(r"$z$-score")
+            ax_ob.set_ylabel("Probability Density")
+        lbins = bins[:-1]
+        rbins = bins[1:]
+        bin_cent = (lbins + rbins) * 0.5
+        pbin = norm.cdf(rbins) - norm.cdf(lbins)
+        std_norm_counts = pbin * np.sum(counts)
+        line3 = ax[0].plot(
+            bin_cent, 
+            norm.pdf(bin_cent), 
+            linestyle="--", 
+            color="black"
+        )
+        ax[0].set_xlim([-10, 10])
+
+        counts, _, patch1 = ax[1].hist(
+            to_hist.flatten(), 
+            bins="auto",
+            histtype="step",
+            density=True,
+            label="Unperturbed Beam",
+        )
+        _, _, patch2 = ax[1].hist(
+            to_hist_ppd.flatten(), 
+            bins="auto", 
+            histtype="step", 
+            density=True, 
+            label="Inferred Beam"
+        )
+        ax[1].legend(
+            handles=[patch1[0], patch2[0], line3[0]],
+            labels=["Unperturbed Beam", "Inferred Beam", r"$\mathcal{N}(0, 1)$"],
+            loc="upper left",
+            frameon=False
+        )
+        if not args.missing_sources:
+            ax[1].set_ylim([0, 0.5])
+        else:
+            ax[1].set_ylim([0, 0.03])
+        fig.tight_layout()
+        fig.savefig(
+            os.path.join(output_dir, "residual_hist.pdf"), 
+            bbox_inches="tight"
+        )
+
+        fig, ax = plt.subplots(figsize=(6.5, 6.5))
+        im = ax.matshow(
+            np.abs(post_cov[midchan]), 
+            cmap="inferno",
+            norm=LogNorm()
+        )
+        ax.set_title("Mode Number")
+        ax.set_ylabel("Mode Number")
+        fig.colorbar(im, ax=ax, label=r"$|\Sigma_\mathrm{post}|$")
+        fig.tight_layout()
+        fig.savefig(
+            os.path.join(output_dir, "post_cov.pdf"),
+            bbox_inches="tight"
+        )
+
+        fig, ax = plt.subplots(figsize=(3.25, 6.25), nrows=2)
+        mode_numbers = np.arange(1, args.Nbasis + 1)
+        FB_stds = np.sqrt(np.abs(np.diag(post_cov[midchan])))
+        these_comp_fits = unpert_sb.comp_fits[0, 0, midchan]
+        z_update = np.abs((MAP_soln[midchan] - these_comp_fits))/FB_stds
+        ax[0].plot(
+            mode_numbers,
+            np.abs(MAP_soln[midchan]), 
+            color="lightcoral",
+            label="MAP Beam"
+        )
+        ax[0].plot(
+            mode_numbers,
+            FB_stds,
+            color="goldenrod",
+            label="Posterior Std."
+        )
+        ax[0].plot(
+            mode_numbers,
+            np.abs(unpert_sb.comp_fits[0,0,0]),
+            linestyle=":",
+            color="black",
+            label="Prior Std."
+        )
+        ax[1].plot(
+            mode_numbers,
+            z_update,
+            color="lightcoral",
+        )
+        ax[1].set_xlabel("Mode Number")
+        ax[0].set_ylabel(r"$|\mu_\mathrm{post}|$")
+        ax[1].set_ylabel(r"$|z_\mathrm{update}|$")
+        for ax_ob in ax:
+            ax_ob.set_yscale("log")
+            # ax_ob.set_xscale("log")
+        ax[0].legend(frameon=False)
+        ax[0].tick_params(
+            which="both", 
+            axis="x", 
+            direction="in", 
+            labelbottom=False
+        )
+        ax[1].tick_params(which="both", top=True, direction="in")
+        fig.tight_layout(h_pad=0)
+        fig.savefig(os.path.join(output_dir, "FB_coeff_lines.pdf"),
+                    bbox_inches="tight")
+
+        eval_file = os.path.join(output_dir, "evals.npy")
+        evec_file = os.path.join(output_dir, "evecs.npy")
+        eig_files = [eval_file, evec_file]
+        if all([os.path.exists(file) for file in eig_files]):
+            evals = np.load(eval_file)
+            evecs = np.load(evec_file)
+        else:
+            evals, evecs = np.linalg.eig(post_cov[midchan])
+            np.save(
+                eval_file, evals
+            )
+
+            np.save(
+                evec_file, evecs
+            )
+        fig, ax = plt.subplots(figsize=[3.25, 3.25])
+        ax.plot(mode_numbers, evals.real, color="goldenrod")
+        #ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_ylabel("Eigenvalues")
+        ax.set_xlabel("Mode Number")
+        fig.tight_layout()
+        fig.savefig(
+            os.path.join(output_dir, "cov_evals.pdf"),
+            bbox_inches="tight"
+        )
+        fig, ax = plt.subplots(figsize=[3.25, 3.25])
+        ax.hist(z_update[200:], bins="auto", histtype="step", density=True)
+        ax.plot(rayl_x, rayl, linestyle="--", color="black")
+        ax.set_xlabel(r"$|z_\mathrm{update}|$")
+        ax.set_ylabel("Probability Density")
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_dir, "z_update_hist.pdf"), bbox_inches="tight")
+
+        eval_sorter = np.argsort(evals)
+        special_ind1 = 2
+        special_ind2 = 3
+        evec_1 = evecs[:, eval_sorter][:, special_ind1]
+        evec_2 = evecs[:, eval_sorter][:, special_ind2]
+
+        fig, ax = plt.subplots(
+            figsize=[6.5, 6.5],
+            nrows=2,
+            ncols=2,
+            subplot_kw={"projection": "polar"}
+        )
+
+        min_evec_sky = np.tensordot(evec_1,
+                                    sparse_dmatr_recon,
+                                    axes=((-1,), (-1,)))
+        max_evec_sky = np.tensordot(evec_2,
+                                    sparse_dmatr_recon,
+                                    axes=((-1,), (-1,)))
+        evec_labels = [f"Eigenvector {special_ind1 + 1}", 
+                        f"Eigenvector {special_ind2 + 1}"]
+        for evec_ind, evec in enumerate([min_evec_sky, max_evec_sky]):
+            for comp_ind, comp in enumerate(["real", "imag"]):
+                ax_ob = ax[evec_ind, comp_ind]
+                im = ax_ob.pcolormesh(
+                    Az,
+                    Za * 180./np.pi,
+                    getattr(np, comp)(evec),
+                    norm=SymLogNorm(vmin=-1, vmax=1, linthresh=1e-3),
+                    cmap="Spectral"
+                )
+                ax_ob.set_title(f"{evec_labels[evec_ind]} ({comp})")
+                adjust_beamplot(ax_ob, gridcolor="black")
+        fig.tight_layout()
+        fig.colorbar(im, ax=ax.ravel().tolist(), label="Beam Value")
+        fig.savefig(
+            os.path.join(output_dir, "evec_sky.pdf"),
+            bbox_inches="tight"
+        )
+
+
+        fig, ax = plt.subplots(
+            nrows=10, 
+            ncols=2, 
+            figsize=[6.5, 32.5], 
+            subplot_kw={"projection": "polar"}
+        )
+        for evec_ind in range(10):
+            for comp_ind, comp in enumerate(["real", "imag"]):
+                evec_FB = evecs[:, eval_sorter][:, evec_ind]
+                evec = np.tensordot(evec_FB,
+                                    sparse_dmatr_recon,
+                                    axes=((-1,), (-1,)))
+                ax_ob = ax[evec_ind, comp_ind]
+                im = ax_ob.pcolormesh(
+                    Az,
+                    Za * 180./np.pi,
+                    getattr(np, comp)(evec),
+                    norm=SymLogNorm(vmin=-1, vmax=1, linthresh=1e-3),
+                    cmap="Spectral"
+                )
+                ax_ob.set_title(f"eval {evec_ind} ({comp})")
+                adjust_beamplot(ax_ob, gridcolor="black")      
+        fig.tight_layout()
+        fig.colorbar(im, ax=ax.ravel().tolist(), label="Beam Value")
+        fig.savefig(
+            os.path.join(output_dir, "smallest_evecs.pdf"),
+            bbox_inches="tight"
+        )
+
+        hydra.per_ant_beam_sampler.plot_FB_beam(
+            plotbeam,
+            unpert_sb.axis2_array,
+            unpert_sb.axis1_array, 
+            save=True,
+            fn=os.path.join(output_dir, "beam_real_imag.pdf"),
+            linthresh=1e-4
+        )
+
 
         
 
-    PPD_Dmatr = pow_beam_Dmatr_dense[:, 1::2, triu_inds[0], triu_inds[1]]
-
-    postdicted_mean = np.einsum(
-        "ftub,fb->ftu",
-        PPD_Dmatr,
-        MAP_soln,
-        optimize=True
-    )
-    def get_z_scores(model, post_pred=False):
-        if post_pred:
-            var_post = np.einsum(
-                "ftub,fbB,ftuB->ftu",
-                PPD_Dmatr,
-                post_cov,
-                PPD_Dmatr.conj(),
-                optimize=True
-            )
-            var_ppd = 1/Ninv + np.abs(var_post)
-            isig = np.sqrt(2 / var_ppd)
-        else:
-            isig = np.sqrt(2 * Ninv)
-
-        PPD_data = data[:, 1::2, triu_inds[0], triu_inds[1]]
-        zscore = (PPD_data - model) * isig
-        zreal = zscore.real.flatten()
-        zimag = zscore.imag.flatten()
-        to_hist = np.array([zreal, zimag]).T
-
-        return to_hist
-    to_hist = get_z_scores(unpert_vis[:, 1::2, triu_inds[0], triu_inds[1]])
-    to_hist_ppd = get_z_scores(postdicted_mean, post_pred=True)
-
-    fig, ax = plt.subplots(figsize=(6.5, 3), ncols=2)
-    bins = np.linspace(-10, 10, num=100)
-    counts, _, _ = ax[0].hist(
-        to_hist.flatten(), 
-        bins="auto",
-        histtype="step",
-        density=True,
-        label="Unperturbed Beam",
-    )
-    ax[0].hist(
-        to_hist_ppd.flatten(),
-        bins="auto", 
-        histtype="step", 
-        density=True, 
-        label="Inferred Beam"
-    )
-
-    for ax_ob in ax:
-        ax_ob.set_xlabel(r"$z$-score")
-        ax_ob.set_ylabel("Probability Density")
-    lbins = bins[:-1]
-    rbins = bins[1:]
-    bin_cent = (lbins + rbins) * 0.5
-    pbin = norm.cdf(rbins) - norm.cdf(lbins)
-    std_norm_counts = pbin * np.sum(counts)
-    line3 = ax[0].plot(
-        bin_cent, 
-        norm.pdf(bin_cent), 
-        linestyle="--", 
-        color="black"
-    )
-    ax[0].set_xlim([-10, 10])
-
-    counts, _, patch1 = ax[1].hist(
-        to_hist.flatten(), 
-        bins="auto",
-        histtype="step",
-        density=True,
-        label="Unperturbed Beam",
-    )
-    _, _, patch2 = ax[1].hist(
-        to_hist_ppd.flatten(), 
-        bins="auto", 
-        histtype="step", 
-        density=True, 
-        label="Inferred Beam"
-    )
-    ax[1].legend(
-        handles=[patch1[0], patch2[0], line3[0]],
-        labels=["Unperturbed Beam", "Inferred Beam", r"$\mathcal{N}(0, 1)$"],
-        loc="upper left",
-        frameon=False
-    )
-    if not args.missing_sources:
-        ax[1].set_ylim([0, 0.5])
-    else:
-        ax[1].set_ylim([0, 0.03])
-    fig.tight_layout()
-    fig.savefig(
-        os.path.join(output_dir, "residual_hist.pdf"), 
-        bbox_inches="tight"
-    )
-
-    fig, ax = plt.subplots(figsize=(6.5, 6.5))
-    im = ax.matshow(
-        np.abs(post_cov[midchan]), 
-        cmap="inferno",
-        norm=LogNorm()
-    )
-    ax.set_title("Mode Number")
-    ax.set_ylabel("Mode Number")
-    fig.colorbar(im, ax=ax, label=r"$|\Sigma_\mathrm{post}|$")
-    fig.tight_layout()
-    fig.savefig(
-        os.path.join(output_dir, "post_cov.pdf"),
-        bbox_inches="tight"
-    )
-
-    fig, ax = plt.subplots(figsize=(3.25, 6.25), nrows=2)
-    mode_numbers = np.arange(1, args.Nbasis + 1)
-    FB_stds = np.sqrt(np.abs(np.diag(post_cov[midchan])))
-    these_comp_fits = unpert_sb.comp_fits[0, 0, midchan]
-    z_update = np.abs((MAP_soln[midchan] - these_comp_fits))/FB_stds
-    ax[0].plot(
-        mode_numbers,
-        np.abs(MAP_soln[midchan]), 
-        color="lightcoral",
-        label="MAP Beam"
-    )
-    ax[0].plot(
-        mode_numbers,
-        FB_stds,
-        color="goldenrod",
-        label="Posterior Std."
-    )
-    ax[0].plot(
-        mode_numbers,
-        np.abs(unpert_sb.comp_fits[0,0,0]),
-        linestyle=":",
-        color="black",
-        label="Prior Std."
-    )
-    ax[1].plot(
-        mode_numbers,
-        z_update,
-        color="lightcoral",
-    )
-    ax[1].set_xlabel("Mode Number")
-    ax[0].set_ylabel(r"$|\mu_\mathrm{post}|$")
-    ax[1].set_ylabel(r"$|z_\mathrm{update}|$")
-    for ax_ob in ax:
-        ax_ob.set_yscale("log")
-        # ax_ob.set_xscale("log")
-    ax[0].legend(frameon=False)
-    ax[0].tick_params(
-        which="both", 
-        axis="x", 
-        direction="in", 
-        labelbottom=False
-    )
-    ax[1].tick_params(which="both", top=True, direction="in")
-    fig.tight_layout(h_pad=0)
-    fig.savefig(os.path.join(output_dir, "FB_coeff_lines.pdf"),
-                bbox_inches="tight")
-
-    eval_file = os.path.join(output_dir, "evals.npy")
-    evec_file = os.path.join(output_dir, "evecs.npy")
-    eig_files = [eval_file, evec_file]
-    if all([os.path.exists(file) for file in eig_files]):
-        evals = np.load(eval_file)
-        evecs = np.load(evec_file)
-    else:
-        evals, evecs = np.linalg.eig(post_cov[midchan])
-        np.save(
-            eval_file, evals
-        )
-
-        np.save(
-            evec_file, evecs
-        )
-    fig, ax = plt.subplots(figsize=[3.25, 3.25])
-    ax.plot(mode_numbers, evals.real, color="goldenrod")
-    #ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_ylabel("Eigenvalues")
-    ax.set_xlabel("Mode Number")
-    fig.tight_layout()
-    fig.savefig(
-        os.path.join(output_dir, "cov_evals.pdf"),
-        bbox_inches="tight"
-    )
-    fig, ax = plt.subplots(figsize=[3.25, 3.25])
-    ax.hist(z_update[200:], bins="auto", histtype="step", density=True)
-    ax.plot(rayl_x, rayl, linestyle="--", color="black")
-    ax.set_xlabel(r"$|z_\mathrm{update}|$")
-    ax.set_ylabel("Probability Density")
-    fig.tight_layout()
-    fig.savefig(os.path.join(output_dir, "z_update_hist.pdf"), bbox_inches="tight")
-
-    eval_sorter = np.argsort(evals)
-    special_ind1 = 2
-    special_ind2 = 3
-    evec_1 = evecs[:, eval_sorter][:, special_ind1]
-    evec_2 = evecs[:, eval_sorter][:, special_ind2]
-
-    fig, ax = plt.subplots(
-        figsize=[6.5, 6.5],
-        nrows=2,
-        ncols=2,
-        subplot_kw={"projection": "polar"}
-    )
-
-    min_evec_sky = np.tensordot(evec_1,
-                                sparse_dmatr_recon,
-                                axes=((-1,), (-1,)))
-    max_evec_sky = np.tensordot(evec_2,
-                                sparse_dmatr_recon,
-                                axes=((-1,), (-1,)))
-    evec_labels = [f"Eigenvector {special_ind1 + 1}", 
-                    f"Eigenvector {special_ind2 + 1}"]
-    for evec_ind, evec in enumerate([min_evec_sky, max_evec_sky]):
-        for comp_ind, comp in enumerate(["real", "imag"]):
-            ax_ob = ax[evec_ind, comp_ind]
-            im = ax_ob.pcolormesh(
-                Az,
-                Za * 180./np.pi,
-                getattr(np, comp)(evec),
-                norm=SymLogNorm(vmin=-1, vmax=1, linthresh=1e-3),
-                cmap="Spectral"
-            )
-            ax_ob.set_title(f"{evec_labels[evec_ind]} ({comp})")
-            adjust_beamplot(ax_ob, gridcolor="black")
-    fig.tight_layout()
-    fig.colorbar(im, ax=ax.ravel().tolist(), label="Beam Value")
-    fig.savefig(
-        os.path.join(output_dir, "evec_sky.pdf"),
-        bbox_inches="tight"
-    )
-
-
-    fig, ax = plt.subplots(
-        nrows=10, 
-        ncols=2, 
-        figsize=[6.5, 32.5], 
-        subplot_kw={"projection": "polar"}
-    )
-    for evec_ind in range(10):
-        for comp_ind, comp in enumerate(["real", "imag"]):
-            evec_FB = evecs[:, eval_sorter][:, evec_ind]
-            evec = np.tensordot(evec_FB,
-                                sparse_dmatr_recon,
-                                axes=((-1,), (-1,)))
-            ax_ob = ax[evec_ind, comp_ind]
-            im = ax_ob.pcolormesh(
-                Az,
-                Za * 180./np.pi,
-                getattr(np, comp)(evec),
-                norm=SymLogNorm(vmin=-1, vmax=1, linthresh=1e-3),
-                cmap="Spectral"
-            )
-            ax_ob.set_title(f"eval {evec_ind} ({comp})")
-            adjust_beamplot(ax_ob, gridcolor="black")      
-    fig.tight_layout()
-    fig.colorbar(im, ax=ax.ravel().tolist(), label="Beam Value")
-    fig.savefig(
-        os.path.join(output_dir, "smallest_evecs.pdf"),
-        bbox_inches="tight"
-    )
-
-    hydra.per_ant_beam_sampler.plot_FB_beam(
-        plotbeam,
-        unpert_sb.axis2_array,
-        unpert_sb.axis1_array, 
-        save=True,
-        fn=os.path.join(output_dir, "beam_real_imag.pdf"),
-        linthresh=1e-4
-    )
-
-
-    
-
-    
+        
