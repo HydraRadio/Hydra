@@ -177,7 +177,7 @@ if __name__ == '__main__':
     inference_vis = data[:, ::2, triu_inds[0], triu_inds[1]]
     if args.log_beam:
         import numpyro
-        numpyro.set_host_device_count(12)
+        numpyro.set_host_device_count(args.device_count)
         from numpyro import distributions as dist
         from numpyro.infer import MCMC, NUTS
         
@@ -218,9 +218,10 @@ if __name__ == '__main__':
 
         sky_amo_phase = jnp.array(sky_amp_phase)
         inference_Dmatr = jnp.array(Dmatr[::2])
-        def model(dat=None): # FIXME: No idea if this prior is sane
+        def model(dat=None):
             with numpyro.plate_stack("Nbasis", [2, args.Nbasis, args.Nfreqs]):
-                coeffs = numpyro.sample("coeffs", dist.Normal(loc=0, scale=1))
+                # Distribution of best fit coefficients (real part) is a tighter version of this prior...
+                coeffs = numpyro.sample("coeffs", dist.StudentT(df=0.5, loc=0, scale=1))
             log_beam = inference_Dmatr @ (coeffs[0] + 1.j * coeffs[1]) # tsf
             beam = jnp.exp(log_beam).transpose(2, 0, 1) # fts
             model_vis = (sky_amp_phase * beam[:, :, None]).sum(axis=-1)
