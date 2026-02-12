@@ -608,21 +608,22 @@ def vis_sim_wrapper(
         array_lat=array_lat,            
     )
     Nants = get_Nants(ant_pos)
+    if args.missing_sources:
+        amps_inference = np.copy(ptsrc_amps)
+        amps_inference[amps_inference < 1e0] = 0
+        flux_inference = get_flux_from_ptsrc_amp(
+            amps_inference, 
+            freqs * 1e-6, 
+            args.beta_ptsrc
+        )
+    else:
+        flux_inference = fluxes
     if args.beam_type == "pert_sim":
         unpert_sim_outpath = os.path.join(output_dir, "model_unpert.npy")
         unpert_beam_UVB = UVBeam.from_file(args.beam_file)
         unpert_beam_UVB.peak_normalize()
         unpert_beam_list = Nants * [unpert_beam_UVB]
-        if args.missing_sources:
-            amps_inference = np.copy(ptsrc_amps)
-            amps_inference[amps_inference < 1e0] = 0
-            flux_inference = get_flux_from_ptsrc_amp(
-                amps_inference, 
-                freqs * 1e-6, 
-                args.beta_ptsrc
-            )
-        else:
-            flux_inference = fluxes
+
         unpert_vis = run_vis_sim(
             args, 
             times, 
