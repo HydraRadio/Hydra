@@ -175,14 +175,21 @@ if __name__ == '__main__':
 
     triu_inds = np.triu_indices(Nants, k=1)
     inference_vis = data[:, ::2, triu_inds[0], triu_inds[1]]
+    
+    # Make matrix for transforming to image space.
+    sparse_bmatr = unpert_sb.bess_matr[:, nmodes[:args.Nbasis]]
+    sparse_tmatr = unpert_sb.trig_matr[:, mmodes[:args.Nbasis]]
+    sparse_dmatr_recon = sparse_bmatr[:, None] * sparse_tmatr[None, :]
+    
     if args.log_beam:
         import numpyro
         numpyro.set_host_device_count(args.device_count)
         from numpyro import distributions as dist
-        from numpyro.infer import MCMC, NUTS
+        from numpyro.infer import MCMC, NUTS, init_to_median, init_to_sample, SVI, Trace_ELBO, autoguide
         
-        from jax import random
+        from jax import random, vmap
         import jax.numpy as jnp
+        from optax import adam
 
         import yaml
 
@@ -216,31 +223,53 @@ if __name__ == '__main__':
         else:
             sky_amp_phase = np.load(sky_amp_phase_outpath)
 
-        sky_amo_phase = jnp.array(sky_amp_phase)
+        sky_amp_phase = jnp.array(sky_amp_phase)
+        
+        m_gt_0 = mmodes > 0
+        m_lt_0 = mmodes < 0
+        m_eq_0 = mmodes == 0
+        Dmatr[:, :, m_gt_0] = Dmatr[:, :, m_gt_0].imag * np.sqrt(2) # sine modes
+        Dmatr[:, :, m_lt_0] = Dmatr[:, :, m_lt_0].real * np.sqrt(2) # cosine modes 
+        Dmatr[:, :, m_eq_0] = Dmatr[:, :, m_eq_0].real # constant mode, no renorm
         inference_Dmatr = jnp.array(Dmatr[::2])
+        vec_mul = vmap(jnp.matmul)
+        vec_mul = vmap(vec_mul, in_axes=1)
+        key = random.key(int(args.chain_seed))
+        
         def model(dat=None):
-            with numpyro.plate_stack("Nbasis", [2, args.Nbasis, args.Nfreqs]):
+            with numpyro.plate_stack("Nbasis", [args.Nbasis, args.Nfreqs]):
                 # Distribution of best fit coefficients (real part) is a tighter version of this prior...
                 coeffs = numpyro.sample("coeffs", dist.StudentT(df=0.5, loc=0, scale=1))
-            log_beam = inference_Dmatr @ (coeffs[0] + 1.j * coeffs[1]) # tsf
+            log_beam = inference_Dmatr @ coeffs # tsf
             beam = jnp.exp(log_beam).transpose(2, 0, 1) # fts
-            model_vis = (sky_amp_phase * beam[:, :, None]).sum(axis=-1)
+            #model_vis = (sky_amp_phase * beam[:, :, None]).sum(axis=-1)
+            model_vis = vec_mul(sky_amp_phase, beam).swapaxes(0, 1) # vec_mul unpacks backwards...
             model_vis = jnp.array([model_vis.real, model_vis.imag])
             with numpyro.plate_stack("Nvis", inference_vis.shape):
                 obs = numpyro.sample(
                     "obs",
-                    dist.Normal(loc=model_vis, scale=noise_scale)
+                    dist.Normal(loc=model_vis, scale=noise_scale),
+                    obs=dat
                 )
-        kernel = NUTS(model)
-        mcmc = MCMC(kernel, num_warmup=1000, num_samples=2000, num_chains=4)
-        key = random.key(int(args.chain_seed))
-        mcmc.run(key, dat=inference_vis)
+        if args.optimize:
+            guide = autoguide.AutoDelta(model)
+            optimizer = adam(learning_rate=1e-2)
+            svi = SVI(model, guide, optimizer, loss=Trace_ELBO())
+            svi_result = svi.run(key, 100, dat=inference_vis)
+            MAP_coeffs = svi_result["auto_coeffs"]
+            MAP_log_beam = sparse_dmatr_recon @ MAP_coeffs
+            plt.plot(MAP_log_beam[:, 0])
+            plt.savefig(os.path.join(output_dir, "MAP_beam.png"))
+        else:
+            kernel = NUTS(model, dense_mass=True, init_strategy=init_to_median)
+            mcmc = MCMC(kernel, num_warmup=200, num_samples=400, num_chains=1)
+            
+            mcmc.run(key, dat=inference_vis)
+            mcmc.print_summary()
 
-        samples = mcmc.get_samples()
-        with open(os.path.join(output_dir, "log_beam_samps.yaml"), "w") as samp_file:
-            yaml.dump(samp_file, samples)
-
-
+            samples = mcmc.get_samples()
+            with open(os.path.join(output_dir, "log_beam_samps.yaml"), "w") as samp_file:
+                yaml.dump(samples, samp_file)
     else:
         # Have everything we need to analytically evaluate single-array beam
         pow_beam_Dmatr_outfile = os.path.join(output_dir, "pow_beam_Dmatr.npy")
@@ -316,10 +345,7 @@ if __name__ == '__main__':
             np.save(MAP_file, MAP_soln)
             np.save(pc_file, post_cov)
 
-        # Make matrix for transforming to image space.
-        sparse_bmatr = unpert_sb.bess_matr[:, nmodes[:args.Nbasis]]
-        sparse_tmatr = unpert_sb.trig_matr[:, mmodes[:args.Nbasis]]
-        sparse_dmatr_recon = sparse_bmatr[:, None] * sparse_tmatr[None, :]
+
 
         ##########################################
         # Below here is just a bunch of plotting #
