@@ -272,7 +272,8 @@ if __name__ == '__main__':
             init_vals = {"coeffs": sparse_fit[0][:, None]}
 
             kernel = NUTS(model, dense_mass=True, init_strategy=init_to_value(values=init_vals))
-            mcmc = MCMC(kernel, num_warmup=200, num_samples=400, num_chains=1)
+            mcmc = MCMC(kernel, num_warmup=args.num_warmup, num_samples=args.Niters, 
+                        num_chains=args.num_chains)
             
             mcmc.run(key, dat=inference_vis)
             mcmc.print_summary()
