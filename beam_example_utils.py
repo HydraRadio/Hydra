@@ -361,7 +361,9 @@ def get_parser(description):
                         help="Whether to take the square root of the primary beam before fitting. Useful for 'Eish' beams.")
     parser.add_argument("--log-beam", required=False, action="store_true",
                         dest="log_beam",
-                          help="Fit the log of the beam. Useful for enforcing positivity. Requires numpyro.")
+                        help="Fit the log of the beam. Useful for enforcing positivity. Requires numpyro.")
+    parser.add_argument("--optimize", action="store_true", 
+                        help="Optimize rather than sample.")
                         
     return parser
 
