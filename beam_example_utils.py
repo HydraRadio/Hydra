@@ -300,6 +300,10 @@ def get_parser(description):
                         help="Whether to drop the bottom 10 percent of sources when inferring the beam")
     parser.add_argument("--device-count", help="Number of CPUs or GPUs to use",
                         action="store", type=int, dest="device_count")
+    parser.add_argument("--num-warmup", type=int, help="Number of warmup samples for NUTS",
+                        dest="num_warmup", required=False, default=1000)
+    parser.add_argument("--num-chains", type=int, help="Number of independent chains",
+                        dest="num_chains", default=4, required=False)
     
     # Point source sim params
     parser.add_argument("--ra-bounds", type=float, action="store", default=(0, 2*np.pi),
