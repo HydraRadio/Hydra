@@ -185,7 +185,7 @@ if __name__ == '__main__':
         import numpyro
         numpyro.set_host_device_count(args.device_count)
         from numpyro import distributions as dist
-        from numpyro.infer import MCMC, NUTS, init_to_median, init_to_sample, SVI, Trace_ELBO, autoguide
+        from numpyro.infer import MCMC, NUTS, init_to_median, init_to_value, SVI, Trace_ELBO, autoguide
         
         from jax import random, vmap
         import jax.numpy as jnp
@@ -225,13 +225,14 @@ if __name__ == '__main__':
 
         sky_amp_phase = jnp.array(sky_amp_phase)
         
-        m_gt_0 = mmodes > 0
-        m_lt_0 = mmodes < 0
-        m_eq_0 = mmodes == 0
+        # mmodes are indices in an array, not the actual m-values
+        m_gt_0 = mmodes > args.mmax
+        m_lt_0 = mmodes < args.mmax
+        m_eq_0 = mmodes == args.mmax
         Dmatr[:, :, m_gt_0] = Dmatr[:, :, m_gt_0].imag * np.sqrt(2) # sine modes
         Dmatr[:, :, m_lt_0] = Dmatr[:, :, m_lt_0].real * np.sqrt(2) # cosine modes 
         Dmatr[:, :, m_eq_0] = Dmatr[:, :, m_eq_0].real # constant mode, no renorm
-        inference_Dmatr = jnp.array(Dmatr[::2])
+        inference_Dmatr = jnp.array(Dmatr[::2].astype(float))
         vec_mul = vmap(jnp.matmul)
         vec_mul = vmap(vec_mul, in_axes=1)
         key = random.key(int(args.chain_seed))
@@ -253,7 +254,7 @@ if __name__ == '__main__':
                 )
         if args.optimize:
             guide = autoguide.AutoDelta(model)
-            optimizer = adam(learning_rate=1e-2)
+            optimizer = adam(learning_rate=1e-3)
             svi = SVI(model, guide, optimizer, loss=Trace_ELBO())
             svi_result = svi.run(key, 100, dat=inference_vis)
             MAP_coeffs = svi_result["auto_coeffs"]
@@ -261,7 +262,16 @@ if __name__ == '__main__':
             plt.plot(MAP_log_beam[:, 0])
             plt.savefig(os.path.join(output_dir, "MAP_beam.png"))
         else:
-            kernel = NUTS(model, dense_mass=True, init_strategy=init_to_median)
+            test_beam = np.log(unpert_sb.data_array[0,0,0].astype(float))
+            sparse_dmatr_recon[:, :, m_gt_0] = np.sqrt(2) * sparse_dmatr_recon[:, :, m_gt_0].imag
+            sparse_dmatr_recon[:, :, m_lt_0] = np.sqrt(2) * sparse_dmatr_recon[:, :, m_lt_0].real
+            sparse_dmatr_recon[:, :, m_eq_0] = sparse_dmatr_recon[:, :, m_eq_0].real
+            sparse_dmatr_recon = sparse_dmatr_recon.astype(float)
+
+            sparse_fit = np.linalg.lstsq(sparse_dmatr_recon.reshape(91 * 360, args.Nbasis), test_beam.flatten())
+            init_vals = {"coeffs": sparse_fit[0][:, None]}
+
+            kernel = NUTS(model, dense_mass=True, init_strategy=init_to_value(values=init_vals))
             mcmc = MCMC(kernel, num_warmup=200, num_samples=400, num_chains=1)
             
             mcmc.run(key, dat=inference_vis)
