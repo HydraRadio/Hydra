@@ -37,6 +37,7 @@ class sparse_beam(UVBeam):
         stretch_y=1.0,
         trans_x=0.0,
         trans_y=0.0,
+        convert_to_power=False,
         **kwargs,
     ):
         """
@@ -124,6 +125,8 @@ class sparse_beam(UVBeam):
         self.bound = bound
         self.read_beamfits(filename, za_range=za_range, **kwargs)
         self.peak_normalize()
+        if convert_to_power:
+            super().efield_to_power(calc_cross_pols=False)
         self.perturb = perturb
         if perturb:
             self.rot = rot
